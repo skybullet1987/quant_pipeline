@@ -626,6 +626,11 @@ def evaluate_cross_oracle_basis_box_ev(
 # 7. CROSS-DAEMON SHM POSITION BUS & CAPITAL-EFFICIENCY AUCTION (Gemini #15 + ChatGPT #10)
 # ==============================================================================
 
+_SHM_CACHE_LOCK = threading.Lock()
+_SHM_READ_CACHE: Dict[str, Tuple[int, int, Dict[str, Any]]] = {}
+_SHM_CREATED_DIRS: set[str] = set()
+
+
 def _global_positions_shm_path() -> Path:
     shm_dir = os.environ.get("PM_FAST_TICK_DIR")
     if shm_dir:
@@ -638,18 +643,36 @@ def _global_positions_shm_path() -> Path:
 
 def read_global_positions_shm(max_age_sec: float = 120.0) -> Dict[str, Any]:
     path = _global_positions_shm_path()
-    if not path.exists():
-        return {"daemons": {}}
+    path_key = str(path)
     try:
-        raw_bytes = path.read_bytes()
-        data = (
-            _orjson.loads(raw_bytes)
-            if _orjson is not None
-            else json.loads(raw_bytes.decode("utf-8"))
-        )
-        if not isinstance(data, dict):
+        st = os.stat(path_key)
+    except OSError:
+        return {"daemons": {}}
+    mtime_ns = st.st_mtime_ns
+    size = st.st_size
+    daemons: Optional[Dict[str, Any]] = None
+    with _SHM_CACHE_LOCK:
+        cached = _SHM_READ_CACHE.get(path_key)
+        if cached is not None and cached[0] == mtime_ns and cached[1] == size:
+            daemons = cached[2]
+    try:
+        if daemons is None:
+            raw_bytes = path.read_bytes()
+            data = (
+                _orjson.loads(raw_bytes)
+                if _orjson is not None
+                else json.loads(raw_bytes.decode("utf-8"))
+            )
+            if not isinstance(data, dict):
+                return {"daemons": {}}
+            raw_daemons = data.get("daemons")
+            if not isinstance(raw_daemons, dict):
+                return {"daemons": {}}
+            daemons = raw_daemons
+            with _SHM_CACHE_LOCK:
+                _SHM_READ_CACHE[path_key] = (mtime_ns, size, daemons)
+        if not daemons:
             return {"daemons": {}}
-        daemons = data.get("daemons") or {}
         now = time.time()
         fresh_daemons = {
             k: v
@@ -667,9 +690,13 @@ def publish_global_positions_shm(daemon_name: str, positions: Iterable[Dict[str,
     so live & shadow sleeves coordinate correlation and synthetic corridor completions.
     """
     path = _global_positions_shm_path()
+    path_key = str(path)
     tmp: Optional[Path] = None
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        parent_str = str(path.parent)
+        if parent_str not in _SHM_CREATED_DIRS:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            _SHM_CREATED_DIRS.add(parent_str)
         cur = read_global_positions_shm(max_age_sec=600.0)
         daemons = dict(cur.get("daemons") or {})
         compact: List[Dict[str, Any]] = []
@@ -685,14 +712,21 @@ def publish_global_positions_shm(daemon_name: str, positions: Iterable[Dict[str,
                 "expiry_ts": float(p.get("candle_expiry_ts") or p.get("close_ts") or 0.0),
                 "notional_usd": float(p.get("notional_usd") or p.get("entry_eff_px_t1000") or 0.0),
             })
-        daemons[str(daemon_name)] = {"updated_ts": round(time.time(), 3), "positions": compact}
-        payload = {"updated_at_ts": round(time.time(), 3), "daemons": daemons}
+        now_r = round(time.time(), 3)
+        daemons[str(daemon_name)] = {"updated_ts": now_r, "positions": compact}
+        payload = {"updated_at_ts": now_r, "daemons": daemons}
         tmp = path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
         if _orjson is not None:
             tmp.write_bytes(_orjson.dumps(payload))
         else:
             tmp.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
-        os.replace(tmp, path)
+        os.replace(tmp, path_key)
+        try:
+            st = os.stat(path_key)
+            with _SHM_CACHE_LOCK:
+                _SHM_READ_CACHE[path_key] = (st.st_mtime_ns, st.st_size, daemons)
+        except OSError:
+            pass
         return True
     except Exception:
         if tmp is not None:
@@ -701,6 +735,73 @@ def publish_global_positions_shm(daemon_name: str, positions: Iterable[Dict[str,
             except Exception:
                 pass
         return False
+
+
+_CORRIDOR_SIDES = frozenset(("UP", "DOWN", "YES", "NO"))
+
+
+def _precompute_pos_tuples(
+    active_global_positions: Optional[Iterable[Dict[str, Any]]],
+) -> List[Tuple[str, float, str, float]]:
+    if not active_global_positions:
+        return []
+    out: List[Tuple[str, float, str, float]] = []
+    for pos in active_global_positions:
+        out.append((
+            str(pos.get("asset") or "").upper(),
+            float(pos.get("expiry_ts") or 0.0),
+            str(pos.get("side") or "").upper(),
+            float(pos.get("strike") or 0.0),
+        ))
+    return out
+
+
+def _compute_capital_efficiency_utility_fast(
+    candidate: Dict[str, Any],
+    pos_tuples: List[Tuple[str, float, str, float]],
+) -> Tuple[float, float, float, float, float]:
+    net_edge = float(candidate.get("net_edge") or 0.0)
+    ask_px = max(0.05, float(candidate.get("ask_vwap") or 0.50))
+    p_model = float(candidate.get("p_model") or (ask_px + net_edge))
+    tte_sec = max(15.0, float(candidate.get("tte_sec") or 3600.0))
+    lock_hours = max(0.08, min(24.0, tte_sec / 3600.0))
+    ev_per_dollar_hr = (net_edge / ask_px) / lock_hours
+
+    tail_loss_prob = max(0.0, 1.0 - p_model)
+    tail_penalty = 0.08 * (tail_loss_prob * tail_loss_prob)
+
+    corr_penalty = 0.0
+    corridor_bonus = 0.0
+    if pos_tuples:
+        cand_asset = str(candidate.get("asset") or "").upper()
+        if cand_asset:
+            cand_side = str(candidate.get("side") or "").upper()
+            cand_exp = float(candidate.get("expiry_ts") or 0.0)
+            cand_strike = float(candidate.get("strike") or 0.0)
+            cand_valid_side = cand_side in _CORRIDOR_SIDES
+            for p_asset, p_exp, p_side, p_strike in pos_tuples:
+                if p_asset != cand_asset:
+                    continue
+                if cand_exp > 0.0 and p_exp > 0.0 and abs(cand_exp - p_exp) <= 900.0:
+                    if p_side == cand_side and cand_valid_side:
+                        corr_penalty += 0.12
+                    elif (
+                        cand_strike > 0.0
+                        and p_strike > 0.0
+                        and ((p_side == "UP" and cand_side == "DOWN" and p_strike < cand_strike)
+                             or (p_side == "DOWN" and cand_side == "UP" and cand_strike < p_strike))
+                    ):
+                        # Synthetic corridor completion (`Gemini #15`): locks K_low < K_high dominance floor!
+                        corridor_bonus += 0.25
+
+    utility = ev_per_dollar_hr - tail_penalty - corr_penalty + corridor_bonus
+    return (
+        round(ev_per_dollar_hr, 4),
+        round(utility, 4),
+        round(lock_hours, 3),
+        round(corr_penalty, 4),
+        round(corridor_bonus, 4),
+    )
 
 
 def compute_capital_efficiency_utility(
@@ -712,51 +813,15 @@ def compute_capital_efficiency_utility(
       Utility ($EV / ($ * lock_hr)) = net_edge_frac / max(0.08, lock_hours)
                                       - tail_penalty - corr_penalty + corridor_completion_bonus
     """
-    net_edge = float(candidate.get("net_edge") or 0.0)
-    ask_px = max(0.05, float(candidate.get("ask_vwap") or 0.50))
-    p_model = float(candidate.get("p_model") or (ask_px + net_edge))
-    tte_sec = max(15.0, float(candidate.get("tte_sec") or 3600.0))
-    lock_hours = max(0.08, min(24.0, tte_sec / 3600.0))
-    roi_est = net_edge / ask_px
-    ev_per_dollar_hr = roi_est / lock_hours
-
-    tail_loss_prob = max(0.0, 1.0 - p_model)
-    tail_penalty = 0.08 * (tail_loss_prob ** 2)
-
-    cand_asset = str(candidate.get("asset") or "").upper()
-    cand_side = str(candidate.get("side") or "").upper()
-    cand_exp = float(candidate.get("expiry_ts") or 0.0)
-    cand_strike = float(candidate.get("strike") or 0.0)
-
-    corr_penalty = 0.0
-    corridor_bonus = 0.0
-    for pos in active_global_positions or []:
-        p_asset = str(pos.get("asset") or "").upper()
-        if not cand_asset or p_asset != cand_asset:
-            continue
-        p_exp = float(pos.get("expiry_ts") or 0.0)
-        same_window = cand_exp > 0.0 and p_exp > 0.0 and abs(cand_exp - p_exp) <= 900.0
-        p_side = str(pos.get("side") or "").upper()
-        p_strike = float(pos.get("strike") or 0.0)
-        if same_window:
-            if p_side == cand_side and cand_side in ("UP", "DOWN", "YES", "NO"):
-                corr_penalty += 0.12
-            elif (
-                cand_strike > 0.0
-                and p_strike > 0.0
-                and ((p_side == "UP" and cand_side == "DOWN" and p_strike < cand_strike)
-                     or (p_side == "DOWN" and cand_side == "UP" and cand_strike < p_strike))
-            ):
-                # Synthetic corridor completion (`Gemini #15`): locks K_low < K_high dominance floor!
-                corridor_bonus += 0.25
-
-    utility = ev_per_dollar_hr - tail_penalty - corr_penalty + corridor_bonus
+    ev_hr, util, lock_hr, corr_pen, corr_bon = _compute_capital_efficiency_utility_fast(
+        candidate, _precompute_pos_tuples(active_global_positions)
+    )
     return {
-        "ev_per_dollar_hour": round(ev_per_dollar_hr, 4),
-        "utility_score": round(utility, 4),
-        "lock_hours": round(lock_hours, 3),
-        "corr_penalty": round(corr_penalty, 4),
-        "corridor_completion_bonus": round(corridor_bonus, 4),
+        "ev_per_dollar_hour": ev_hr,
+        "utility_score": util,
+        "lock_hours": lock_hr,
+        "corr_penalty": corr_pen,
+        "corridor_completion_bonus": corr_bon,
     }
 
 
@@ -767,13 +832,14 @@ def rank_opportunities_capital_auction(
 ) -> List[Dict[str, Any]]:
     """Annotates and sorts opportunities descending by `utility_score` (`EV / ($ * lock_hr)`)."""
     eff_positions = active_global_positions if active_global_positions is not None else active_positions
+    pos_tuples = _precompute_pos_tuples(eff_positions)
     enriched: List[Dict[str, Any]] = []
     for opp in opportunities:
-        item = dict(opp)
-        metrics = compute_capital_efficiency_utility(item, active_global_positions=eff_positions)
-        item["ev_per_dollar_hour"] = metrics["ev_per_dollar_hour"]
-        item["utility_score"] = metrics["utility_score"]
-        if metrics["corridor_completion_bonus"] > 0:
+        item = opp.copy()
+        ev_hr, util, _, _, corr_bon = _compute_capital_efficiency_utility_fast(item, pos_tuples)
+        item["ev_per_dollar_hour"] = ev_hr
+        item["utility_score"] = util
+        if corr_bon > 0.0:
             item["synthetic_corridor_completion"] = True
         enriched.append(item)
     enriched.sort(key=lambda x: (-float(x.get("utility_score", 0.0)), -float(x.get("net_edge", 0.0))))
@@ -1092,6 +1158,8 @@ def rank_microbatch_shock_tournament(
     if len(shocks) <= 1:
         return list(shocks)
 
+    pos_tuples = _precompute_pos_tuples(active_positions)
+
     def _score_shock(s: Dict[str, Any]) -> Tuple[float, float]:
         s_dir = str(s.get("shock_direction") or "BUY").upper()
         side = "UP" if s_dir in ("BUY", "UP") else "DOWN"
@@ -1111,7 +1179,7 @@ def rank_microbatch_shock_tournament(
         sig_rem = max(0.00025, sig_1h * math.sqrt(tte / 3600.0))
         ofi = min(1.0, abs(float(s.get("shock_ofi") if s.get("shock_ofi") is not None else 0.85)))
         z_eff = (dist_pct / 100.0) / sig_rem + 0.35 * ofi
-        p_win = 0.5 * (1.0 + math.erf(z_eff / math.sqrt(2.0)))
+        p_win = 0.5 * (1.0 + math.erf(z_eff * _INV_SQRT2))
         fee_ps = compute_category_taker_fee_per_share(ask, 0.07, 1.0)
         exp_val = p_win * 0.98 + (1.0 - p_win) * 0.36
         ev_per_dollar = (exp_val - ask - fee_ps) / (ask + fee_ps)
@@ -1119,8 +1187,8 @@ def rank_microbatch_shock_tournament(
         k_mult = 1.15 if age_ms >= 250.0 else 1.00
         liq_bonus = 0.015 if asset == "BTC" else (0.008 if asset == "ETH" else 0.0)
         score = (ev_per_dollar * k_mult) + liq_bonus
-        if active_positions:
-            util = compute_capital_efficiency_utility(
+        if pos_tuples:
+            _, _, _, corr_pen, corr_bon = _compute_capital_efficiency_utility_fast(
                 {
                     "asset": asset,
                     "side": side,
@@ -1131,9 +1199,9 @@ def rank_microbatch_shock_tournament(
                     "p_model": p_win,
                     "tte_sec": tte,
                 },
-                active_global_positions=active_positions,
+                pos_tuples,
             )
-            score += float(util.get("corridor_completion_bonus") or 0.0) - float(util.get("corr_penalty") or 0.0)
+            score += corr_bon - corr_pen
         return (round(score, 6), z_eff)
 
     return sorted(shocks, key=_score_shock, reverse=True)

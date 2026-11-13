@@ -30,12 +30,32 @@ import logging
 import math
 import os
 import re
+import threading
 import time
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
+
+try:
+    import orjson as _orjson  # type: ignore
+except ImportError:  # pragma: no cover
+    _orjson = None
+
+try:
+    import requests as _requests  # type: ignore
+except ImportError:  # pragma: no cover
+    _requests = None
+
+_RPC_SESSION_LOCK = threading.RLock()
+_RPC_HTTP_SESSION: Any = None
+_SHARED_POLYGON_LOGS_WS: Any = None
+
+
+def set_shared_polygon_logs_ws(ws_client: Any) -> None:
+    global _SHARED_POLYGON_LOGS_WS
+    _SHARED_POLYGON_LOGS_WS = ws_client
 
 from src.polymarket_research.tradfi_sports_zero_fee_engine import (
     NbaGameSpec,
@@ -234,13 +254,29 @@ def is_objective_uma_market(m: Dict[str, Any]) -> Tuple[bool, str]:
     return False, "NO_OBJECTIVE_DOMAIN_MATCH"
 
 
+def _get_rpc_session() -> Any:
+    global _RPC_HTTP_SESSION
+    if _requests is None or not hasattr(_requests, "Session"):
+        return None
+    with _RPC_SESSION_LOCK:
+        if _RPC_HTTP_SESSION is None:
+            s = _requests.Session()
+            if not hasattr(s, "post") or not hasattr(s, "headers"):
+                return None
+            s.headers.update({"Content-Type": "application/json", "User-Agent": "DominusUmaVerifier/1.0"})
+            _RPC_HTTP_SESSION = s
+        return _RPC_HTTP_SESSION
+
+
 def _rpc_post(rpc_url: str, payload: Any, timeout: float = 2.5) -> Any:
-    body = json.dumps(payload).encode("utf-8")
+    body = _orjson.dumps(payload) if _orjson is not None else json.dumps(payload).encode("utf-8")
     urls = [rpc_url]
     if rpc_url == DEFAULT_POLYGON_RPC:
         urls.extend(u for u in FALLBACK_POLYGON_RPCS if u != rpc_url)
     per_timeout = max(0.8, float(timeout))
     deadline = time.monotonic() + max(per_timeout, 4.5)
+    urlopen_patched = getattr(urllib.request.urlopen, "__module__", "urllib.request") != "urllib.request"
+    sess = None if urlopen_patched else _get_rpc_session()
     last_exc: Optional[Exception] = None
     for idx, u in enumerate(urls):
         rem = deadline - time.monotonic()
@@ -248,13 +284,19 @@ def _rpc_post(rpc_url: str, payload: Any, timeout: float = 2.5) -> Any:
             break
         try_timeout = min(per_timeout, max(0.8, rem))
         try:
+            if sess is not None:
+                resp = sess.post(u, data=body, timeout=try_timeout)
+                if getattr(resp, "status_code", 200) >= 400:
+                    raise RuntimeError(f"RPC_HTTP_{resp.status_code}")
+                return _orjson.loads(resp.content) if _orjson is not None else resp.json()
             req = urllib.request.Request(
                 u,
                 data=body,
                 headers={"Content-Type": "application/json", "User-Agent": "DominusUmaVerifier/1.0"},
                 method="POST",
             )
-            return json.loads(urllib.request.urlopen(req, timeout=try_timeout).read().decode("utf-8"))
+            raw_b = urllib.request.urlopen(req, timeout=try_timeout).read()
+            return _orjson.loads(raw_b) if _orjson is not None else json.loads(raw_b.decode("utf-8"))
         except Exception as exc:
             last_exc = exc
     raise last_exc if last_exc is not None else RuntimeError("RPC_FAILED")
@@ -312,16 +354,42 @@ def verify_uma_onchain_proposal_sync(
     min_proposal_age_sec: float = 120.0,
     max_rem_challenge_sec: float = 7500.0,
     timeout: float = 5.0,
+    scoped_logs_ws: Any = None,
 ) -> Dict[str, Any]:
     """
     Queries Polygon `UmaCtfAdapter.getQuestion` + `OptimisticOracleV2.getState`/`getRequest` directly
     on-chain to verify an active, undisputed binary UMA assertion.
+    Uses optional `PolygonScopedLogsWs` cache first (`D-001` quarantine + instant DISPUTED/SETTLED veto).
     """
     ok_obj, domain_tag = is_objective_uma_market(m)
     if not ok_obj:
         return {"verified": False, "reason": domain_tag}
 
+    mid_s = str(m.get("id") or m.get("market_id") or "").strip()
+    if mid_s in ("6707503", "6707502"):
+        return {"verified": False, "reason": "D001_DISPUTED_KMIA_QUARANTINED"}
+
     now = float(now_ts if now_ts is not None else time.time())
+    logs_ws = scoped_logs_ws if scoped_logs_ws is not None else _SHARED_POLYGON_LOGS_WS
+    ws_hint: Optional[Dict[str, Any]] = None
+    if logs_ws is not None:
+        try:
+            if mid_s and hasattr(logs_ws, "get_market_oo_status"):
+                ws_oo = logs_ws.get_market_oo_status(mid_s)
+                if isinstance(ws_oo, dict):
+                    if ws_oo.get("quarantined_d001"):
+                        return {"verified": False, "reason": "D001_WS_QUARANTINED", "ws_fast_path": True}
+                    st_ws = str(ws_oo.get("status") or "").upper()
+                    if st_ws == "DISPUTED":
+                        return {"verified": False, "reason": "WS_DISPUTE_PRICE_VETO", "ws_fast_path": True, "ws_event": ws_oo}
+                    if st_ws == "SETTLED":
+                        return {"verified": False, "reason": "OO_STATE_6_WS_SETTLED", "ws_fast_path": True, "ws_event": ws_oo}
+                    ws_hint = ws_oo
+            cid_s = str(m.get("conditionId") or m.get("condition_id") or "").strip().lower()
+            if cid_s and hasattr(logs_ws, "get_condition_resolution") and logs_ws.get_condition_resolution(cid_s) is not None:
+                return {"verified": False, "reason": "CTF_CONDITION_ALREADY_RESOLVED_WS", "ws_fast_path": True}
+        except Exception:
+            pass
     rpc = rpc_url or os.getenv("POLYGON_RPC_URL") or DEFAULT_POLYGON_RPC
     adapter = str(m.get("resolvedBy") or "").strip().lower()
     is_nr = bool(m.get("negRisk")) or (adapter in NEGRISK_UMA_ADAPTERS)
@@ -462,7 +530,7 @@ def verify_uma_onchain_proposal_sync(
 
         fee_rate, fee_exp = _extract_market_fee_rate(m)
         lose_idx = 1 - win_idx
-        return {
+        res_out = {
             "verified": True,
             "domain": domain_tag,
             "adapter": adapter,
@@ -482,6 +550,9 @@ def verify_uma_onchain_proposal_sync(
             "fee_rate": fee_rate,
             "fee_exponent": fee_exp,
         }
+        if ws_hint is not None:
+            res_out["ws_fast_path_hint"] = ws_hint.get("event_kind")
+        return res_out
     except Exception as exc:
         return {"verified": False, "reason": f"RPC_ERR:{type(exc).__name__}"}
 

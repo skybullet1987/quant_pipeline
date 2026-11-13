@@ -71,6 +71,7 @@ POLYBOLT_CRYPTO_SYMBOLS: Tuple[str, ...] = (
     "zecusd",
     "hypeusd",
     "xauusd",
+    "xagusd",
 )
 
 POLYBOLT_EQUITY_SYMBOLS: Tuple[str, ...] = (
@@ -915,6 +916,8 @@ class PolymarketChainlinkLiveStream:
         if d.get("topic") not in (
             "crypto_prices_chainlink",
             "crypto_prices_twap_sixty",
+            "crypto_prices",
+            "equity_prices",
             "forex_prices_chainlink",
             "metals_prices_chainlink",
         ):
@@ -924,7 +927,9 @@ class PolymarketChainlinkLiveStream:
         if not isinstance(pl, dict):
             return False
         raw_sym = str(pl.get("symbol") or "").strip().lower()
-        asset = CHAINLINK_SYMBOL_MAP.get(raw_sym)
+        asset = CHAINLINK_SYMBOL_MAP.get(raw_sym) or (
+            raw_sym.upper() if (topic == "equity_prices" and raw_sym.upper() in POLYBOLT_EQUITY_SYMBOLS) else None
+        )
         if not asset:
             return False
         ts_raw = pl.get("timestamp")
@@ -1161,6 +1166,8 @@ class PolymarketChainlinkLiveStream:
                 "subscriptions": [
                     {"topic": "crypto_prices_chainlink", "type": "*", "filters": ""},
                     {"topic": "crypto_prices_twap_sixty", "type": "*", "filters": ""},
+                    {"topic": "crypto_prices", "type": "*", "filters": ""},
+                    {"topic": "equity_prices", "type": "*", "filters": ""},
                 ],
             }
         )
@@ -1302,10 +1309,23 @@ class PolymarketClobMarketWsTracker:
         self._desired_tokens_ordered: List[str] = []
         self._books: Dict[str, Tuple[float, Dict[str, Any]]] = {}
         self._raw_levels: Dict[str, Tuple[Dict[float, float], Dict[float, float]]] = {}
+        self._numeric_books: Dict[str, Tuple[float, List[Tuple[float, float]], List[Tuple[float, float]]]] = {}
+        self._dirty_tokens: Set[str] = set()
+        self._last_rx_by_aid: Dict[str, float] = {}
+        self._lifecycle_events: Deque[Dict[str, Any]] = deque(maxlen=256)
         self._snapshot_tokens: Set[str] = set()
         self._tick_sizes: Dict[str, float] = {}
         self._sub_wakeup: Optional[asyncio.Event] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+    _FROZEN_KMIA_IDS = frozenset({"6707503", "6707502"})
+
+    def drain_lifecycle_events(self, max_items: int = 64) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        with self._lock:
+            while self._lifecycle_events and len(out) < max_items:
+                out.append(self._lifecycle_events.popleft())
+        return out
 
     def get_tick_size(self, token_id: str) -> Optional[float]:
         tok = str(token_id or "").strip()
@@ -1331,10 +1351,13 @@ class PolymarketClobMarketWsTracker:
                 added = True
             self._desired_tokens_ordered = ordered
             self._desired_tokens = clean
-            for stale in list(self._books.keys()):
+            for stale in list(set(self._books.keys()) | set(self._last_rx_by_aid.keys())):
                 if stale not in clean:
                     self._books.pop(stale, None)
                     self._raw_levels.pop(stale, None)
+                    self._numeric_books.pop(stale, None)
+                    self._dirty_tokens.discard(stale)
+                    self._last_rx_by_aid.pop(stale, None)
                     self._snapshot_tokens.discard(stale)
         if added:
             self._signal_sub_wakeup()
@@ -1363,15 +1386,68 @@ class PolymarketClobMarketWsTracker:
             except Exception:
                 pass
 
+    def _materialize_book_locked(self, aid: str, build_dict: bool = True) -> Optional[Dict[str, Any]]:
+        lvls = self._raw_levels.get(aid)
+        now_m = self._last_rx_by_aid.get(aid, time.monotonic())
+        if lvls is None:
+            entry = self._books.get(aid)
+            return entry[1] if entry is not None else None
+        b_map, a_map = lvls
+        num_entry = self._numeric_books.get(aid)
+        if aid in self._dirty_tokens or num_entry is None:
+            b_tups = sorted(
+                ((px, sz) for px, sz in b_map.items() if px > 0.0 and sz > 0.0),
+                key=lambda kv: -kv[0],
+            )[:15]
+            a_tups = sorted(
+                ((px, sz) for px, sz in a_map.items() if px > 0.0 and sz > 0.0),
+                key=lambda kv: kv[0],
+            )[:15]
+            self._numeric_books[aid] = (now_m, b_tups, a_tups)
+            self._dirty_tokens.discard(aid)
+        else:
+            _, b_tups, a_tups = num_entry
+        if not build_dict:
+            return None
+        bk_dict: Dict[str, Any] = {
+            "asset_id": aid,
+            "bids": [{"price": f"{px:.4f}", "size": f"{sz:.4f}"} for px, sz in b_tups],
+            "asks": [{"price": f"{px:.4f}", "size": f"{sz:.4f}"} for px, sz in a_tups],
+            "is_partial_delta": (aid not in self._snapshot_tokens),
+        }
+        if aid in self._tick_sizes:
+            bk_dict["minimum_tick_size"] = self._tick_sizes[aid]
+        self._books[aid] = (now_m, bk_dict)
+        return bk_dict
+
+    def get_numeric_book(self, token_id: str, max_age_sec: float = 2.0) -> Optional[Dict[str, Any]]:
+        tok = str(token_id or "").strip()
+        if not tok:
+            return None
+        now_m = time.monotonic()
+        with self._lock:
+            ts_rx = self._last_rx_by_aid.get(tok)
+            if ts_rx is None or (now_m - ts_rx) > max_age_sec:
+                return None
+            self._materialize_book_locked(tok, build_dict=False)
+            num_e = self._numeric_books.get(tok)
+            if num_e is None:
+                return None
+            return {"asset_id": tok, "bids": num_e[1], "asks": num_e[2], "is_partial_delta": (tok not in self._snapshot_tokens)}
+
     def get_book(self, token_id: str, max_age_sec: float = 2.0) -> Optional[Dict[str, Any]]:
         tok = str(token_id or "").strip()
         if not tok:
             return None
         now_m = time.monotonic()
         with self._lock:
+            ts_rx = self._last_rx_by_aid.get(tok)
             entry = self._books.get(tok)
-            if entry is None or (now_m - entry[0]) > max_age_sec:
+            eff_ts = ts_rx if ts_rx is not None else (entry[0] if entry is not None else None)
+            if eff_ts is None or (now_m - eff_ts) > max_age_sec:
                 return None
+            if tok in self._dirty_tokens or entry is None:
+                return self._materialize_book_locked(tok, build_dict=True)
             return entry[1]
 
     def seed_book(self, token_id: str, book: Any, *, max_existing_age_sec: float = 2.0) -> bool:
@@ -1405,6 +1481,7 @@ class PolymarketClobMarketWsTracker:
         items = data if isinstance(data, list) else ([data] if isinstance(data, dict) else [])
 
         changed_books: List[Tuple[str, Dict[str, Any]]] = []
+        changed_aids: List[str] = []
         tick_changes: List[Tuple[str, float]] = []
         matched_any = False
         with self._lock:
@@ -1412,6 +1489,33 @@ class PolymarketClobMarketWsTracker:
                 if not isinstance(item, dict):
                     continue
                 ev = str(item.get("event_type") or "")
+                if ev in ("market_resolved", "new_market"):
+                    m_id = str(item.get("market") or item.get("market_id") or "").strip()
+                    if m_id in self._FROZEN_KMIA_IDS:
+                        continue
+                    self._lifecycle_events.append(
+                        {
+                            "event_type": ev,
+                            "market": m_id,
+                            "condition_id": str(item.get("condition_id") or item.get("market") or "").strip(),
+                            "asset_id": str(item.get("asset_id") or "").strip(),
+                            "winning_outcome": item.get("winning_outcome"),
+                            "winning_asset_id": item.get("winning_asset_id"),
+                            "assets_ids": item.get("assets_ids") or [],
+                            "rx_ts": time.time(),
+                        }
+                    )
+                    matched_any = True
+                    continue
+                if ev == "best_bid_ask":
+                    aid_b = str(item.get("asset_id") or "").strip()
+                    if aid_b and aid_b in self._desired_tokens:
+                        bb_f = _safe_float(item.get("best_bid"), 0.0)
+                        self._last_rx_by_aid[aid_b] = now_m
+                        matched_any = True
+                        if bb_f >= self._recycle_bid_trigger:
+                            urgent_hits.append((aid_b, bb_f))
+                    continue
                 if ev == "tick_size_change" or "new_tick_size" in item:
                     aid = str(item.get("asset_id") or "").strip()
                     tk_f = _safe_float(
@@ -1434,14 +1538,10 @@ class PolymarketClobMarketWsTracker:
                         if 0.0001 <= snap_tk <= 0.1:
                             prev_tk = self._tick_sizes.get(aid)
                             self._tick_sizes[aid] = snap_tk
-                            if aid in self._books:
-                                self._books[aid][1]["minimum_tick_size"] = snap_tk
                             if prev_tk is None or abs(prev_tk - snap_tk) > 1e-7:
                                 tick_changes.append((aid, snap_tk))
-                        elif aid in self._tick_sizes and aid in self._books:
-                            self._books[aid][1]["minimum_tick_size"] = self._tick_sizes[aid]
-                        if self._on_book_change is not None and aid in self._books:
-                            changed_books.append((aid, self._books[aid][1]))
+                        if self._on_book_change is not None:
+                            changed_aids.append(aid)
                         if bb >= self._recycle_bid_trigger:
                             urgent_hits.append((aid, bb))
                 elif ev == "price_change" or "price_changes" in item:
@@ -1454,12 +1554,15 @@ class PolymarketClobMarketWsTracker:
                     for aid, pcs in by_aid.items():
                         matched_any = True
                         bb = self._apply_changes_locked(aid, pcs, now_m)
-                        if aid in self._tick_sizes and aid in self._books:
-                            self._books[aid][1]["minimum_tick_size"] = self._tick_sizes[aid]
-                        if self._on_book_change is not None and aid in self._books:
-                            changed_books.append((aid, self._books[aid][1]))
+                        if self._on_book_change is not None and aid in self._last_rx_by_aid:
+                            changed_aids.append(aid)
                         if bb >= self._recycle_bid_trigger:
                             urgent_hits.append((aid, bb))
+            if self._on_book_change is not None and changed_aids:
+                for aid in dict.fromkeys(changed_aids):
+                    bk_m = self._materialize_book_locked(aid, build_dict=True)
+                    if bk_m is not None:
+                        changed_books.append((aid, bk_m))
         self._last_payload_matched = matched_any
 
         if self._on_tick_size_change is not None and tick_changes:
@@ -1494,26 +1597,11 @@ class PolymarketClobMarketWsTracker:
         return bool(urgent_hits)
 
     def _rebuild_locked(self, aid: str, b_map: Dict[float, float], a_map: Dict[float, float], now_m: float) -> float:
-        bids = [
-            {"price": f"{px:.4f}", "size": f"{sz:.4f}"}
-            for px, sz in sorted(b_map.items(), key=lambda kv: -kv[0])[:15]
-            if px > 0.0 and sz > 0.0
-        ]
-        asks = [
-            {"price": f"{px:.4f}", "size": f"{sz:.4f}"}
-            for px, sz in sorted(a_map.items(), key=lambda kv: kv[0])[:15]
-            if px > 0.0 and sz > 0.0
-        ]
-        best_b = float(bids[0]["price"]) if bids else 0.0
-        self._books[aid] = (
-            now_m,
-            {
-                "asset_id": aid,
-                "bids": bids,
-                "asks": asks,
-                "is_partial_delta": (aid not in self._snapshot_tokens),
-            },
-        )
+        # Lazy sort/materialization (`v6.2`): mark token dirty instead of sorting & allocating 30 dicts + 60 strings per delta.
+        self._dirty_tokens.add(aid)
+        self._last_rx_by_aid[aid] = now_m
+        self._books.pop(aid, None)
+        best_b = max((px for px, sz in b_map.items() if px > 0.0 and sz > 0.0), default=0.0)
         return best_b
 
     def _apply_snapshot_locked(self, aid: str, b_raw: List[Any], a_raw: List[Any], now_m: float) -> float:
@@ -1586,7 +1674,10 @@ class PolymarketClobMarketWsTracker:
                     with self._lock:
                         self._books.clear()
                         self._raw_levels.clear()
-                    await ws.send(json.dumps({"assets_ids": desired_0, "type": "market"}))
+                        self._numeric_books.clear()
+                        self._dirty_tokens.clear()
+                        self._last_rx_by_aid.clear()
+                    await ws.send(json.dumps({"assets_ids": desired_0, "type": "market", "custom_feature_enabled": True}))
                     backoff = 0.5
                     last_chk = time.monotonic()
                     last_rx = last_chk
@@ -1612,7 +1703,7 @@ class PolymarketClobMarketWsTracker:
                                 room_sub = max(0, 495 - len(subscribed))
                                 added = missing_sub[:room_sub]
                                 if added:
-                                    await ws.send(json.dumps({"assets_ids": added, "operation": "subscribe"}))
+                                    await ws.send(json.dumps({"assets_ids": added, "operation": "subscribe", "custom_feature_enabled": True}))
                                     subscribed.update(added)
                                 elif len(subscribed - cur) > 16 or bool(missing_sub):
                                     break
@@ -1796,6 +1887,41 @@ class PolymarketShardedClobMarketWsTracker:
 
     def shard_token_counts(self) -> List[int]:
         return [len(sh._desired_tokens) for sh in self._shards]
+
+    def drain_lifecycle_events(self, max_items: int = 64) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        seen: Set[Tuple[str, str, str, str]] = set()
+        for sh in self._shards:
+            for ev in sh.drain_lifecycle_events(max_items):
+                sig = (
+                    str(ev.get("event_type") or ""),
+                    str(ev.get("market") or ""),
+                    str(ev.get("condition_id") or ""),
+                    str(ev.get("asset_id") or ""),
+                )
+                if sig in seen:
+                    continue
+                seen.add(sig)
+                out.append(ev)
+                if len(out) >= max_items:
+                    return out
+        return out
+
+    def get_numeric_book(self, token_id: str, max_age_sec: float = 2.0) -> Optional[Dict[str, Any]]:
+        tok = str(token_id or "").strip()
+        if not tok:
+            return None
+        with self._lock:
+            sh_idx = self._token_to_shard.get(tok)
+        if sh_idx is not None and 0 <= sh_idx < self.num_shards:
+            bk = self._shards[sh_idx].get_numeric_book(tok, max_age_sec=max_age_sec)
+            if bk is not None:
+                return bk
+        for sh in self._shards:
+            bk = sh.get_numeric_book(tok, max_age_sec=max_age_sec)
+            if bk is not None:
+                return bk
+        return None
 
     async def run_forever(self, stop_check: Optional[Callable[[], bool]] = None) -> None:
         await asyncio.gather(*(sh.run_forever(stop_check) for sh in self._shards))

@@ -48,6 +48,97 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, 
 from zoneinfo import ZoneInfo
 
 try:
+    import orjson as _orjson
+except Exception:  # pragma: no cover
+    _orjson = None
+
+try:
+    import requests
+except Exception:  # pragma: no cover
+    requests = None
+
+_OO_HTTP_LOCAL = threading.local()
+_SHARED_P2_POLYGON_LOGS_WS: Any = None
+_NUMERIC_BRACKET_RE = re.compile(r"[0-9%$]")
+_SLUG_MKT_SUFFIX_RE = re.compile(
+    r"-(?:map-handicap|handicap|spread|total|over-under|o-u|1h|first-half|game-\d+|map-\d+|set-\d+)(?:-.*)?$",
+    re.IGNORECASE,
+)
+_UNWRESID_SFX_RE = re.compile(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", re.IGNORECASE)
+_BRACKET_PAREN_RE = re.compile(r"\[[^\]]*\]|\([^)]*\)")
+_VS_Q_RE = re.compile(
+    r"([A-Za-z0-9 .'\-]{2,28}?)\s+vs\.?\s+([A-Za-z0-9 .'\-]{2,28}?)(?=\s*(?:[:\-–|?]|$|\b(?:map|game|set|total|handicap|spread|o/u|over|under|bo\d)\b))",
+    re.IGNORECASE,
+)
+_VS_T1_PFX_RE = re.compile(
+    r"^.*\b(?:(?:game|map|set)\s+\d+|handicap|spread|total|winner|moneyline)\s*[:\-–|]*\s*",
+    re.IGNORECASE,
+)
+_LBL_PFX_RE = re.compile(r"^\s*(?:exact\s+score|spread|total|over/under|o/u)\s*[:\-–|]*\s*", re.IGNORECASE)
+_LBL_GAME_RE = re.compile(r"\b(?:game|map|set)\s+\d+\s*[:\-–|]*\s*", re.IGNORECASE)
+_LBL_SFX_RE = re.compile(r"\b(?:exact\s+score|dead\s+no|reward\s+carry\s+no)\b.*$", re.IGNORECASE)
+_LBL_SCORE_RE = re.compile(r"\s+\d+\s*[-:]\s*\d+(?:\s*°?[CFcf%])?\b")
+_LBL_TAIL_NUM_RE = re.compile(r"[:\-–|]\s*(?:>=|<=|>|<)?\s*-?\d+(?:\.\d+)?\s*(?:°?[CFcf%]|pts|goals)?.*$")
+_WHITESPACE_RUN_RE = re.compile(r"\s+")
+_LBL_VS_RE = re.compile(
+    r"([A-Za-z0-9 .'\-]{2,28}?)\s+vs\.?\s+([A-Za-z0-9 .'\-]{2,28}?)(?=\s*(?:[:\-–|?]|$|\b(?:total|handicap|spread|o/u|over|under|bo\d|winner|yes|no)\b))",
+    re.IGNORECASE,
+)
+_LBL_SPORT_PFX_RE = re.compile(
+    r"^.*\b(?:esports|dota\s*2|cs2|lol|valorant|nba|nfl|nhl|mlb|soccer|tennis|sports_child_moneyline|sports_child_totals)\s+",
+    re.IGNORECASE,
+)
+_LBL_YESNO_SFX_RE = re.compile(r"\s+\b(?:yes|no)\b.*$", re.IGNORECASE)
+_DISPUTE_WALKOVER_RE = re.compile(r"\b(retire(?:s|d|ment)|walkover|disqualif|50[\s/-]*50)\b", re.IGNORECASE)
+_BOILERPLATE_PROP_RE = re.compile(
+    r"\b(corner|over|under|o/u|total|spread|handicap|card|both\s+teams\s+to\s+score|btts)\b",
+    re.IGNORECASE,
+)
+_MENTION_CNT_RE = re.compile(r"(\d+)\s*\+|at\s+least\s+(\d+)|(\d+)\s+or\s+more", re.IGNORECASE)
+_MENTION_STEM_RE = re.compile(r"\d+\s*\+|at\s+least\s+\d+|\d+\s+or\s+more")
+_P2_E6_SCALE: int = 1_000_000
+
+
+def set_shared_protocol_v2_polygon_logs_ws(ws_client: Any) -> None:
+    """Registers an optional live `PolygonScopedLogsWs` client for fast-path OO proposal/dispute checks."""
+    global _SHARED_P2_POLYGON_LOGS_WS
+    _SHARED_P2_POLYGON_LOGS_WS = ws_client
+
+
+def _get_oo_http_session() -> Any:
+    if requests is None or not hasattr(requests, "Session"):
+        return None
+    sess = getattr(_OO_HTTP_LOCAL, "session", None)
+    if sess is None:
+        sess = requests.Session()
+        if not hasattr(sess, "post") or not hasattr(sess, "headers"):
+            return None
+        sess.headers.update({"Content-Type": "application/json", "User-Agent": "Dominus/1.0", "Connection": "keep-alive"})
+        _OO_HTTP_LOCAL.session = sess
+    return sess
+
+
+def _p2_loads_json_bytes(raw: Any) -> Any:
+    if raw is None:
+        return None
+    if isinstance(raw, (dict, list)):
+        return raw
+    if _orjson is not None:
+        try:
+            return _orjson.loads(raw)
+        except Exception:
+            pass
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode("utf-8", errors="ignore")
+    return json.loads(raw)
+
+
+def _p2_dumps_json_bytes(payload: Any) -> bytes:
+    if _orjson is not None:
+        return _orjson.dumps(payload)
+    return json.dumps(payload).encode("utf-8")
+
+try:
     from src.polymarket_research.holistic_strategy_governance import (
         GLOBAL_GOVERNANCE_MANAGER,
         get_unleashed_v5_tier_profile,
@@ -423,7 +514,7 @@ def is_conditional_negrisk_missing_catchall(
         return False
     if any(_NEGRISK_NEGATION_OR_OTHER_CATCHALL_RE.search(lb) for lb in clean_labels):
         return False
-    numeric_bracket_n = sum(1 for lb in clean_labels if re.search(r"[0-9%$]", lb))
+    numeric_bracket_n = sum(1 for lb in clean_labels if _NUMERIC_BRACKET_RE.search(lb))
     return numeric_bracket_n >= 2
 
 
@@ -639,11 +730,27 @@ def quantize_dynamic_tick_price(
     else:
         tick = 0.001 if (p_clamped >= 0.96 or p_clamped <= 0.04) else 0.01
 
-    d_p = Decimal(str(round(p_clamped, 6)))
-    d_t = Decimal(str(tick))
     side_u = str(side or "BUY").upper()
     mode_l = str(mode or "maker").lower()
+    p_u = round(p_clamped * _P2_E6_SCALE)
+    t_f = round(tick * _P2_E6_SCALE)
+    if t_f > 0 and abs(tick * _P2_E6_SCALE - t_f) < 1e-9 and t_f >= 100 and (_P2_E6_SCALE % t_f == 0):
+        if mode_l == "nearest":
+            steps_i = (p_u // t_f) + (1 if ((p_u % t_f) * 2 >= t_f) else 0)
+        elif (side_u == "BUY" and mode_l == "maker") or (side_u == "SELL" and mode_l == "taker"):
+            steps_i = p_u // t_f
+        else:
+            steps_i = (p_u + t_f - 1) // t_f
+        q_u = steps_i * t_f
+        if q_u < t_f:
+            q_u = t_f
+        elif q_u > (_P2_E6_SCALE - t_f):
+            q_u = _P2_E6_SCALE - t_f
+        min_shares_ok = True if shares is None else (float(shares) >= 5.0 - 1e-9)
+        return q_u / float(_P2_E6_SCALE), t_f / float(_P2_E6_SCALE), bool(min_shares_ok)
 
+    d_p = Decimal(str(round(p_clamped, 6)))
+    d_t = Decimal(str(tick))
     if mode_l == "nearest":
         steps = (d_p / d_t).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     elif (side_u == "BUY" and mode_l == "maker") or (side_u == "SELL" and mode_l == "taker"):
@@ -661,6 +768,344 @@ def quantize_dynamic_tick_price(
 
     min_shares_ok = True if shares is None else (float(shares) >= 5.0 - 1e-9)
     return float(q_dec), float(d_t), bool(min_shares_ok)
+
+
+_RB_N5_NEGATION_RE = re.compile(r"\b(?:not|never|except|unless|only\s+if|without)\b", re.IGNORECASE)
+_RB_N5_DATE_TRIM_RE = re.compile(
+    r"\b(?:by|before|after|on|until|in)\s+(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*(?:\s+\d{1,2})?(?:,?\s*\d{4})?|\d{4}-\d{2}-\d{2}|q[1-4]\s*\d{4}|\d{4})\b",
+    re.IGNORECASE,
+)
+
+
+def _rb_n5_best_ask_sz(asks: Sequence[Mapping[str, Any]]) -> Tuple[float, float]:
+    best_p, best_s = 1.0, 0.0
+    for lv in asks or ():
+        if not isinstance(lv, Mapping):
+            continue
+        try:
+            px = float(lv.get("price") or 0.0)
+            sz = float(lv.get("size") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if 0.0 < px < 1.0 and sz > 0.0:
+            if px < best_p:
+                best_p, best_s = px, sz
+            elif abs(px - best_p) <= 1e-12:
+                best_s += sz
+    return best_p, best_s
+
+
+def extract_rb_n5_cumulative_cal1_candidates(
+    events: Sequence[Mapping[str, Any]],
+    now_ts: Optional[float] = None,
+) -> List[Dict[str, Any]]:
+    """
+    `RB-N5`: Extracts native `cumulativeMarkets=True` monotone deadline ladders for `CAL1`
+    (`P(T_early) <= P(T_late)`, invariant `YES(T_early) + NO(T_late) >= $1.00`).
+    Strictly filters closed/non-accepting/negated markets and requires ascending deadlines.
+    """
+    now_f = float(time.time() if now_ts is None else now_ts)
+    out: List[Dict[str, Any]] = []
+    for ev in events or ():
+        if not isinstance(ev, Mapping) or not bool(ev.get("cumulativeMarkets")):
+            continue
+        title = str(ev.get("title") or "").strip()
+        if _RB_N5_NEGATION_RE.search(title):
+            continue
+        legs: List[Dict[str, Any]] = []
+        stems: Set[str] = set()
+        for mk in ev.get("markets") or ():
+            if not isinstance(mk, Mapping) or mk.get("closed") or mk.get("acceptingOrders") is False:
+                continue
+            mid = str(mk.get("id") or mk.get("market_id") or "").strip()
+            if not mid or mid in {"6707502", "6707503"}:
+                continue
+            q = str(mk.get("question") or mk.get("groupItemTitle") or title).strip()
+            if not q or _RB_N5_NEGATION_RE.search(q):
+                continue
+            raw_tks = mk.get("clobTokenIds")
+            if isinstance(raw_tks, str) and raw_tks.startswith("["):
+                try:
+                    toks = _p2_loads_json_bytes(raw_tks)
+                except Exception:
+                    toks = []
+            elif isinstance(raw_tks, (list, tuple)):
+                toks = list(raw_tks)
+            else:
+                toks = []
+            if len(toks) < 2:
+                continue
+            end_s = str(mk.get("endDate") or ev.get("endDate") or "").strip()
+            if not end_s:
+                continue
+            try:
+                end_ts = datetime.fromisoformat(end_s.replace("Z", "+00:00")).timestamp()
+            except Exception:
+                continue
+            if (end_ts - now_f) <= 120.0:
+                continue
+            fs = mk.get("feeSchedule") or {}
+            fr = float(fs.get("rate", 0.0) if mk.get("feesEnabled", False) else 0.0)
+            fe = float(fs.get("exponent", 1.0) or 1.0)
+            stem = _WHITESPACE_RUN_RE.sub(" ", _RB_N5_DATE_TRIM_RE.sub("", q.lower())).strip(" ?.!")
+            if stem:
+                stems.add(stem)
+            legs.append({
+                "market_id": mid,
+                "condition_id": str(mk.get("conditionId") or "").strip(),
+                "question": q,
+                "end_ts": float(end_ts),
+                "yes_token_id": str(toks[0]).strip(),
+                "no_token_id": str(toks[1]).strip(),
+                "fee_rate": fr,
+                "fee_exponent": fe,
+            })
+        if len(legs) < 2 or len(stems) > 1:
+            continue
+        legs.sort(key=lambda x: x["end_ts"])
+        if any((legs[i + 1]["end_ts"] - legs[i]["end_ts"]) < 60.0 for i in range(len(legs) - 1)):
+            continue
+        out.append({
+            "event_id": str(ev.get("id") or ev.get("slug") or ""),
+            "title": title,
+            "stem": next(iter(stems), title.lower()),
+            "asset": str(ev.get("ticker") or ev.get("category") or "CAL1").strip().upper()[:16] or "CAL1",
+            "cumulativeMarkets": True,
+            "legs": legs,
+        })
+    return out
+
+
+def detect_rb_n5_cumulative_cal1_opportunities(
+    candidates: Sequence[Mapping[str, Any]],
+    books_by_token: Mapping[str, Any],
+    *,
+    now_ts: Optional[float] = None,
+    min_net_edge: float = 0.0080,
+) -> List[Dict[str, Any]]:
+    """Evaluates extracted `RB-N5` `cumulativeMarkets=True` ladders against live CLOB books for `YES(early)+NO(late)` <= `1 - min_net_edge`."""
+    _ = now_ts
+    hits: List[Dict[str, Any]] = []
+    for grp in candidates or ():
+        legs = list(grp.get("legs") or ())
+        if len(legs) < 2:
+            continue
+        best_hit: Optional[Dict[str, Any]] = None
+        for i in range(len(legs) - 1):
+            ea = legs[i]
+            by_e = books_by_token.get(str(ea.get("yes_token_id") or ""))
+            if not isinstance(by_e, Mapping):
+                continue
+            ya, ys = _rb_n5_best_ask_sz(by_e.get("asks") or [])
+            if ya <= 0.0 or ya >= 1.0 or ys < 5.0:
+                continue
+            for j in range(i + 1, len(legs)):
+                lb = legs[j]
+                bn_l = books_by_token.get(str(lb.get("no_token_id") or ""))
+                if not isinstance(bn_l, Mapping):
+                    continue
+                na, ns = _rb_n5_best_ask_sz(bn_l.get("asks") or [])
+                if na <= 0.0 or na >= 1.0 or ns < 5.0:
+                    continue
+                fr_e = float(ea.get("fee_rate", 0.0) or 0.0)
+                fe_e = float(ea.get("fee_exponent", 1.0) or 1.0)
+                fr_l = float(lb.get("fee_rate", 0.0) or 0.0)
+                fe_l = float(lb.get("fee_exponent", 1.0) or 1.0)
+                fee_e = (ya * fr_e * ((ya * (1.0 - ya)) ** fe_e)) if fr_e > 0.0 else 0.0
+                fee_l = (na * fr_l * ((na * (1.0 - na)) ** fe_l)) if fr_l > 0.0 else 0.0
+                all_in = ya + na + fee_e + fee_l
+                edge = 1.0 - all_in
+                if edge >= float(min_net_edge) and (best_hit is None or edge > best_hit["net_edge_per_share"]):
+                    sh = min(ys, ns)
+                    best_hit = {
+                        "sleeve": "CAL1_RB_N5_CUMULATIVE_BOX",
+                        "event_id": grp.get("event_id"),
+                        "title": grp.get("title") or ea.get("question"),
+                        "asset": grp.get("asset") or "CAL1",
+                        "early_leg": ea,
+                        "late_leg": lb,
+                        "bk_early_yes": by_e,
+                        "bk_late_no": bn_l,
+                        "cost_per_share": round(all_in, 5),
+                        "net_edge_per_share": round(edge, 5),
+                        "net_edge_bps": round((edge / max(1e-6, all_in)) * 10000.0, 2),
+                        "max_fillable_shares": round(sh, 4),
+                        "max_fillable_usd": round(sh * all_in, 2),
+                    }
+        if best_hit is not None:
+            hits.append(best_hit)
+    return hits
+
+
+def try_recycle_open_carry_for_fast_arb_v2(
+    harvester: Any,
+    *,
+    needed_cash_gap_usd: float,
+    challenger_net_cost: float,
+    challenger_rem_tte_sec: float,
+    challenger_sleeve: str,
+    exclude_market_ids: Optional[Set[str]] = None,
+    exit_spread_slippage_bps: Optional[float] = None,
+    lost_rebate_bps: float = 0.0,
+    safety_buffer_bps: float = 5.0,
+    now_ts: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Protocol V2 fast-arb carry recycler supporting BOTH `>= 200 bps` challengers (via Stage C)
+    AND `80-199 bps` fast-arb challengers strictly when `Decimal(..., ROUND_CEILING)` proves
+    `new_net_edge_bps > exit_spread_slippage_bps + lost_rebate_bps + safety_buffer_bps`.
+    """
+    from src.polymarket_research.stage_c_zero_loss_velocity import (
+        find_recyclable_zero_loss_open_carries,
+        recycle_open_zero_loss_carry_for_fast_arb,
+    )
+
+    net_cost_f = float(challenger_net_cost)
+    if net_cost_f <= 0.0 or net_cost_f >= 1.0 or needed_cash_gap_usd <= 0.0:
+        return {"recycled_count": 0, "freed_cash_usd": 0.0, "recycled_positions": [], "reason": "INVALID_INPUT"}
+
+    d_cost = Decimal(str(round(net_cost_f, 6)))
+    d_new_edge_bps = (((Decimal("1") - d_cost) / d_cost) * Decimal("10000")).quantize(
+        Decimal("0.01"), rounding=ROUND_FLOOR
+    )
+    if d_new_edge_bps >= Decimal("200"):
+        res = dict(
+            recycle_open_zero_loss_carry_for_fast_arb(
+                harvester,
+                needed_cash_gap_usd=needed_cash_gap_usd,
+                challenger_net_cost=net_cost_f,
+                challenger_rem_tte_sec=challenger_rem_tte_sec,
+                challenger_sleeve=challenger_sleeve,
+                exclude_market_ids=exclude_market_ids,
+                now_ts=now_ts,
+            )
+        )
+        res["tier"] = ">=200bps"
+        res["new_net_edge_bps"] = float(d_new_edge_bps)
+        return res
+
+    if d_new_edge_bps < Decimal("80"):
+        return {
+            "recycled_count": 0,
+            "freed_cash_usd": 0.0,
+            "recycled_positions": [],
+            "reason": "BELOW_80_BPS_MIN_EDGE",
+            "new_net_edge_bps": float(d_new_edge_bps),
+        }
+
+    cands = find_recyclable_zero_loss_open_carries(
+        harvester,
+        needed_cash_gap_usd=needed_cash_gap_usd,
+        challenger_net_cost=net_cost_f,
+        challenger_rem_tte_sec=challenger_rem_tte_sec,
+        exclude_market_ids=exclude_market_ids,
+        min_challenger_edge_bps=80.0,
+        now_ts=now_ts,
+    )
+    if not cands:
+        return {
+            "recycled_count": 0,
+            "freed_cash_usd": 0.0,
+            "recycled_positions": [],
+            "reason": "NO_RECYCLABLE_CARRY_CANDIDATES",
+            "new_net_edge_bps": float(d_new_edge_bps),
+        }
+
+    ex = getattr(harvester, "executor", None)
+    if ex is None:
+        return {
+            "recycled_count": 0,
+            "freed_cash_usd": 0.0,
+            "recycled_positions": [],
+            "reason": "NO_EXECUTOR",
+            "new_net_edge_bps": float(d_new_edge_bps),
+        }
+
+    d_lost_reb = Decimal(str(max(0.0, float(lost_rebate_bps))))
+    d_buf = Decimal(str(max(0.0, float(safety_buffer_bps))))
+    freed = 0.0
+    recycled_keys: List[str] = []
+    last_hurdle_bps = 0.0
+    active = getattr(harvester, "active_positions", None)
+    if not isinstance(active, dict):
+        active = {}
+    t_now = float(time.time() if now_ts is None else now_ts)
+
+    for c in cands:
+        if freed >= needed_cash_gap_usd:
+            break
+        pk = str(c.get("pos_key") or "")
+        pos = active.get(pk)
+        if not isinstance(pos, dict):
+            continue
+        mid = str(pos.get("market_id") or "")
+        if mid in {"6707502", "6707503"}:
+            continue
+        bid_px = float(c.get("bid_px") or 0.0)
+        min_sell_px = float(c.get("min_sell_px") or 0.0)
+        cost_ps = float(c.get("cost_per_share") or 0.0)
+        if bid_px <= 0.0 or bid_px < min_sell_px:
+            continue
+        if exit_spread_slippage_bps is not None:
+            d_slip = Decimal(str(max(0.0, float(exit_spread_slippage_bps))))
+        else:
+            raw_slip_bps = max(0.0, ((cost_ps - bid_px) / max(1e-6, cost_ps)) * 10_000.0) + max(
+                0.0, ((min_sell_px - cost_ps) / max(1e-6, cost_ps)) * 10_000.0
+            )
+            d_slip = Decimal(str(raw_slip_bps))
+        req_bps = (d_slip + d_lost_reb + d_buf).quantize(Decimal("0.01"), rounding=ROUND_CEILING)
+        last_hurdle_bps = float(req_bps)
+        if not (d_new_edge_bps > req_bps):
+            continue
+
+        tp_oid = str(pos.get("maker_tp_order_id") or "").strip()
+        if tp_oid and hasattr(ex, "cancel_order"):
+            try:
+                ex.cancel_order(tp_oid)
+            except Exception:
+                pass
+        sh = float(c.get("shares") or pos.get("shares") or 0.0)
+        if sh < 5.0:
+            continue
+        u_res = ex.execute_unwind_order(
+            token_id=str(pos.get("token_id") or ""),
+            shares=sh,
+            min_sell_price=bid_px,
+            market_id=mid,
+            tick_size=0.001 if (bid_px >= 0.96 or bid_px <= 0.04) else 0.01,
+        )
+        if isinstance(u_res, dict) and u_res.get("filled"):
+            proceeds = float(u_res.get("proceeds_usd") or (float(u_res.get("filled_shares") or sh) * float(u_res.get("avg_price") or bid_px)))
+            freed += max(0.0, proceeds)
+            recycled_keys.append(pk)
+            if hasattr(ex, "get_collateral_balance"):
+                try:
+                    c_now = ex.get_collateral_balance()
+                    if isinstance(c_now, (int, float)) and not isinstance(c_now, bool) and math.isfinite(float(c_now)):
+                        harvester._last_known_collateral = float(c_now)
+                except Exception:
+                    pass
+            if hasattr(harvester, "closed_trades") and isinstance(harvester.closed_trades, list):
+                harvester.closed_trades.append({
+                    "event": "CARRY_RECYCLE_EXIT_V2",
+                    "pos_key": pk,
+                    "challenger_sleeve": challenger_sleeve,
+                    "challenger_edge_bps": float(d_new_edge_bps),
+                    "hurdle_bps": float(req_bps),
+                    "proceeds_usd": round(proceeds, 4),
+                    "ts_unix": t_now,
+                })
+            active.pop(pk, None)
+
+    return {
+        "recycled_count": len(recycled_keys),
+        "freed_cash_usd": round(freed, 4),
+        "recycled_positions": recycled_keys,
+        "tier": "80_199bps_ceiling_gate",
+        "new_net_edge_bps": float(d_new_edge_bps),
+        "hurdle_bps": last_hurdle_bps,
+        "reason": "OK" if recycled_keys else "CEILING_HURDLE_VETO",
+    }
 
 
 class RebootPostOnlyModeGuard:
@@ -2095,12 +2540,7 @@ def extract_gamma_parent_event_id(m: Optional[Mapping[str, Any]]) -> str:
                 return v
     slug_s = str(m.get("slug") or "").strip()
     if slug_s:
-        m_sl = re.sub(
-            r"-(?:map-handicap|handicap|spread|total|over-under|o-u|1h|first-half|game-\d+|map-\d+|set-\d+)(?:-.*)?$",
-            "",
-            slug_s,
-            flags=re.IGNORECASE,
-        )
+        m_sl = _SLUG_MKT_SUFFIX_RE.sub("", slug_s)
         if m_sl and m_sl != slug_s:
             return m_sl
     return ""
@@ -2120,7 +2560,7 @@ def extract_sll_event_group_key(cand: Optional[Mapping[str, Any]]) -> str:
         if not v:
             continue
         if v.upper().startswith(_SYNTH_EVENT_ID_PREFIXES):
-            v_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", v, flags=re.IGNORECASE)
+            v_clean = _UNWRESID_SFX_RE.sub("", v)
             m_emb = _EMBEDDED_EVT_RE.match(v_clean)
             if m_emb:
                 return f"EVT:{m_emb.group(1)}"
@@ -2129,25 +2569,17 @@ def extract_sll_event_group_key(cand: Optional[Mapping[str, Any]]) -> str:
     for dk_field in ("dedupe_key", "pair_dedupe_key", "box_id", "trade_id"):
         dk_v = str(cand.get(dk_field) or "").strip()
         if dk_v:
-            dk_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", dk_v, flags=re.IGNORECASE)
+            dk_clean = _UNWRESID_SFX_RE.sub("", dk_v)
             m_dk = _DEDUPE_EVT_RE.match(dk_clean) or _EMBEDDED_EVT_RE.match(dk_clean)
             if m_dk:
                 return f"EVT:{m_dk.group(1)}"
     q_txt = str(cand.get("question") or "").strip()
     exp_i = int(float(cand.get("expiry_ts") or cand.get("leg_a_expiry_ts") or cand.get("candle_expiry_ts") or 0.0))
     if q_txt:
-        q_clean = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", q_txt)
-        m_vs = re.search(
-            r"([A-Za-z0-9 .'\-]{2,28}?)\s+vs\.?\s+([A-Za-z0-9 .'\-]{2,28}?)(?=\s*(?:[:\-–|?]|$|\b(?:map|game|set|total|handicap|spread|o/u|over|under|bo\d)\b))",
-            q_clean,
-            flags=re.IGNORECASE,
-        )
+        q_clean = _BRACKET_PAREN_RE.sub(" ", q_txt)
+        m_vs = _VS_Q_RE.search(q_clean)
         if m_vs:
-            t1 = re.sub(
-                r"(?i)^.*\b(?:(?:game|map|set)\s+\d+|handicap|spread|total|winner|moneyline)\s*[:\-–|]*\s*",
-                "",
-                m_vs.group(1),
-            ).strip(" :-_|")
+            t1 = _VS_T1_PFX_RE.sub("", m_vs.group(1)).strip(" :-_|")
             t2 = m_vs.group(2).strip(" :-_|")
             if len(t1) >= 2 and len(t2) >= 2:
                 pair_k = " VS ".join(sorted((t1.upper(), t2.upper())))
@@ -2159,21 +2591,17 @@ def extract_sll_event_group_key(cand: Optional[Mapping[str, Any]]) -> str:
     lbl = str(cand.get("leg_a_label") or cand.get("title") or "").strip()
     ast_s = str(cand.get("asset") or "").strip().upper()
     if lbl and lbl.lower() not in {"lock", "bundle", "resid", "clinch_ws_snipe"}:
-        base_lbl = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", lbl)
-        base_lbl = re.sub(r"(?i)^\s*(?:exact\s+score|spread|total|over/under|o/u)\s*[:\-–|]*\s*", "", base_lbl)
-        base_lbl = re.sub(r"(?i)\b(?:game|map|set)\s+\d+\s*[:\-–|]*\s*", " ", base_lbl)
-        base_lbl = re.sub(r"(?i)\b(?:exact\s+score|dead\s+no|reward\s+carry\s+no)\b.*$", "", base_lbl)
-        base_lbl = re.sub(r"\s+\d+\s*[-:]\s*\d+(?:\s*°?[CFcf%])?\b", " vs ", base_lbl)
-        base_lbl = re.sub(r"[:\-–|]\s*(?:>=|<=|>|<)?\s*-?\d+(?:\.\d+)?\s*(?:°?[CFcf%]|pts|goals)?.*$", "", base_lbl)
-        base_lbl = re.sub(r"\s+", " ", base_lbl).strip(" :-_|")
-        m_lbl_vs = re.search(
-            r"([A-Za-z0-9 .'\-]{2,28}?)\s+vs\.?\s+([A-Za-z0-9 .'\-]{2,28}?)(?=\s*(?:[:\-–|?]|$|\b(?:total|handicap|spread|o/u|over|under|bo\d|winner|yes|no)\b))",
-            base_lbl,
-            flags=re.IGNORECASE,
-        )
+        base_lbl = _BRACKET_PAREN_RE.sub(" ", lbl)
+        base_lbl = _LBL_PFX_RE.sub("", base_lbl)
+        base_lbl = _LBL_GAME_RE.sub(" ", base_lbl)
+        base_lbl = _LBL_SFX_RE.sub("", base_lbl)
+        base_lbl = _LBL_SCORE_RE.sub(" vs ", base_lbl)
+        base_lbl = _LBL_TAIL_NUM_RE.sub("", base_lbl)
+        base_lbl = _WHITESPACE_RUN_RE.sub(" ", base_lbl).strip(" :-_|")
+        m_lbl_vs = _LBL_VS_RE.search(base_lbl)
         if m_lbl_vs:
-            lt1 = re.sub(r"(?i)^.*\b(?:esports|dota\s*2|cs2|lol|valorant|nba|nfl|nhl|mlb|soccer|tennis|sports_child_moneyline|sports_child_totals)\s+", "", m_lbl_vs.group(1)).strip(" :-_|")
-            lt2 = re.sub(r"(?i)\s+\b(?:yes|no)\b.*$", "", m_lbl_vs.group(2)).strip(" :-_|")
+            lt1 = _LBL_SPORT_PFX_RE.sub("", m_lbl_vs.group(1)).strip(" :-_|")
+            lt2 = _LBL_YESNO_SFX_RE.sub("", m_lbl_vs.group(2)).strip(" :-_|")
             if len(lt1) >= 2 and len(lt2) >= 2:
                 pair_lk = " VS ".join(sorted((lt1.upper(), lt2.upper())))
                 return f"EVTMATCH:{pair_lk}:{exp_i // 7200}"
@@ -2208,7 +2636,7 @@ def extract_canonical_event_keys(
         if not egk_body.upper().startswith(_SYNTH_EVENT_ID_PREFIXES):
             out.add(egk if ":" in egk else f"EVT:{egk}")
         else:
-            egk_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", egk_body, flags=re.IGNORECASE)
+            egk_clean = _UNWRESID_SFX_RE.sub("", egk_body)
             m_egk = _EMBEDDED_EVT_RE.match(egk_clean)
             if m_egk:
                 out.add(f"EVT:{m_egk.group(1)}")
@@ -2218,7 +2646,7 @@ def extract_canonical_event_keys(
         if not v:
             continue
         if v.upper().startswith(_SYNTH_EVENT_ID_PREFIXES):
-            v_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", v, flags=re.IGNORECASE)
+            v_clean = _UNWRESID_SFX_RE.sub("", v)
             m_emb = _EMBEDDED_EVT_RE.match(v_clean)
             if m_emb:
                 out.add(f"EVT:{m_emb.group(1)}")
@@ -2228,7 +2656,7 @@ def extract_canonical_event_keys(
     for dk_field in ("dedupe_key", "pair_dedupe_key", "box_id", "trade_id"):
         dk_v = str(cand.get(dk_field) or "").strip()
         if dk_v:
-            dk_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", dk_v, flags=re.IGNORECASE)
+            dk_clean = _UNWRESID_SFX_RE.sub("", dk_v)
             m_dk = _DEDUPE_EVT_RE.match(dk_clean) or _EMBEDDED_EVT_RE.match(dk_clean)
             if m_dk:
                 out.add(f"EVT:{m_dk.group(1)}")
@@ -2266,18 +2694,10 @@ def extract_canonical_event_keys(
     exp_i = int(float(cand.get("expiry_ts") or cand.get("leg_a_expiry_ts") or cand.get("candle_expiry_ts") or 0.0))
     q_txt = str(cand.get("question") or "").strip()
     if q_txt:
-        q_clean = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", q_txt)
-        m_vs = re.search(
-            r"([A-Za-z0-9 .'\-]{2,28}?)\s+vs\.?\s+([A-Za-z0-9 .'\-]{2,28}?)(?=\s*(?:[:\-–|?]|$|\b(?:map|game|set|total|handicap|spread|o/u|over|under|bo\d)\b))",
-            q_clean,
-            flags=re.IGNORECASE,
-        )
+        q_clean = _BRACKET_PAREN_RE.sub(" ", q_txt)
+        m_vs = _VS_Q_RE.search(q_clean)
         if m_vs:
-            t1 = re.sub(
-                r"(?i)^.*\b(?:(?:game|map|set)\s+\d+|handicap|spread|total|winner|moneyline)\s*[:\-–|]*\s*",
-                "",
-                m_vs.group(1),
-            ).strip(" :-_|")
+            t1 = _VS_T1_PFX_RE.sub("", m_vs.group(1)).strip(" :-_|")
             t2 = m_vs.group(2).strip(" :-_|")
             if len(t1) >= 2 and len(t2) >= 2:
                 pair_k = " VS ".join(sorted((t1.upper(), t2.upper())))
@@ -2286,25 +2706,17 @@ def extract_canonical_event_keys(
     lbl = str(cand.get("leg_a_label") or cand.get("title") or "").strip()
     ast_s = str(cand.get("asset") or "").strip().upper()
     if lbl and lbl.lower() not in {"lock", "bundle", "resid", "clinch_ws_snipe"}:
-        base_lbl = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", lbl)
-        base_lbl = re.sub(r"(?i)^\s*(?:exact\s+score|spread|total|over/under|o/u)\s*[:\-–|]*\s*", "", base_lbl)
-        base_lbl = re.sub(r"(?i)\b(?:game|map|set)\s+\d+\s*[:\-–|]*\s*", " ", base_lbl)
-        base_lbl = re.sub(r"(?i)\b(?:exact\s+score|dead\s+no|reward\s+carry\s+no)\b.*$", "", base_lbl)
-        base_lbl = re.sub(r"\s+\d+\s*[-:]\s*\d+(?:\s*°?[CFcf%])?\b", " vs ", base_lbl)
-        base_lbl = re.sub(r"[:\-–|]\s*(?:>=|<=|>|<)?\s*-?\d+(?:\.\d+)?\s*(?:°?[CFcf%]|pts|goals)?.*$", "", base_lbl)
-        base_lbl = re.sub(r"\s+", " ", base_lbl).strip(" :-_|")
-        m_lbl_vs = re.search(
-            r"([A-Za-z0-9 .'\-]{2,28}?)\s+vs\.?\s+([A-Za-z0-9 .'\-]{2,28}?)(?=\s*(?:[:\-–|?]|$|\b(?:total|handicap|spread|o/u|over|under|bo\d|winner|yes|no)\b))",
-            base_lbl,
-            flags=re.IGNORECASE,
-        )
+        base_lbl = _BRACKET_PAREN_RE.sub(" ", lbl)
+        base_lbl = _LBL_PFX_RE.sub("", base_lbl)
+        base_lbl = _LBL_GAME_RE.sub(" ", base_lbl)
+        base_lbl = _LBL_SFX_RE.sub("", base_lbl)
+        base_lbl = _LBL_SCORE_RE.sub(" vs ", base_lbl)
+        base_lbl = _LBL_TAIL_NUM_RE.sub("", base_lbl)
+        base_lbl = _WHITESPACE_RUN_RE.sub(" ", base_lbl).strip(" :-_|")
+        m_lbl_vs = _LBL_VS_RE.search(base_lbl)
         if m_lbl_vs:
-            lt1 = re.sub(
-                r"(?i)^.*\b(?:esports|dota\s*2|cs2|lol|valorant|nba|nfl|nhl|mlb|soccer|tennis|sports_child_moneyline|sports_child_totals)\s+",
-                "",
-                m_lbl_vs.group(1),
-            ).strip(" :-_|")
-            lt2 = re.sub(r"(?i)\s+\b(?:yes|no)\b.*$", "", m_lbl_vs.group(2)).strip(" :-_|")
+            lt1 = _LBL_SPORT_PFX_RE.sub("", m_lbl_vs.group(1)).strip(" :-_|")
+            lt2 = _LBL_YESNO_SFX_RE.sub("", m_lbl_vs.group(2)).strip(" :-_|")
             if len(lt1) >= 2 and len(lt2) >= 2:
                 pair_lk = " VS ".join(sorted((lt1.upper(), lt2.upper())))
                 out.add(f"EVTMATCH:{pair_lk}:{exp_i // 7200}")
@@ -5117,14 +5529,10 @@ def _bond1_boilerplate_fast_season_eligible(market_or_cand: Any, risk: Mapping[s
         full_txt = q_txt
     if _INDIV_OR_3WAY_ML_DISPUTE_RE.search(q_txt):
         return False
-    if re.search(r"\b(retire(?:s|d|ment)|walkover|disqualif|50[\s/-]*50)\b", full_txt, re.IGNORECASE):
+    if _DISPUTE_WALKOVER_RE.search(full_txt):
         return False
     reasons = set(risk.get("reasons") or ())
-    if reasons and not re.search(
-        r"\b(corner|over|under|o/u|total|spread|handicap|card|both\s+teams\s+to\s+score|btts)\b",
-        q_txt,
-        re.IGNORECASE,
-    ):
+    if reasons and not _BOILERPLATE_PROP_RE.search(q_txt):
         return False
     return True
 
@@ -7810,11 +8218,11 @@ async def run_protocol_v2_daemon_scan(
                         if not isinstance(mk_m, dict) or mk_m.get("closed") or mk_m.get("acceptingOrders") is False:
                             continue
                         q_m = str(mk_m.get("question") or mk_m.get("groupItemTitle") or "")
-                        m_cnt = re.search(r"(\d+)\s*\+|at\s+least\s+(\d+)|(\d+)\s+or\s+more", q_m, flags=re.I)
+                        m_cnt = _MENTION_CNT_RE.search(q_m)
                         if not m_cnt:
                             continue
                         thr = int(next(g for g in m_cnt.groups() if g is not None))
-                        stem = re.sub(r"\d+\s*\+|at\s+least\s+\d+|\d+\s+or\s+more", "", q_m.lower()).strip()
+                        stem = _MENTION_STEM_RE.sub("", q_m.lower()).strip()
                         raw_tks = mk_m.get("clobTokenIds")
                         toks_m = json.loads(raw_tks) if isinstance(raw_tks, str) and raw_tks.startswith("[") else (raw_tks if isinstance(raw_tks, list) else [])
                         end_s = str(mk_m.get("endDate") or ev_m.get("endDate") or "")
@@ -7885,6 +8293,79 @@ async def run_protocol_v2_daemon_scan(
                         )
     except Exception as exc_m1:
         logger.debug(f"Protocol V2 MENTION1 scan notice: {exc_m1}")
+
+    # Pillar 4b: RB-N5 Native `cumulativeMarkets=True` `CAL1` Deadline Monotonicity Ladders
+    try:
+        is_mocked_n5 = bool(getattr(daemon, "single_scan", False) or ("fetch_json" in getattr(daemon, "__dict__", {})))
+        rb_n5_evts = getattr(daemon, "_rb_n5_cumulative_events", None) or getattr(daemon, "_gamma_events_cache", None)
+        if not isinstance(rb_n5_evts, list) and (now - float(daemon.__dict__.get("_last_rb_n5_disc_ts", 0.0))) >= 180.0 and not is_mocked_n5:
+            daemon.__dict__["_last_rb_n5_disc_ts"] = now
+            gamma_u_n5 = getattr(daemon, "GAMMA_URL", "https://gamma-api.polymarket.com")
+            fetched_n5 = await daemon.fetch_json(f"{gamma_u_n5}/events?active=true&closed=false&limit=100", timeout=4.0)
+            if isinstance(fetched_n5, list):
+                rb_n5_evts = [ev for ev in fetched_n5 if isinstance(ev, Mapping) and bool(ev.get("cumulativeMarkets"))]
+                daemon.__dict__["_rb_n5_cumulative_events_cache"] = rb_n5_evts
+        elif not isinstance(rb_n5_evts, list):
+            rb_n5_evts = daemon.__dict__.get("_rb_n5_cumulative_events_cache")
+        if isinstance(rb_n5_evts, list) and rb_n5_evts:
+            n5_cands = extract_rb_n5_cumulative_cal1_candidates(rb_n5_evts, now_ts=now)
+            if n5_cands:
+                n5_toks = [
+                    tk
+                    for grp in n5_cands[:20]
+                    for lg in grp.get("legs", ())
+                    for tk in (str(lg.get("yes_token_id") or ""), str(lg.get("no_token_id") or ""))
+                    if tk
+                ]
+                n5_bks: Dict[str, Any] = {}
+                if hasattr(daemon, "fetch_books_batch") and n5_toks:
+                    n5_bks = await daemon.fetch_books_batch(list(dict.fromkeys(n5_toks))[:80], timeout=2.5)
+                for n5_hit in detect_rb_n5_cumulative_cal1_opportunities(n5_cands, n5_bks or {}, now_ts=now):
+                    opps_out.append({
+                        "sleeve": "CAL1_RB_N5_CUMULATIVE_BOX",
+                        "market": f"RB-N5 CAL1 {str(n5_hit.get('title') or '')[:38]}",
+                        "ask_vwap": float(n5_hit["cost_per_share"]),
+                        "p_model": 1.0,
+                        "net_edge": float(n5_hit["net_edge_per_share"]),
+                        "l1_usd": round(float(n5_hit.get("max_fillable_usd") or 20.0), 2),
+                    })
+                    if hasattr(daemon, "emit_live_two_leg_box_candidate"):
+                        ea_n5, lb_n5 = n5_hit["early_leg"], n5_hit["late_leg"]
+                        daemon.emit_live_two_leg_box_candidate(
+                            box_type="CALENDAR_DOMINANCE",
+                            sleeve_source="CAL1_RB_N5_CUMULATIVE_BOX",
+                            asset=str(n5_hit.get("asset") or "CAL1"),
+                            dedupe_key=f"RBN5_CAL1_{ea_n5['market_id']}_{lb_n5['market_id']}",
+                            leg_a={
+                                "token_id": ea_n5["yes_token_id"],
+                                "opp_token_id": ea_n5["no_token_id"],
+                                "label": f"CUM_EARLY_{int(ea_n5['end_ts'])}",
+                                "side": "YES",
+                                "market_id": ea_n5["market_id"],
+                                "condition_id": ea_n5["condition_id"],
+                                "fee_rate": ea_n5["fee_rate"],
+                                "fee_exponent": ea_n5["fee_exponent"],
+                                "end_ts": ea_n5["end_ts"],
+                            },
+                            leg_b={
+                                "token_id": lb_n5["no_token_id"],
+                                "opp_token_id": lb_n5["yes_token_id"],
+                                "label": f"CUM_LATE_{int(lb_n5['end_ts'])}",
+                                "side": "NO",
+                                "market_id": lb_n5["market_id"],
+                                "condition_id": lb_n5["condition_id"],
+                                "fee_rate": lb_n5["fee_rate"],
+                                "fee_exponent": lb_n5["fee_exponent"],
+                                "end_ts": lb_n5["end_ts"],
+                            },
+                            bk_a=n5_hit["bk_early_yes"],
+                            bk_b=n5_hit["bk_late_no"],
+                            close_ts=float(ea_n5["end_ts"]),
+                            now_ts=now,
+                            max_box_cost_override=0.992,
+                        )
+    except Exception as exc_n5:
+        logger.debug(f"Protocol V2 RB-N5 cumulative CAL1 notice: {exc_n5}")
 
     # Pillar 5: Strictly Pre-Match Dead-Ball Soccer (`DC1` 3-Way Parity & `LP_COMP1` Triangles, `now <= kickoff_ts - 300s`)
     try:
@@ -11681,17 +12162,85 @@ _TOPIC_OO_DISPUTE_PRICE: str = "0x5165909c3d1c01c5d1e121ac6f6d01dda1ba24bc9e1f97
 _ANC_MARKET_ID_RE = re.compile(r"market_id:\s*(\d{5,9})")
 
 
+def _p2_extract_mids_from_ws_events(
+    ws_events: Sequence[Mapping[str, Any]],
+) -> Tuple[List[str], List[str], int]:
+    proposed_ids: List[str] = []
+    disputed_ids: List[str] = []
+    seen_p: Set[str] = set()
+    seen_d: Set[str] = set()
+    max_bn = 0
+    for evt in ws_events or ():
+        if not isinstance(evt, Mapping) or bool(evt.get("quarantined_d001")):
+            continue
+        kind = str(evt.get("event_kind") or "").upper()
+        bn_v = int(evt.get("block_number") or 0)
+        if bn_v > max_bn:
+            max_bn = bn_v
+        mids_ev = list(evt.get("market_ids") or ())
+        single_mid = str(evt.get("market_id") or "").strip()
+        if single_mid:
+            mids_ev.append(single_mid)
+        for m_raw in mids_ev:
+            m_id = str(m_raw or "").strip()
+            if not m_id or m_id in {"6707502", "6707503"}:
+                continue
+            if kind in {"DISPUTED", "DISPUTE_PRICE", "DISPUTEPRICE"}:
+                if m_id not in seen_d:
+                    seen_d.add(m_id)
+                    disputed_ids.append(m_id)
+            elif kind in {"PROPOSED", "PROPOSE_PRICE", "PROPOSEPRICE"}:
+                if m_id not in seen_p:
+                    seen_p.add(m_id)
+                    proposed_ids.append(m_id)
+    return proposed_ids, disputed_ids, max_bn
+
+
+def _p2_rpc_post_json_sync(rpc: str, payload: Mapping[str, Any], *, timeout: float) -> Any:
+    body_bytes = _p2_dumps_json_bytes(payload)
+    # Preserve monkeypatched urllib tests while using persistent keep-alive requests.Session in live runs.
+    urlopen_is_patched = getattr(urllib.request.urlopen, "__module__", "urllib.request") != "urllib.request"
+    if not urlopen_is_patched:
+        sess = _get_oo_http_session()
+        if sess is not None:
+            resp = sess.post(rpc, data=body_bytes, timeout=timeout)
+            return _p2_loads_json_bytes(resp.content)
+    req = urllib.request.Request(
+        rpc,
+        body_bytes,
+        {"Content-Type": "application/json", "User-Agent": "Dominus/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r_obj:
+        return _p2_loads_json_bytes(r_obj.read())
+
+
 def _poll_polygon_oo_proposal_and_dispute_mids_sync(
     last_bn: int,
     rpc_url: Optional[str] = None,
     timeout: float = 4.0,
+    *,
+    scoped_logs_ws: Any = None,
 ) -> Tuple[int, List[str], List[str]]:
     """
     Polls Polygon `OptimisticOracleV2` (`MOOV2` + `OOV2`) `ProposePrice` and `DisputePrice` logs:
-      - Extracts every newly proposed `market_id` from UTF-8 `ancillaryData` (including low-volume
-        Challenger tennis, Europa League props, NCAA, and esports derivatives invisible to Gamma top-1500).
-      - Extracts any disputed `market_id` within seconds of block inclusion for instant cache eviction.
+      - Consumes low-latency `PolygonScopedLogsWs` drained events first when connected/cached.
+      - Uses persistent `requests.Session` + `_orjson.loads` on JSON-RPC catch-up (`eth_blockNumber` + `eth_getLogs`).
+      - Quarantines `D-001` `KMIA` (`6707502`/`6707503`) cleanly.
     """
+    ws_client = scoped_logs_ws if scoped_logs_ws is not None else _SHARED_P2_POLYGON_LOGS_WS
+    ws_proposed: List[str] = []
+    ws_disputed: List[str] = []
+    ws_max_bn = 0
+    if ws_client is not None and hasattr(ws_client, "drain_events"):
+        try:
+            ws_evts = ws_client.drain_events(max_items=128)
+            ws_proposed, ws_disputed, ws_max_bn = _p2_extract_mids_from_ws_events(ws_evts)
+            ws_healthy = bool(hasattr(ws_client, "is_healthy") and ws_client.is_healthy(max_silence_sec=12.0))
+            if ws_healthy and (ws_proposed or ws_disputed) and rpc_url is None:
+                return max(last_bn, ws_max_bn), ws_proposed, ws_disputed
+        except Exception:
+            pass
+
     rpcs = [
         r
         for r in (
@@ -11704,13 +12253,12 @@ def _poll_polygon_oo_proposal_and_dispute_mids_sync(
     ]
     for rpc in rpcs:
         try:
-            req_bn = urllib.request.Request(
+            bn_res = _p2_rpc_post_json_sync(
                 rpc,
-                json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_blockNumber", "params": []}).encode("utf-8"),
-                {"Content-Type": "application/json", "User-Agent": "Dominus/1.0"},
+                {"jsonrpc": "2.0", "id": 1, "method": "eth_blockNumber", "params": []},
+                timeout=timeout,
             )
-            with urllib.request.urlopen(req_bn, timeout=timeout) as r_b:
-                bn_hex = (json.loads(r_b.read()) or {}).get("result")
+            bn_hex = (bn_res or {}).get("result")
             if not bn_hex:
                 continue
             bn = int(str(bn_hex), 16)
@@ -11720,16 +12268,16 @@ def _poll_polygon_oo_proposal_and_dispute_mids_sync(
             else:
                 from_bn = max(last_bn - 2, bn - 240)
                 if from_bn > bn:
-                    return bn, [], []
+                    return max(bn, ws_max_bn), ws_proposed, ws_disputed
                 windows = [(from_bn, bn)]
             logs: List[Any] = []
             any_ok = False
             for w_from, w_to in windows:
                 if w_from > w_to:
                     continue
-                req_lg = urllib.request.Request(
-                    rpc,
-                    json.dumps(
+                try:
+                    lg_res = _p2_rpc_post_json_sync(
+                        rpc,
                         {
                             "jsonrpc": "2.0",
                             "id": 2,
@@ -11742,13 +12290,10 @@ def _poll_polygon_oo_proposal_and_dispute_mids_sync(
                                     "toBlock": hex(w_to),
                                 }
                             ],
-                        }
-                    ).encode("utf-8"),
-                    {"Content-Type": "application/json", "User-Agent": "Dominus/1.0"},
-                )
-                try:
-                    with urllib.request.urlopen(req_lg, timeout=timeout) as r_l:
-                        part = (json.loads(r_l.read()) or {}).get("result")
+                        },
+                        timeout=timeout,
+                    )
+                    part = (lg_res or {}).get("result")
                     if isinstance(part, list):
                         logs.extend(part)
                         any_ok = True
@@ -11756,10 +12301,10 @@ def _poll_polygon_oo_proposal_and_dispute_mids_sync(
                     continue
             if not any_ok:
                 continue
-            proposed_ids: List[str] = []
-            disputed_ids: List[str] = []
-            seen_p: Set[str] = set()
-            seen_d: Set[str] = set()
+            proposed_ids: List[str] = list(ws_proposed)
+            disputed_ids: List[str] = list(ws_disputed)
+            seen_p: Set[str] = set(proposed_ids)
+            seen_d: Set[str] = set(disputed_ids)
             for lg in logs:
                 if not isinstance(lg, Mapping):
                     continue
@@ -11770,6 +12315,8 @@ def _poll_polygon_oo_proposal_and_dispute_mids_sync(
                     continue
                 raw_txt = bytes.fromhex(data_hex[2:]).decode("utf-8", errors="ignore")
                 for m_id in _ANC_MARKET_ID_RE.findall(raw_txt):
+                    if m_id in {"6707502", "6707503"}:
+                        continue
                     if t0 == _TOPIC_OO_DISPUTE_PRICE:
                         if m_id not in seen_d:
                             seen_d.add(m_id)
@@ -11778,10 +12325,10 @@ def _poll_polygon_oo_proposal_and_dispute_mids_sync(
                         if m_id not in seen_p:
                             seen_p.add(m_id)
                             proposed_ids.append(m_id)
-            return bn, proposed_ids, disputed_ids
+            return max(bn, ws_max_bn), proposed_ids, disputed_ids
         except Exception:
             continue
-    return last_bn, [], []
+    return max(last_bn, ws_max_bn), ws_proposed, ws_disputed
 
 
 async def augment_uma_proposed_from_universe_and_polygon(
@@ -12521,6 +13068,17 @@ def desired_market_ws_tokens_impl(harvester: Any, now_ts: Optional[float] = None
             _trk_ws = getattr(harvester, "_stage_b_decay_tracker", None) or GLOBAL_DECAY_TRACKER
             for tk_d in _trk_ws.watched_token_ids(limit=64):
                 toks.append(tk_d)
+        except Exception:
+            pass
+    if bool(rb_gov.get("enable_dormant_fast_rescan_ws", True)):
+        try:
+            from src.polymarket_research.full_throttle_pipeline import load_dormant_fast_rescan_tokens
+
+            _rescan_path = getattr(harvester, "dormant_fast_rescan_path", None)
+            _rescan_age = float(rb_gov.get("dormant_fast_rescan_max_age_sec", 1800.0) or 1800.0)
+            for _tk_rs in load_dormant_fast_rescan_tokens(max_age_sec=_rescan_age, path=_rescan_path, now_ts=now_f):
+                if _tk_rs:
+                    toks.append(_tk_rs)
         except Exception:
             pass
     return list(dict.fromkeys(toks))[:total_cap]
@@ -14295,14 +14853,13 @@ def _hv__finish_single_leg_lock(
     if (
         not self.dry_run
         and collat_f < _core_clip_1l - 0.50
-        and _cand_net_1l <= 0.98005
+        and _cand_net_1l <= 0.99205
         and getattr(self.executor, "client", None) is not None
         and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
         and "execute_snipe_order" not in getattr(self.executor, "__dict__", {})
         and bool(_gov_rb_1l.get("enable_zero_loss_open_carry_velocity_recycle", True))
     ):
-        from src.polymarket_research.stage_c_zero_loss_velocity import recycle_open_zero_loss_carry_for_fast_arb
-        _rec_1l = recycle_open_zero_loss_carry_for_fast_arb(
+        _rec_1l = try_recycle_open_carry_for_fast_arb_v2(
             self,
             needed_cash_gap_usd=max(0.0, _core_clip_1l - collat_f),
             challenger_net_cost=_cand_net_1l,
@@ -14692,14 +15249,13 @@ def _hv__finish_negrisk_convert_arb(
     if (
         not self.dry_run
         and collat_f < _core_clip_nr - 0.50
-        and _cand_net_nr <= 0.98005
+        and _cand_net_nr <= 0.99205
         and getattr(self.executor, "client", None) is not None
         and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
         and "execute_snipe_order" not in getattr(self.executor, "__dict__", {})
         and bool(_gov_rb_nr.get("enable_zero_loss_open_carry_velocity_recycle", True))
     ):
-        from src.polymarket_research.stage_c_zero_loss_velocity import recycle_open_zero_loss_carry_for_fast_arb
-        _rec_nr = recycle_open_zero_loss_carry_for_fast_arb(
+        _rec_nr = try_recycle_open_carry_for_fast_arb_v2(
             self,
             needed_cash_gap_usd=max(0.0, _core_clip_nr - collat_f),
             challenger_net_cost=_cand_net_nr,

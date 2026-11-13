@@ -181,6 +181,7 @@ DEPLOY_MANIFEST: Tuple[str, ...] = (
     "src/polymarket_research/redeem_settled_positions.py",
     "src/polymarket_research/v6_restriction_and_capital_allocator.py",
     "src/polymarket_research/order_sizing_experiments.py",
+    "src/polymarket_research/riskless_fast_feeds.py",
     "scripts/alpha124_status.py",
     "scripts/backtest_alpha_124.py",
     "scripts/benchmark_polymarket_13stage_latency.py",
@@ -279,6 +280,11 @@ DEPLOY_MANIFEST: Tuple[str, ...] = (
     "tests/test_v6_portfolio_risk_allocator.py",
     "tests/test_v6_full_system_qa.py",
     "tests/test_v6_system_optimizations.py",
+    "tests/test_v6_expansion_shadow_wiring.py",
+    "tests/test_v62_feeds_and_ws_upgrades.py",
+    "tests/test_v62_latency_and_async_d1.py",
+    "tests/test_v62_shadow_engines_and_systemd.py",
+    "tests/test_v62_stage_c_and_bridge_upgrades.py",
     "tests/test_zero_trust_forensic_audit.py",
 )
 
@@ -407,7 +413,8 @@ def run_apply(
     pre_rem = inspect_remote_state(host, remote_root, DEPLOY_MANIFEST)
     pre_hashes = pre_rem.get("hashes") or {}
     cv_code_changed = any(
-        "cross_venue" in rel and pre_hashes.get(rel) != local_digests.get(rel)
+        ("cross_venue" in rel or "riskless_expansion_v6_engines" in rel or "honest_riskless_backtester" in rel)
+        and pre_hashes.get(rel) != local_digests.get(rel)
         for rel in DEPLOY_MANIFEST
     )
     tar_bytes = build_manifest_tar_gz(DEPLOY_MANIFEST)

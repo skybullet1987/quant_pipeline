@@ -132,6 +132,11 @@ except ImportError:
     except ImportError:
         PolymarketChainlinkLiveStream = None  # type: ignore
 try:
+    from src.polymarket_research.riskless_fast_feeds import PolygonScopedLogsWs, PythHermesStream
+except Exception:
+    PolygonScopedLogsWs = None  # type: ignore
+    PythHermesStream = None  # type: ignore
+try:
     from src.polymarket_research.economic_attribution_ledger import (
         GLOBAL_DECAY_TRACKER as _STAGE_B_DECAY_TRACKER,
         emit_funnel_event as _stage_b_emit_funnel,
@@ -174,6 +179,7 @@ from src.polymarket_research.tradfi_sports_zero_fee_engine import (
     detect_pyth_close_vs_hit_boxes,
     evaluate_pyth_session_barrier_no_lock,
     evaluate_pyth_session_close_lock,
+    fetch_pyth_intraday_or_spot_sync,
     fetch_yahoo_1m_intraday_sync,
     is_same_continuous_session,
     parse_multi_sport_corridor_event,
@@ -210,8 +216,10 @@ from src.polymarket_research.macro_counting_ctf_engine import (
     fetch_aaa_national_gas_sync,
     fetch_xtracker_user_stats_sync,
     find_cross_event_bitmask_boxes,
+    is_in_scheduled_macro_catalyst_window,
     parse_counting_slate_event,
     parse_gas_daily_bracket,
+    poll_macro_catalyst_feeds_sync,
     walk_equal_shares_overround_bids,
     walk_position_overround_bid_unwind,
 )
@@ -3407,6 +3415,7 @@ class Alpha124ShadowDaemon:
                     "fee_rate": round(f_r, 6) if is_fee_mkt else 0.0,
                     "fee_exponent": round(f_e, 4),
                     "fees_enabled": is_fee_mkt,
+                    "holding_rewards_enabled": bool(mkt.get("holdingRewardsEnabled") or ev.get("holdingRewardsEnabled")),
                     "neg_risk": is_nr,
                     "end_ts": float(end_ts),
                     "asset": asset_tag,
@@ -10087,6 +10096,15 @@ class Alpha124ShadowDaemon:
                 extra = pos.get("extra") or {}
                 legs = extra.get("legs") or []
                 close_ts_f = float(pos["close_ts"])
+                if extra.get("v6_instant_realize"):
+                    if now >= close_ts_f:
+                        to_close.append((pid, "SETTLED_V6_INSTANT_LOCK", float(extra.get("guaranteed_payout") or pos.get("p_model_entry") or 1.0), 0.0))
+                    continue
+                all_pm_legs = bool(legs) and all(lg.get("token_id") and str(lg.get("venue", "polymarket")).lower() == "polymarket" for lg in legs)
+                if not all_pm_legs:
+                    if now >= close_ts_f and extra.get("guaranteed_payout"):
+                        to_close.append((pid, "SETTLED_V6_GUARANTEED_FLOOR", float(extra["guaranteed_payout"]), 0.0))
+                    continue
                 if now < close_ts_f + 20.0:
                     bks_m = None
                     if (now - float(pos.get("_last_book_poll_ts") or 0.0)) >= 30.0 and legs:
@@ -10130,10 +10148,12 @@ class Alpha124ShadowDaemon:
                     ]
                 )
                 if resolved_vals and all(v is not None for v in resolved_vals):
-                    total_pay = round(sum(float(v) for v in resolved_vals if v is not None), 4)
+                    total_pay = round(sum(float(v) for v in resolved_vals if v is not None) + float(extra.get("guaranteed_coupon_per_share") or 0.0), 4)
                     to_close.append((pid, "SETTLED_MULTI_LEG_ARB", total_pay, 0.0))
                 elif sleeve == "P1_PREOPEN_MAKER_STRADDLE" and now >= close_ts_f + 900.0:
                     to_close.append((pid, "SETTLED_COMPLETE_SET_1X", 1.0, 0.0))
+                elif extra.get("v6_state_payoff_table") and extra.get("guaranteed_payout") and now >= close_ts_f + 900.0:
+                    to_close.append((pid, "SETTLED_V6_GUARANTEED_FLOOR", float(extra["guaranteed_payout"]), 0.0))
                 continue
 
             # 0B. Dedicated hold-to-expiry & authoritative Chainlink TWAP settlement for S2_EXACT_TWAP_LOCK
@@ -10440,6 +10460,27 @@ class Alpha124ShadowDaemon:
                     and round(pnl_1k, 2) > 0.0
                     and round(adj_pnl_1k, 2) > 0.0
                     and not is_shadow_sleeve_quarantined(sl)
+                    and (
+                        sl != "XV_SUBSET_NO_BOX"
+                        or sum(
+                            1
+                            for p in closed_sl
+                            if not bool((p.get("extra") or {}).get("neg_risk_augmented", False))
+                            and (
+                                str((p.get("extra") or {}).get("box_type") or "") == "NEGRISK_2LEG"
+                                or len((p.get("extra") or {}).get("legs") or []) == 2
+                            )
+                            and float((p.get("tier_pnls_usd") or {}).get("T1000", 0.0) or 0.0) > 0.0
+                        )
+                        >= 8
+                    )
+                    and sl not in {
+                        "XV_FX_INVARIANT_CAD_USD_BOX",
+                        "DERIBIT_VERTICAL_SUPER_REP",
+                        "XV_HALFTIME_FREEZE_CORRIDOR",
+                        "HEDGED_PRESPLIT_CONV_GUN",
+                        "YIELD_STACKED_CARRY_BOX",
+                    }
                 ),
             }
 
@@ -10715,12 +10756,24 @@ class Alpha124ShadowDaemon:
             return None
         yh_sym, _, _, _, vol_floor = cfg
         cached = self.pyth_intraday_cache.get(yh_sym)
-        if cached is not None and (now_ts - cached[0]) < 90.0:
-            return cached[1]
-        res = await asyncio.to_thread(fetch_yahoo_1m_intraday_sync, yh_sym, vol_floor)
-        if res is not None:
-            self.pyth_intraday_cache[yh_sym] = (now_ts, res)
-        return res
+        y_res = cached[1] if (cached is not None and (now_ts - cached[0]) < 90.0) else None
+        if y_res is None:
+            y_res = await asyncio.to_thread(fetch_yahoo_1m_intraday_sync, yh_sym, vol_floor)
+            if y_res is not None:
+                self.pyth_intraday_cache[yh_sym] = (now_ts, y_res)
+        fast_res = await asyncio.to_thread(
+            fetch_pyth_intraday_or_spot_sync,
+            asset,
+            yh_sym,
+            vol_floor,
+            pyth_stream=getattr(self, "_pyth_hermes_stream", None),
+            chainlink_stream=getattr(self, "_chainlink_ws", None),
+            cached_yahoo=y_res,
+            yahoo_ttl_sec=90.0,
+            use_pyth_hermes=not bool(getattr(self, "single_scan", False)),
+            now_ts=now_ts,
+        )
+        return fast_res if fast_res is not None else y_res
 
     async def scan_tradfi_and_sports_markets(self, opps_out: List[Dict[str, Any]]) -> None:
         """
@@ -10887,6 +10940,9 @@ class Alpha124ShadowDaemon:
 
             # CM_SHOCK_PYTH_CATALYST: fee-exact scheduled NY macro release (08:30 CPI/NFP, 10:30 EIA, 14:00 FOMC) Pyth jump sniper
             prev_sp = self.prev_pyth_spots.get(r.asset, 0.0)
+            if in_active_window and not self.single_scan and is_in_scheduled_macro_catalyst_window(now)[0] and (now - float(getattr(self, "_last_macro_rss_ts", 0.0))) >= 2.0:
+                self._last_macro_rss_ts = now
+                await asyncio.to_thread(poll_macro_catalyst_feeds_sync, now)
             if in_active_window and exact_ok and same_sess and not already_hit and prev_sp > 0.0:
                 sh_ev = evaluate_pyth_catalyst_shock(r.asset, prev_sp, spot_p, r.strike, r.direction, eff_hrs, float(fd["sigma_session"]), now)
                 if sh_ev.get("eligible"):
@@ -12645,18 +12701,29 @@ class Alpha124ShadowDaemon:
             if any(ms.sport == sp_k and (ms.start_ts - 900.0) <= now <= (ms.start_ts + 6.0 * 3600.0) for ms in self.multi_sport_games.values()):
                 sports_to_poll.append(sp_k)
         boards_now: Dict[str, List[LiveMultiSportGame]] = {}
+        def _ms_ttl(sp_k: str) -> float:
+            b_ent = self.live_multisport_boards.get(sp_k)
+            gms = (b_ent[1] or []) if b_ent else []
+            has_live = any(getattr(gm, "state", "") == "in" for gm in gms)
+            is_eg = any(
+                getattr(gm, "state", "") == "in"
+                and (float(getattr(gm, "clock_sec", 9999) or 9999) <= 125.0 or bool(getattr(gm, "is_halftime", False)))
+                for gm in gms
+            )
+            try:
+                from src.polymarket_research.polymarket_direct_feeds import compute_adaptive_sports_poll_interval_sec
+                return min(20.0, float(compute_adaptive_sports_poll_interval_sec(is_endgame_or_halftime=is_eg, has_live_games=has_live)))
+            except Exception:
+                return 0.75 if is_eg else (5.5 if has_live else 20.0)
+
         fetch_sp_list = [
             sp_k for sp_k in sports_to_poll
             if sp_k not in self.live_multisport_boards
-            or (now - self.live_multisport_boards[sp_k][0]) >= (
-                6.0
-                if any(getattr(gm, "state", "") == "in" for gm in (self.live_multisport_boards[sp_k][1] or []))
-                else 20.0
-            )
+            or (now - self.live_multisport_boards[sp_k][0]) >= _ms_ttl(sp_k)
         ]
+        _use_df_ms = not self.single_scan and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_official_league_direct_feeds", True))
         if fetch_sp_list:
             fetched_bds = await asyncio.gather(*(asyncio.to_thread(fetch_espn_multisport_board_sync, sp_k) for sp_k in fetch_sp_list))
-            _use_df_ms = not self.single_scan and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_official_league_direct_feeds", True))
             for sp_k, bd_res in zip(fetch_sp_list, fetched_bds):
                 if _use_df_ms and sp_k in ("NHL", "MLB"):
                     try:
@@ -12670,6 +12737,17 @@ class Alpha124ShadowDaemon:
                     except Exception:
                         pass
                 self.live_multisport_boards[sp_k] = (now, bd_res)
+        if _use_df_ms:
+            for _tour in ("ATP", "WTA"):
+                _prev_t = self.live_multisport_boards.get(_tour)
+                _t_live = any((gm.get("state") == "in") if isinstance(gm, dict) else False for gm in ((_prev_t[1] or []) if _prev_t else []))
+                if _prev_t is None or (now - _prev_t[0]) >= (1.0 if _t_live else 30.0):
+                    try:
+                        from src.polymarket_research.polymarket_direct_feeds import fetch_atp_wta_live_scores_sync
+                        _t_res = await asyncio.to_thread(fetch_atp_wta_live_scores_sync, _tour.lower())
+                        self.live_multisport_boards[_tour] = (now, _t_res)
+                    except Exception:
+                        pass
         for sp_k in sports_to_poll:
             if sp_k in self.live_multisport_boards:
                 boards_now[sp_k] = self.live_multisport_boards[sp_k][1]
@@ -14810,7 +14888,23 @@ class Alpha124ShadowDaemon:
         now = float(now_ts if now_ts is not None else time.time())
         if not self.nba_games:
             return
-        poll_ttl = 5.5 if self.has_live_nba_window(now) else 120.0
+        _has_live_nba = self.has_live_nba_window(now)
+        _nba_eg = any(
+            getattr(g, "state", "") == "in"
+            and (
+                (int(getattr(g, "period", 0) or 0) >= 4 and float(getattr(g, "clock_sec", 9999) or 9999) <= 125.0)
+                or (int(getattr(g, "period", 0) or 0) == 2 and float(getattr(g, "clock_sec", 9999) or 9999) <= 15.0)
+                or bool(getattr(g, "is_halftime", False))
+            )
+            for g in (self.live_nba_board or [])
+        )
+        try:
+            from src.polymarket_research.polymarket_direct_feeds import compute_adaptive_sports_poll_interval_sec
+            poll_ttl = float(compute_adaptive_sports_poll_interval_sec(is_endgame_or_halftime=_nba_eg, has_live_games=_has_live_nba))
+            if not _has_live_nba:
+                poll_ttl = max(60.0, poll_ttl)
+        except Exception:
+            poll_ttl = 0.75 if _nba_eg else (5.5 if _has_live_nba else 120.0)
         if self.single_scan or not self.live_nba_board or (now - self.last_espn_board_ts) >= poll_ttl:
             board = await asyncio.to_thread(fetch_espn_nba_scoreboard_sync)
             if not self.single_scan and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_official_league_direct_feeds", True)):
@@ -15273,6 +15367,34 @@ class Alpha124ShadowDaemon:
                 self._bg_clob_ws_task = asyncio.create_task(self._run_clob_d1_ws_loop())
             if not self.single_scan and self._chainlink_ws is not None and (self._bg_chainlink_ws_task is None or self._bg_chainlink_ws_task.done()):
                 self._bg_chainlink_ws_task = asyncio.create_task(self._chainlink_ws.run_forever())
+            if not self.single_scan and PythHermesStream is not None:
+                try:
+                    if getattr(self, "_pyth_hermes_stream", None) is None:
+                        self._pyth_hermes_stream = PythHermesStream()
+                    _ph_t = getattr(self, "_bg_pyth_hermes_task", None)
+                    if _ph_t is None or _ph_t.done():
+                        self._bg_pyth_hermes_task = asyncio.create_task(self._pyth_hermes_stream.run_forever())
+                except Exception:
+                    pass
+            if not self.single_scan and PolygonScopedLogsWs is not None:
+                try:
+                    if getattr(self, "_polygon_logs_ws", None) is None:
+                        self._polygon_logs_ws = PolygonScopedLogsWs()
+                        try:
+                            from src.polymarket_research.uma_nba_endgame_engine import set_shared_polygon_logs_ws
+                            set_shared_polygon_logs_ws(self._polygon_logs_ws)
+                        except Exception:
+                            pass
+                        try:
+                            from src.polymarket_research.riskless_protocol_v2_expansion import set_shared_protocol_v2_polygon_logs_ws
+                            set_shared_protocol_v2_polygon_logs_ws(self._polygon_logs_ws)
+                        except Exception:
+                            pass
+                    _pl_t = getattr(self, "_bg_polygon_logs_ws_task", None)
+                    if _pl_t is None or _pl_t.done():
+                        self._bg_polygon_logs_ws_task = asyncio.create_task(self._polygon_logs_ws.run_forever())
+                except Exception:
+                    pass
             _gatling_task = getattr(self, "_bg_gatling_fast_task", None)
             if not self.single_scan and (_gatling_task is None or _gatling_task.done()):
                 self._bg_gatling_fast_task = asyncio.create_task(self._run_gatling_fast_gun_loop())

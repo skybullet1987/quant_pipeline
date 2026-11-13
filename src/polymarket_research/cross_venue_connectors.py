@@ -824,8 +824,11 @@ class PolymarketMarketWsState:
         self.ws_frames_received: int = 0
 
     @staticmethod
-    def build_subscribe_frame(asset_ids: Sequence[str]) -> str:
-        return json.dumps({"assets_ids": list(asset_ids), "type": "market"})
+    def build_subscribe_frame(asset_ids: Sequence[str], *, custom_feature_enabled: bool = True) -> str:
+        payload: Dict[str, Any] = {"assets_ids": list(asset_ids), "type": "market"}
+        if custom_feature_enabled:
+            payload["custom_feature_enabled"] = True
+        return json.dumps(payload)
 
     @staticmethod
     def build_heartbeat_frame() -> str:
@@ -3062,9 +3065,12 @@ class PolymarketConnector(BaseReadOnlyVenueConnector):
             ev_slug = ""
             if isinstance(events, list) and events and isinstance(events[0], Mapping):
                 ev_slug = str(events[0].get("slug") or "")
-            neg_risk = bool(raw.get("negRisk") or raw.get("enableNegRisk"))
+            neg_risk = bool(raw.get("negRisk") or raw.get("enableNegRisk") or raw.get("negRiskAugmented"))
             pm.neg_risk = neg_risk
-            pm.partition_group_id = str(raw.get("negRiskMarketID") or ev_slug or "")
+            # STRICT MUTUAL-EXCLUSION INVARIANT: Only assign partition_group_id when negRisk is active!
+            # Non-NegRisk Gamma event slugs group independent sub-markets (e.g. Map 1 Winner + Map 2 Winner,
+            # Moneyline + Spread + O/U, or cumulative strike ladders) that can resolve YES simultaneously.
+            pm.partition_group_id = str(raw.get("negRiskMarketID") or ev_slug or "") if neg_risk else ""
             pm.partition_label = str(raw.get("groupItemTitle") or pm.title)
             pm.tick_size = float(raw.get("orderPriceMinTickSize") or 0.001)
             pm.collateral_asset = COLLATERAL_BY_VENUE[self.venue]
@@ -5884,5 +5890,137 @@ class ProbableMarketsConnector(BaseReadOnlyVenueConnector):
         self.snapshot.last_success_unix = time.time()
         self.snapshot.downtime_accumulated_sec = round(self.breaker.accumulated_downtime_sec, 2)
         self.snapshot.protocol_detail = "PROBABLE_BNB_CTF_PUBLIC_MARKETS+CLOB_BOOK_L2"
+        return out
+
+
+KALSHI_PUBLIC_API_URL = "https://api.elections.kalshi.com/trade-api/v2"
+
+
+class KalshiPublicConnector:
+    """
+    Strictly read-only public REST market-data connector for Kalshi (`D-008` / `D-011` compliant):
+      - `execution_blocked = True`, `jurisdiction = "CA_ON_PROHIBITED"`: NEVER submits orders,
+        NEVER connects authenticated RSA-PSS WebSockets, and NEVER permits live routing from `CA-ON`.
+      - Uses unauthenticated public REST `/trade-api/v2/markets` and `/trade-api/v2/markets/{ticker}/orderbook`
+        strictly as an independent cross-venue reference/confirmation feed.
+    """
+
+    venue: str = "kalshi"
+    execution_blocked: bool = True
+    jurisdiction: str = "CA_ON_PROHIBITED"
+    is_read_only_public_oracle: bool = True
+
+    def __init__(self, *, max_markets: int = 100, max_hydrated_books: int = 24) -> None:
+        self.max_markets = max(1, min(200, int(max_markets)))
+        self.max_hydrated_books = max(0, min(50, int(max_hydrated_books)))
+        self.snapshot = VenueOperationalSnapshot(
+            venue=self.venue,
+            authorization_state="BLOCKED_JURISDICTION",
+            connectivity_state="CONNECTED_REST",
+            health_state="IDLE",
+            verified_outcome_state="RESTRICTED",
+            scope_permissions={"execution": "CA_ON_PROHIBITED", "public_rest": "READ_ONLY"},
+            protocol_detail="KALSHI_PUBLIC_REST_READONLY_ORACLE",
+        )
+
+    @staticmethod
+    def parse_public_market(raw_mkt: Mapping[str, Any], book_payload: Optional[Mapping[str, Any]] = None) -> Optional[NormalizedBinaryMarket]:
+        ticker = str(raw_mkt.get("ticker") or "").strip()
+        if not ticker:
+            return None
+        status = str(raw_mkt.get("status") or "").lower()
+        if status in ("settled", "finalized", "closed", "determined"):
+            return None
+        yes_asks: List[OrderLevel] = []
+        no_asks: List[OrderLevel] = []
+        yes_bids: List[OrderLevel] = []
+        no_bids: List[OrderLevel] = []
+        ob = (book_payload or {}).get("orderbook") if isinstance(book_payload, Mapping) else None
+        if isinstance(ob, Mapping):
+            # Kalshi public orderbook emits YES bids and NO bids in cents [1..99];
+            # a YES bid at p implies a NO ask at (1 - p), and vice versa.
+            for lvl in ob.get("yes") or ():
+                if isinstance(lvl, (list, tuple)) and len(lvl) >= 2:
+                    px = float(lvl[0]) / 100.0
+                    sz = float(lvl[1])
+                    if 0.0 < px < 1.0 and sz > 0.0:
+                        yes_bids.append(OrderLevel(px, sz))
+                        no_asks.append(OrderLevel(round(1.0 - px, 4), sz))
+            for lvl in ob.get("no") or ():
+                if isinstance(lvl, (list, tuple)) and len(lvl) >= 2:
+                    px = float(lvl[0]) / 100.0
+                    sz = float(lvl[1])
+                    if 0.0 < px < 1.0 and sz > 0.0:
+                        no_bids.append(OrderLevel(px, sz))
+                        yes_asks.append(OrderLevel(round(1.0 - px, 4), sz))
+        else:
+            yb = float(raw_mkt.get("yes_bid") or 0) / 100.0
+            ya = float(raw_mkt.get("yes_ask") or 0) / 100.0
+            nb = float(raw_mkt.get("no_bid") or 0) / 100.0
+            na = float(raw_mkt.get("no_ask") or 0) / 100.0
+            if 0.0 < yb < 1.0:
+                yes_bids.append(OrderLevel(yb, 1.0))
+            if 0.0 < ya < 1.0:
+                yes_asks.append(OrderLevel(ya, 1.0))
+            if 0.0 < nb < 1.0:
+                no_bids.append(OrderLevel(nb, 1.0))
+            if 0.0 < na < 1.0:
+                no_asks.append(OrderLevel(na, 1.0))
+
+        yes_asks.sort(key=lambda l: l.price)
+        no_asks.sort(key=lambda l: l.price)
+        yes_bids.sort(key=lambda l: -l.price)
+        no_bids.sort(key=lambda l: -l.price)
+        return NormalizedBinaryMarket(
+            venue="kalshi",
+            market_id=ticker,
+            slug=ticker.lower(),
+            title=str(raw_mkt.get("title") or ticker),
+            category=str(raw_mkt.get("category") or "other").lower(),
+            yes_asks=yes_asks,
+            yes_bids=yes_bids,
+            no_asks=no_asks,
+            no_bids=no_bids,
+            fee_rate_bps=0.0,
+            fee_enabled=True,
+            min_shares=1.0,
+            supports_split_merge=False,
+            tick_size=0.01,
+            lot_size=1.0,
+            quote_ts_ms=int(time.time() * 1000),
+            collateral_asset="USD",
+            data_origin="LIVE_VERIFIED",
+            is_synthetic_depth=(ob is None),
+        )
+
+    async def poll_public_markets(self, transport: Any) -> List[NormalizedBinaryMarket]:
+        res = await transport.get(
+            self.venue,
+            f"{KALSHI_PUBLIC_API_URL}/markets?status=open&limit={self.max_markets}",
+        )
+        if res.status != 200 or not isinstance(res.data, Mapping):
+            self.snapshot.health_state = "FAULTED"
+            return []
+        raw_mkts = res.data.get("markets") or []
+        out: List[NormalizedBinaryMarket] = []
+        for idx, rm in enumerate(raw_mkts):
+            if not isinstance(rm, Mapping):
+                continue
+            ob_data = None
+            if idx < self.max_hydrated_books and rm.get("ticker"):
+                ob_res = await transport.get(
+                    self.venue,
+                    f"{KALSHI_PUBLIC_API_URL}/markets/{urllib.parse.quote(str(rm['ticker']))}/orderbook",
+                )
+                if ob_res.status == 200 and isinstance(ob_res.data, Mapping):
+                    ob_data = ob_res.data
+            parsed = self.parse_public_market(rm, ob_data)
+            if parsed is not None:
+                out.append(parsed)
+        self.snapshot.markets_discovered = len(raw_mkts)
+        self.snapshot.active_markets = len(out)
+        self.snapshot.live_validated = True
+        self.snapshot.health_state = "HEALTHY" if out else "EMPTY_BOOK"
+        self.snapshot.last_success_unix = time.time()
         return out
 

@@ -1561,3 +1561,138 @@ def evaluate_weather_event_slate(
         "full_slate_arb": full_slate,
         "subset_basket": best_subset,
     }
+
+
+# ---------------------------------------------------------------------------
+# v6.2 Weather Feed Upgrades: NWS `api.weather.gov` 5m, `DSM`/`CLI`, Spatial QC
+# ---------------------------------------------------------------------------
+
+NWS_API_LATEST_OBS_TMPL = "https://api.weather.gov/stations/{icao}/observations/latest"
+NWS_API_CLI_LIST_TMPL = "https://api.weather.gov/products/types/CLI/locations/{wfo}"
+NWS_API_USER_AGENT = "DominusWeatherEngine/1.0 (contact@dominus-research.local)"
+
+WEATHER_NEIGHBOR_STATIONS: Dict[str, Tuple[str, ...]] = {
+    "KLGA": ("KJFK", "KEWR", "KTEB"),
+    "KJFK": ("KLGA", "KEWR"),
+    "KORD": ("KMDW", "KPWK"),
+    "KMDW": ("KORD",),
+    "KMIA": ("KOPF", "KFLL"),
+    "KSEA": ("KBFI", "KPAE"),
+    "KDFW": ("KDAL", "KAFW"),
+    "KDAL": ("KDFW",),
+    "KLAX": ("KSMO", "KBUR"),
+    "EGLC": ("EGLL", "EGKB"),
+    "EGLL": ("EGLC",),
+}
+
+_NWS_CLI_MAX_RE = re.compile(r"TEMPERATURE\s*\(F\).*?MAXIMUM\s+(-?\d+)\s+", re.IGNORECASE | re.DOTALL)
+_NWS_CLI_MIN_RE = re.compile(r"TEMPERATURE\s*\(F\).*?MINIMUM\s+(-?\d+)\s+", re.IGNORECASE | re.DOTALL)
+_NWS_DSM_MAX_RE = re.compile(r"\bMS\s+\d+\s+\d{4}/\d{2}/\d{2}\b.*?\b(-?\d{1,3})/(-?\d{1,3})\b")
+
+
+def fetch_nws_latest_observation_sync(
+    icao: str,
+    tz_name: str = "America/New_York",
+    *,
+    timeout: float = 3.0,
+) -> Optional[MetarObservation]:
+    """
+    Fetches 5-min ASOS latest observation from `api.weather.gov/stations/{icao}/observations/latest` (`$0/mo`).
+    Strictly preserves `D-006` (`$` maintenance flag, missing `T`-group `±0.55°C` safety cushion, `SPECI` ignored).
+    """
+    st = str(icao or "").strip().upper()
+    if len(st) != 4:
+        return None
+    url = NWS_API_LATEST_OBS_TMPL.format(icao=st)
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": NWS_API_USER_AGENT, "Accept": "application/geo+json"},
+        )
+        raw_json = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8", errors="ignore"))
+        props = raw_json.get("properties") if isinstance(raw_json, dict) else None
+        if not isinstance(props, dict):
+            return None
+        raw_metar = str(props.get("rawMessage") or "").strip()
+        ts_str = str(props.get("timestamp") or "").strip()
+        dt_utc = datetime.fromisoformat(ts_str.replace("Z", "+00:00")) if ts_str else datetime.now(timezone.utc)
+        if raw_metar:
+            parsed = parse_metar_line(raw_metar, st, dt_utc, tz_name, explicit_utc_dt=dt_utc)
+            if parsed is not None:
+                return parsed
+        # Fallback if rawMessage absent or SPECI: never override `D-006` cushion when raw T-group is missing
+        if raw_metar.upper().startswith("SPECI ") or " SPECI " in raw_metar.upper() or "$" in raw_metar:
+            return None
+        temp_obj = props.get("temperature") if isinstance(props.get("temperature"), dict) else {}
+        t_val = temp_obj.get("value")
+        if t_val is None:
+            return None
+        t_c = float(t_val)
+        local_dt = dt_utc.astimezone(ZoneInfo(tz_name))
+        return MetarObservation(
+            icao=st,
+            utc_dt=dt_utc,
+            local_dt=local_dt,
+            temp_c=t_c,
+            has_t_remark=False,
+            raw_line=raw_metar or f"NWS_JSON {st} {t_c:.1f}C",
+            is_corrected=False,
+            has_maintenance_indicator=False,
+        )
+    except Exception as exc:
+        logger.debug(f"NWS latest obs notice ({st}): {exc}")
+        return None
+
+
+def parse_nws_dsm_or_cli_text(text: str, *, product_type: str = "CLI") -> Optional[Dict[str, Any]]:
+    """Parses NWS Daily Climate Report (`CLI`) or Daily Summary Message (`DSM`) daily extreme temperatures."""
+    txt = str(text or "")
+    if not txt.strip():
+        return None
+    pt = str(product_type or "CLI").upper()
+    m_hi = _NWS_CLI_MAX_RE.search(txt)
+    m_lo = _NWS_CLI_MIN_RE.search(txt)
+    if m_hi:
+        return {
+            "product_type": pt,
+            "max_temp_f": float(m_hi.group(1)),
+            "min_temp_f": float(m_lo.group(1)) if m_lo else None,
+            "is_final_cli": pt == "CLI",
+        }
+    m_dsm = _NWS_DSM_MAX_RE.search(txt)
+    if m_dsm:
+        return {
+            "product_type": "DSM",
+            "max_temp_f": float(m_dsm.group(1)),
+            "min_temp_f": float(m_dsm.group(2)),
+            "is_final_cli": False,
+        }
+    return None
+
+
+def check_neighbor_station_temp_anomaly(
+    primary_obs: MetarObservation,
+    neighbor_observations: Sequence[MetarObservation],
+    *,
+    max_delta_c: float = 6.0,
+) -> Tuple[bool, str]:
+    """
+    Spatial consistency cross-check against nearby airport stations (`D-006` trap defense).
+    Returns `(is_anomalous, reason)`; flags stuck/errant sensors when primary deviates > `max_delta_c`
+    from all >= 2 contemporaneous (`<= 90m`) neighbor observations.
+    """
+    if primary_obs.has_maintenance_indicator:
+        return True, "D006_ASOS_DOLLAR_MAINTENANCE_FLAG"
+    peers = [
+        o
+        for o in neighbor_observations
+        if o.icao != primary_obs.icao
+        and not o.has_maintenance_indicator
+        and abs((o.utc_dt - primary_obs.utc_dt).total_seconds()) <= 5400.0
+    ]
+    if len(peers) < 2:
+        return False, "INSUFFICIENT_NEIGHBORS"
+    deltas = [abs(float(primary_obs.temp_c) - float(p.temp_c)) for p in peers]
+    if min(deltas) > float(max_delta_c):
+        return True, f"SPATIAL_SENSOR_ANOMALY_DELTA_{min(deltas):.2f}C"
+    return False, "OK"

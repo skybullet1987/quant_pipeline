@@ -56,6 +56,9 @@ from src.polymarket_research.market_proposition_graph import (
     EdgeType,
     MarketPropositionGraph,
 )
+from src.polymarket_research.v6_restriction_and_capital_allocator import (
+    DynamicMarginalCapitalAllocator,
+)
 from src.polymarket_research.universal_arb_verifier import (
     ActionLeg,
     ActionType,
@@ -1210,6 +1213,49 @@ class DormantOpportunityStore:
         }
         _atomic_write_json(self.store_path, payload)
 
+    def export_fast_rescan_tokens(
+        self,
+        out_path: Optional[Path] = None,
+        *,
+        max_tokens: int = 240,
+        max_gap_bps: float = 50.0,
+        now_ts: Optional[float] = None,
+    ) -> List[str]:
+        """Exports near-arb (`<= max_gap_bps`) `DORMANT` token IDs for high-frequency Bridge/WS re-scans (`D-001`-clean)."""
+        now_f = float(time.time() if now_ts is None else now_ts)
+        target_path = Path(out_path) if out_path is not None else Path("data/polymarket/dormant_fast_rescan_tokens.json")
+        out_tokens: List[str] = []
+        seen: Set[str] = set()
+        for ent in sorted(self.entries.values(), key=lambda e: (e.gap_to_breakeven_bps, e.candidate_id)):
+            if ent.status != "DORMANT":
+                continue
+            if float(ent.gap_to_breakeven_bps) > float(max_gap_bps) + 1e-9:
+                continue
+            if any(mid in FROZEN_DISPUTED_MARKET_IDS for mid in ent.market_ids):
+                continue
+            title_cid_up = f"{ent.title_summary} {ent.candidate_id}".upper()
+            if any(sub.upper() in title_cid_up for sub in FROZEN_DISPUTED_TRADE_SUBSTRINGS):
+                continue
+            for tid in ent.instrument_ids:
+                tid_s = str(tid or "").strip()
+                if tid_s and tid_s not in seen:
+                    seen.add(tid_s)
+                    out_tokens.append(tid_s)
+                    if len(out_tokens) >= max(1, int(max_tokens)):
+                        break
+            if len(out_tokens) >= max(1, int(max_tokens)):
+                break
+        _atomic_write_json(
+            target_path,
+            {
+                "updated_at_unix": round(now_f, 3),
+                "max_gap_bps": float(max_gap_bps),
+                "token_count": len(out_tokens),
+                "token_ids": out_tokens,
+            },
+        )
+        return out_tokens
+
     def get_watch_instrument_ids(
         self,
         *,
@@ -1393,6 +1439,38 @@ class DormantOpportunityStore:
             "total_promotions_to_executable": self.total_promotions_to_executable,
             "closest_near_misses": top_closest,
         }
+
+
+def load_dormant_fast_rescan_tokens(
+    max_age_sec: float = 1800.0,
+    *,
+    path: Optional[Path] = None,
+    now_ts: Optional[float] = None,
+) -> List[str]:
+    """Loads exported dormant fast-rescan token IDs if present and younger than `max_age_sec`."""
+    target = Path(path) if path is not None else Path("data/polymarket/dormant_fast_rescan_tokens.json")
+    if not target.exists():
+        return []
+    try:
+        raw_bytes = target.read_bytes()
+        doc = _loads_json_bytes(raw_bytes)
+        if not isinstance(doc, Mapping):
+            return []
+        now_f = float(time.time() if now_ts is None else now_ts)
+        updated_raw = doc.get("updated_at_unix")
+        updated_ts = (
+            float(updated_raw)
+            if isinstance(updated_raw, (int, float)) and not isinstance(updated_raw, bool) and math.isfinite(float(updated_raw))
+            else float(target.stat().st_mtime)
+        )
+        if (now_f - updated_ts) > max(0.0, float(max_age_sec)):
+            return []
+        raw_tids = doc.get("token_ids") or ()
+        if not isinstance(raw_tids, (list, tuple)):
+            return []
+        return [str(x).strip() for x in dict.fromkeys(str(t).strip() for t in raw_tids) if x]
+    except Exception:
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -2151,12 +2229,14 @@ class HarvesterCandidateBridge:
         dedupe_ttl_sec: float = 45.0,
         min_velocity_bps_per_hr: float = 7.5,
         live_harvester_state_path: Path = Path("data/polymarket/live_harvester_state.json"),
+        utilization_aware_velocity_hurdle: bool = False,
     ) -> None:
         self.candidates_jsonl_path = Path(candidates_jsonl_path)
         self.dedupe_state_path = Path(dedupe_state_path)
         self.dedupe_ttl_sec = max(5.0, float(dedupe_ttl_sec))
         self.min_velocity_bps_per_hr = max(0.0, float(min_velocity_bps_per_hr))
         self.live_harvester_state_path = Path(live_harvester_state_path)
+        self.utilization_aware_velocity_hurdle = bool(utilization_aware_velocity_hurdle)
         self._dedupe_cache: Dict[str, Dict[str, Any]] = {}
         self.total_emitted: int = 0
         self.total_dedupe_suppressed: int = 0
@@ -2254,6 +2334,8 @@ class HarvesterCandidateBridge:
         buy_legs = [lg for lg in clob_legs if _act(lg) == "BUY_CLOB"]
 
         if len(clob_legs) == 1 and len(buy_legs) == 1 and has_inv:
+            if bool(getattr(buy_legs[0], "is_maker", False)):
+                return ("SINGLE_LEG_MAKER_LOCK", "C1_BINARY_COMPLETE_SET")
             return ("SINGLE_LEG_LOCK", "C1_BINARY_COMPLETE_SET")
 
         if has_split and len(sell_legs) == 2 and len(buy_legs) == 0:
@@ -2411,6 +2493,62 @@ class HarvesterCandidateBridge:
             return None
         return (acc_proc / float(shares), worst_px)
 
+    def resolve_utilization_velocity_hurdle_bps_per_hr(
+        self,
+        eff_nav_usd: float,
+        *,
+        utilization_frac: Optional[float] = None,
+    ) -> Tuple[float, Optional[float]]:
+        """
+        Computes utilization-aware velocity hurdle via `DynamicMarginalCapitalAllocator.compute_shadow_price_bps_per_hr`
+        when `utilization_frac` is supplied or `utilization_aware_velocity_hurdle=True`; otherwise retains
+        `self.min_velocity_bps_per_hr` for legacy fixed-threshold callers.
+        """
+        if utilization_frac is None and not self.utilization_aware_velocity_hurdle:
+            return (self.min_velocity_bps_per_hr, None)
+
+        u_resolved: Optional[float] = None
+        if utilization_frac is not None:
+            u_resolved = min(1.0, max(0.0, float(utilization_frac)))
+        elif self.live_harvester_state_path.exists():
+            try:
+                if (time.time() - float(self.live_harvester_state_path.stat().st_mtime)) <= 900.0:
+                    st = _loads_json_bytes(self.live_harvester_state_path.read_bytes())
+                    if isinstance(st, Mapping):
+                        committed_usd = 0.0
+                        act_pos = st.get("active_positions")
+                        if isinstance(act_pos, Mapping):
+                            for p in act_pos.values():
+                                if not isinstance(p, Mapping):
+                                    continue
+                                if str(p.get("umaResolutionStatus") or "").strip().lower() == "disputed":
+                                    continue
+                                mid_p = str(p.get("market_id") or "").strip()
+                                if mid_p in FROZEN_DISPUTED_MARKET_IDS:
+                                    continue
+                                if str(p.get("status") or "") not in ("POSITION_CONFIRMED", "PARTIAL_OPEN", "OPEN", ""):
+                                    continue
+                                rem_sh = float(p.get("remaining_shares", p.get("entry_shares", 0.0)) or 0.0)
+                                e_px = float(p.get("entry_price", 0.0) or 0.0)
+                                c_usd = float(p.get("cost_basis_usd", rem_sh * e_px) or 0.0)
+                                if c_usd > 0.0:
+                                    committed_usd += c_usd
+                        pend = st.get("pending_entry_intents")
+                        if isinstance(pend, Mapping):
+                            for pi in pend.values():
+                                if isinstance(pi, Mapping):
+                                    committed_usd += max(0.0, float(pi.get("notional_usd", 0.0) or 0.0))
+                        denom = max(1e-6, float(eff_nav_usd) + committed_usd)
+                        u_resolved = min(1.0, max(0.0, committed_usd / denom))
+            except Exception:
+                u_resolved = 0.0
+        if u_resolved is None:
+            u_resolved = 0.0
+
+        lam = DynamicMarginalCapitalAllocator().compute_shadow_price_bps_per_hr(u_resolved)
+        scale = (self.min_velocity_bps_per_hr / 7.5) if self.min_velocity_bps_per_hr > 0.0 else 0.0
+        return (round(lam * scale, 6), round(u_resolved, 4))
+
     def emit_verified_candidates(
         self,
         records: Sequence[PipelineOpportunityRecord],
@@ -2426,12 +2564,16 @@ class HarvesterCandidateBridge:
         enable_passive_maker_bridge: bool = True,
         max_maker_locks_per_cycle: int = 3,
         fallback_reconciled_nav_usd: float = DEFAULT_LIVE_RECONCILED_NAV_USD,
+        utilization_frac: Optional[float] = None,
         now_ts: Optional[float] = None,
     ) -> Dict[str, Any]:
         now_f = float(time.time() if now_ts is None else now_ts)
         mkt_meta = market_meta_by_id or {}
         inv_map = holdings or {}
         eff_nav_usd = self.resolve_reconciled_floor_nav_usd(fallback_reconciled_nav_usd)
+        eff_min_vel_bps_hr, resolved_util_frac = self.resolve_utilization_velocity_hurdle_bps_per_hr(
+            eff_nav_usd, utilization_frac=utilization_frac
+        )
         nav_15pct_cap_usd = round(eff_nav_usd * 0.15, 6)
         mkt_tok_index = self._build_market_token_index(books, mkt_meta, events)
 
@@ -2450,33 +2592,67 @@ class HarvesterCandidateBridge:
             ):
                 skipped_reasons["D001_KMIA_QUARANTINED"] += 1
                 continue
-            if not rec.is_mathematically_proven_arb or rec.opportunity_class not in ("CLASS_A", "CLASS_B"):
-                continue
-            if rec.disqualifiers or (rec.structure is not None and not rec.structure.rule_verified):
-                skipped_reasons["RULE_UNVERIFIED_OR_DISQUALIFIED"] += 1
-                continue
-            if rec.min_state_net_payoff_usd <= 0.0 or rec.executable_l2_net_usd <= 0.0 or rec.optimal_executable_quantity <= 0.0:
-                skipped_reasons["NON_POSITIVE_MIN_STATE_PAYOFF"] += 1
-                continue
-            if rec.d007_sub500_multileg_quarantine and eff_nav_usd < DEFAULT_D007_MULTILEG_NAV_FLOOR_USD:
-                skipped_reasons["D007_MULTILEG_3PLUS_QUARANTINED"] += 1
-                continue
             all_legs: List[Any] = (
                 list(rec.structure.legs)
                 if (rec.structure is not None and rec.structure.legs)
                 else (list(rec.proof.leg_executions) if (rec.proof is not None and rec.proof.leg_executions) else [])
             )
-            if not all_legs:
-                skipped_reasons["MISSING_CANDIDATE_STRUCTURE"] += 1
-                continue
-
             clob_legs = [
                 lg
                 for lg in all_legs
                 if (lg.action_type.value if isinstance(lg.action_type, ActionType) else str(lg.action_type))
                 in ("BUY_CLOB", "SELL_CLOB")
             ]
-            if any(bool(getattr(lg, "is_maker", False)) for lg in clob_legs):
+            has_inv_leg = any(
+                (lg.action_type.value if isinstance(lg.action_type, ActionType) else str(lg.action_type)) == "USE_INVENTORY"
+                for lg in all_legs
+            )
+            is_l1_inv_maker = bool(
+                len(clob_legs) == 1
+                and has_inv_leg
+                and (clob_legs[0].action_type.value if isinstance(clob_legs[0].action_type, ActionType) else str(clob_legs[0].action_type)) == "BUY_CLOB"
+                and bool(getattr(clob_legs[0], "is_maker", False))
+                and (
+                    rec.family_code == "L"
+                    or "L1_LOCKED_INVENTORY" in rec.candidate_id.upper()
+                    or "L1B_RESTING" in rec.candidate_id.upper()
+                    or "L1_LOCKED_INVENTORY" in rec.sub_type.upper()
+                    or "L1B_RESTING" in rec.sub_type.upper()
+                )
+            )
+            if not is_l1_inv_maker and (
+                not rec.is_mathematically_proven_arb or rec.opportunity_class not in ("CLASS_A", "CLASS_B")
+            ):
+                continue
+            if is_l1_inv_maker and rec.opportunity_class not in ("CLASS_A", "CLASS_B", "CLASS_C"):
+                continue
+            if (not is_l1_inv_maker and rec.disqualifiers) or (rec.structure is not None and not rec.structure.rule_verified):
+                skipped_reasons["RULE_UNVERIFIED_OR_DISQUALIFIED"] += 1
+                continue
+            if is_l1_inv_maker and any(
+                str(dq).upper()
+                not in {
+                    "PASSIVE_MAKER_FILL_UNCERTAINTY_NOT_CLASS_A_OR_B",
+                    "RESTING_MAKER_LEG",
+                    "UNFILLED_MAKER_LEG",
+                    "MAKER_FILL_UNCERTAINTY",
+                    "PASSIVE_MAKER_WAIT",
+                }
+                for dq in (rec.disqualifiers or ())
+            ):
+                skipped_reasons["RULE_UNVERIFIED_OR_DISQUALIFIED"] += 1
+                continue
+            if rec.min_state_net_payoff_usd <= 0.0 or (not is_l1_inv_maker and rec.executable_l2_net_usd <= 0.0) or rec.optimal_executable_quantity <= 0.0:
+                skipped_reasons["NON_POSITIVE_MIN_STATE_PAYOFF"] += 1
+                continue
+            if rec.d007_sub500_multileg_quarantine and eff_nav_usd < DEFAULT_D007_MULTILEG_NAV_FLOOR_USD:
+                skipped_reasons["D007_MULTILEG_3PLUS_QUARANTINED"] += 1
+                continue
+            if not all_legs:
+                skipped_reasons["MISSING_CANDIDATE_STRUCTURE"] += 1
+                continue
+
+            if any(bool(getattr(lg, "is_maker", False)) for lg in clob_legs) and not is_l1_inv_maker:
                 skipped_reasons["RESTING_MAKER_LEG_EXCLUDED_FROM_TAKER_BRIDGE"] += 1
                 continue
             if not (1 <= len(clob_legs) <= 2):
@@ -2490,7 +2666,7 @@ class HarvesterCandidateBridge:
             box_type, sleeve_source = mapped
 
             if (
-                rec.capital_efficiency_bps_per_hr < self.min_velocity_bps_per_hr
+                rec.capital_efficiency_bps_per_hr < eff_min_vel_bps_hr
                 and sleeve_source not in INSTANT_MERGEABLE_BRIDGE_SLEEVES
             ):
                 skipped_reasons["BELOW_VELOCITY_HURDLE_7_5_BPS_HR"] += 1
@@ -2645,7 +2821,13 @@ class HarvesterCandidateBridge:
                     )
                     jit_proof = jit_ver.verify_and_simulate(rec.structure, eff_books, holdings=inv_map)
                     jit_opp_cls = str(getattr(jit_proof.opportunity_class, "value", jit_proof.opportunity_class))
-                    if (
+                    l1_mkr_jit_ok = bool(
+                        is_l1_inv_maker
+                        and jit_opp_cls in ("CLASS_A", "CLASS_B", "CLASS_C")
+                        and jit_proof.min_state_net_payoff_usd > 0.0
+                        and jit_proof.optimal_executable_quantity > 0.0
+                    )
+                    if not l1_mkr_jit_ok and (
                         not jit_proof.is_mathematically_proven_arb
                         or jit_opp_cls not in ("CLASS_A", "CLASS_B")
                         or jit_proof.min_state_net_payoff_usd <= 0.0
@@ -2682,14 +2864,19 @@ class HarvesterCandidateBridge:
                         continue
                     if box_type == "CTF_OVERROUND":
                         net_edge_ps = sum(walk_units) - 1.0
-                    elif box_type == "SINGLE_LEG_LOCK":
+                    elif box_type in ("SINGLE_LEG_LOCK", "SINGLE_LEG_MAKER_LOCK"):
                         inv_cost_ps = 0.0
                         for lg_i in all_legs:
                             act_i = lg_i.action_type.value if isinstance(lg_i.action_type, ActionType) else str(lg_i.action_type)
                             if act_i == "USE_INVENTORY":
                                 h_i = inv_map.get(str(lg_i.instrument_id))
                                 inv_cost_ps = float(h_i.effective_valuation_per_share) if h_i is not None else 0.50
-                        net_edge_ps = 1.0 - (walk_units[0] + inv_cost_ps)
+                        if box_type == "SINGLE_LEG_MAKER_LOCK":
+                            mkr_px_w = float(getattr(clob_legs[0], "maker_price", 0.0) or 0.0)
+                            unit_w = mkr_px_w if mkr_px_w > 0.0 else walk_units[0]
+                            net_edge_ps = 1.0 - (unit_w + inv_cost_ps)
+                        else:
+                            net_edge_ps = 1.0 - (walk_units[0] + inv_cost_ps)
                     else:
                         net_edge_ps = 1.0 - sum(walk_units)
                     if net_edge_ps <= 0.0:
@@ -2770,13 +2957,18 @@ class HarvesterCandidateBridge:
                 bk_l = eff_books[tid_l]
                 act_s = lg.action_type.value if isinstance(lg.action_type, ActionType) else str(lg.action_type)
                 le_l = leg_exec_by_tid.get(tid_l)
+                mkr_l_px = float(getattr(lg, "maker_price", 0.0) or 0.0) if bool(getattr(lg, "is_maker", False)) else 0.0
                 px_l = (
-                    float(le_l.worst_limit_price)
-                    if le_l is not None and le_l.worst_limit_price > 0.0
+                    mkr_l_px
+                    if mkr_l_px > 0.0
                     else (
-                        float(bk_l.asks[0].price)
-                        if act_s == "BUY_CLOB" and bk_l.asks
-                        else (float(bk_l.bids[0].price) if bk_l.bids else 0.0)
+                        float(le_l.worst_limit_price)
+                        if le_l is not None and le_l.worst_limit_price > 0.0
+                        else (
+                            float(bk_l.asks[0].price)
+                            if act_s == "BUY_CLOB" and bk_l.asks
+                            else (float(bk_l.bids[0].price) if bk_l.bids else 0.0)
+                        )
                     )
                 )
                 if px_l <= 0.0 or (act_s == "BUY_CLOB" and (target_shares * px_l) < DEFAULT_MIN_MARKETABLE_BUY_USD - 1e-6):
@@ -2852,7 +3044,8 @@ class HarvesterCandidateBridge:
                 "ws_books_ts": emit_ts,
             }
 
-            if box_type == "SINGLE_LEG_LOCK":
+            if box_type in ("SINGLE_LEG_LOCK", "SINGLE_LEG_MAKER_LOCK"):
+                is_mkr_sll = box_type == "SINGLE_LEG_MAKER_LOCK"
                 lg0 = clob_legs[0]
                 tid0 = str(lg0.instrument_id)
                 bk0 = eff_books[tid0]
@@ -2867,7 +3060,23 @@ class HarvesterCandidateBridge:
                 opp_tid = str(inv_legs[0].instrument_id) if inv_legs else opp_by_leg_tid.get(tid0, "")
                 h_obj = inv_map.get(opp_tid)
                 partner_cost_ps = round(float(h_obj.cost_basis_per_share), 6) if h_obj is not None else 0.0
-                px0 = float(le0.worst_limit_price) if (le0 and le0.worst_limit_price > 0) else float(bk0.asks[0].price)
+                mkr_attr_px = float(getattr(lg0, "maker_price", 0.0) or 0.0) if is_mkr_sll else 0.0
+                px0 = (
+                    mkr_attr_px
+                    if mkr_attr_px > 0.0
+                    else (
+                        float(le0.worst_limit_price)
+                        if (le0 and le0.worst_limit_price > 0)
+                        else (
+                            float(bk0.bids[0].price)
+                            if (is_mkr_sll and bk0.bids)
+                            else float(bk0.asks[0].price)
+                        )
+                    )
+                )
+                if is_mkr_sll and bk0.asks and px0 >= float(bk0.asks[0].price) - 1e-9:
+                    skipped_reasons["MAKER_BID_CROSSES_BEST_ASK"] += 1
+                    continue
                 leg_a_cap_px = round(min(px0 + 0.002, max(0.01, 0.9985 - partner_cost_ps)), 4) if h_obj is not None else round(px0, 4)
                 lbl0 = str(getattr(lg0, "label", "") or bk0.outcome_label or "YES")
                 cand_dict = {
@@ -2887,11 +3096,20 @@ class HarvesterCandidateBridge:
                     "leg_a_limit_price": round(px0, 4),
                     "leg_a_max_price": leg_a_cap_px,
                     "leg_a_avail_shares": round(sum(float(lv.size) for lv in bk0.asks), 4),
-                    "leg_a_fee_rate": round(float(bk0.fee_rate_bps) / 10_000.0, 6),
-                    "leg_a_fee_exponent": float(bk0.fee_exponent),
+                    "leg_a_fee_rate": 0.0 if is_mkr_sll else round(float(bk0.fee_rate_bps) / 10_000.0, 6),
+                    "leg_a_fee_exponent": 1.0 if is_mkr_sll else float(bk0.fee_exponent),
                     "leg_a_neg_risk": bool(getattr(bk0, "neg_risk", False) or m0_meta.get("negRisk")),
                     "leg_a_expiry_ts": close_ts,
                 }
+                if is_mkr_sll:
+                    cand_dict["verifier_opportunity_class"] = rec.opportunity_class
+                    if opp_tid and h_obj is not None:
+                        cand_dict["opportunity_class"] = "CLASS_A"
+                    cand_dict["anchor_bid_px"] = round(px0, 4)
+                    cand_dict["post_only"] = True
+                    cand_dict["min_maker_edge"] = round(max(0.0, 1.0 - (partner_cost_ps + px0)), 6)
+                    maker_locks_this_cycle += 1
+                    self.total_maker_locks_emitted += 1
             elif box_type == "CTF_OVERROUND":
                 lg0, lg1 = clob_legs[0], clob_legs[1]
                 bk0, bk1 = eff_books[str(lg0.instrument_id)], eff_books[str(lg1.instrument_id)]
@@ -3065,7 +3283,7 @@ class HarvesterCandidateBridge:
                     if not mid_u or mid_u in FROZEN_DISPUTED_MARKET_IDS:
                         continue
                     ust_u = str(m.get("umaResolutionStatus") or "").strip().lower()
-                    if ust_u != "proposed" or m.get("feesEnabled") is True or m.get("enableOrderBook") is False:
+                    if ust_u != "proposed" or m.get("enableOrderBook") is False:
                         continue
                     ok_uma_obj, _uma_obj_rsn = is_objective_uma_market(
                         {
@@ -3142,6 +3360,7 @@ class HarvesterCandidateBridge:
                                     "tick": tk_u,
                                     "vol24": float(m.get("volume24hr") or 0.0),
                                     "rest_bid": rest_bid,
+                                    "fees_enabled": bool(m.get("feesEnabled") is True),
                                 },
                             )
                         )
@@ -3277,6 +3496,8 @@ class HarvesterCandidateBridge:
                     "leg_a_tick_size": uc["tick"],
                     "leg_a_fee_rate": 0.0,
                     "leg_a_fee_exponent": 1.0,
+                    "market_fees_enabled": bool(uc.get("fees_enabled", False)),
+                    "post_only": True,
                     "leg_a_neg_risk": uc["neg_risk"],
                     "leg_a_expiry_ts": close_m_ts,
                     "ws_books": ws_mkr,
@@ -3294,10 +3515,12 @@ class HarvesterCandidateBridge:
 
         if emitted_payloads:
             self.candidates_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
-            lines_bytes: List[bytes] = []
-            for p_dict in emitted_payloads:
-                ln_s = json.dumps(p_dict, separators=(",", ":")) + "\n"
-                lines_bytes.append(ln_s.encode("utf-8"))
+            lines_bytes: List[bytes] = [
+                (_ORJSON_MOD.dumps(p_dict) + b"\n")
+                if _ORJSON_MOD is not None
+                else (json.dumps(p_dict, separators=(",", ":")) + "\n").encode("utf-8")
+                for p_dict in emitted_payloads
+            ]
             with self.candidates_jsonl_path.open("ab") as fh:
                 for raw_b in lines_bytes:
                     fh.write(raw_b)
@@ -3333,6 +3556,8 @@ class HarvesterCandidateBridge:
             "total_jit_rejected_across_campaign": self.total_jit_rejected,
             "total_dedupe_suppressed": self.total_dedupe_suppressed,
             "reconciled_nav_used_usd": round(eff_nav_usd, 4),
+            "effective_min_velocity_bps_per_hr": round(eff_min_vel_bps_hr, 4),
+            "resolved_utilization_frac": resolved_util_frac,
             "d007_15pct_concentration_cap_usd": nav_15pct_cap_usd,
             "target_jsonl_path": str(self.candidates_jsonl_path),
             "skipped_by_reason": dict(skipped_reasons),
@@ -3432,6 +3657,8 @@ class PublicPolymarketScannerClient:
     def __init__(self, *, timeout_sec: float = 22.0, max_book_workers: int = 2) -> None:
         self.timeout_sec = float(timeout_sec)
         self.max_book_workers = max(1, int(max_book_workers))
+        self._ssl_ctx = ssl.create_default_context()
+        self._jit_tls = threading.local()
 
     @staticmethod
     def _read_gzip_json(resp: http.client.HTTPResponse) -> Any:
@@ -4235,31 +4462,47 @@ class PublicPolymarketScannerClient:
     ) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
         """
         Ultra-low-latency (`<120ms`) single-POST `/books` refresher for `HarvesterCandidateBridge`
-        right before appending a proven candidate to `d1_live_box_candidates.jsonl` (zero ThreadPool
-        or GC pause overhead).
+        using a persistent TLS keep-alive `HTTPSConnection` and `orjson` serialization (zero
+        ThreadPool, TLS-handshake, or GC pause overhead).
         """
         t0 = time.perf_counter()
         unique_tokens = [t for t in dict.fromkeys(str(x).strip() for x in token_ids) if t][:24]
         if not unique_tokens:
             return {}, {"tokens_requested": 0, "books_returned": 0, "book_poll_wall_sec": 0.0, "fetch_timestamp_sec": time.time()}
 
-        ctx = ssl.create_default_context()
+        eff_timeout = max(0.8, float(timeout_sec))
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
             "Accept-Encoding": "gzip",
-            "Connection": "close",
+            "Connection": "keep-alive",
             "User-Agent": "DominusFullThrottleShadow/5.2 (MODE2-JITReverify)",
         }
-        body = json.dumps([{"token_id": t} for t in unique_tokens]).encode("utf-8")
+        payload_list = [{"token_id": t} for t in unique_tokens]
+        body = (
+            _ORJSON_MOD.dumps(payload_list)
+            if _ORJSON_MOD is not None
+            else json.dumps(payload_list, separators=(",", ":")).encode("utf-8")
+        )
         out: Dict[str, Dict[str, Any]] = {}
         for attempt in range(2):
-            conn = http.client.HTTPSConnection("clob.polymarket.com", timeout=max(0.8, float(timeout_sec)), context=ctx)
+            conn = getattr(self._jit_tls, "conn", None)
+            if conn is None:
+                conn = http.client.HTTPSConnection("clob.polymarket.com", timeout=eff_timeout, context=self._ssl_ctx)
+                self._jit_tls.conn = conn
+            else:
+                conn.timeout = eff_timeout
             try:
                 conn.request("POST", "/books", body=body, headers=headers)
                 resp = conn.getresponse()
                 if resp.status == 200:
                     rows = self._read_gzip_json(resp)
+                    if getattr(resp, "will_close", False):
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        self._jit_tls.conn = None
                     if isinstance(rows, list):
                         for r in rows:
                             if isinstance(r, dict):
@@ -4281,14 +4524,19 @@ class PublicPolymarketScannerClient:
                                     }
                     break
                 _ = resp.read()
-            except Exception:
-                if attempt == 0:
-                    time.sleep(0.05)
-            finally:
                 try:
                     conn.close()
                 except Exception:
                     pass
+                self._jit_tls.conn = None
+            except Exception:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                self._jit_tls.conn = None
+                if attempt == 0:
+                    time.sleep(0.05)
 
         fetch_ts = time.time()
         for bk in out.values():
@@ -5054,6 +5302,7 @@ class PipelineConfig:
     harvester_candidates_path: Path = field(default_factory=lambda: Path("data/polymarket/d1_live_box_candidates.jsonl"))
     harvester_candidate_dedupe_ttl_sec: float = 45.0
     harvester_min_velocity_bps_per_hr: float = 7.5
+    fast_rescan_tokens_path: Optional[Path] = None
 
 
 class FullThrottlePipeline:
@@ -5085,6 +5334,7 @@ class FullThrottlePipeline:
             dedupe_state_path=self.output_dir / "harvester_bridge_dedupe.json",
             dedupe_ttl_sec=self.config.harvester_candidate_dedupe_ttl_sec,
             min_velocity_bps_per_hr=self.config.harvester_min_velocity_bps_per_hr,
+            utilization_aware_velocity_hurdle=True,
         )
         self.last_harvester_bridge_report: Dict[str, Any] = {
             "enabled": bool(self.config.emit_harvester_candidates),
@@ -6204,6 +6454,9 @@ class FullThrottlePipeline:
         s0 = time.perf_counter()
         dormant_delta = self.dormant_store.update_from_pipeline_records(all_records, typed_books, now_ts=eval_now_ts)
         self.dormant_store.save()
+        if self.config.fast_rescan_tokens_path is not None or self.config.emit_harvester_candidates:
+            rescan_out = self.config.fast_rescan_tokens_path or Path("data/polymarket/dormant_fast_rescan_tokens.json")
+            self.dormant_store.export_fast_rescan_tokens(rescan_out, now_ts=eval_now_ts)
         stage_timings_ms["MONITOR"] = round((time.perf_counter() - s0) * 1000.0, 2)
 
         # -------------------------------------------------------------------

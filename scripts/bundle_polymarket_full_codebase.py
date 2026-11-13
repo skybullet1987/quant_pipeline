@@ -104,6 +104,7 @@ EXP316_MODULES: List[Tuple[str, str]] = [
     ("src/polymarket_research/exp316_macro_strike_shadow.py", "EXP-316 Isolated Multi-Strike Convergence Shadow Engine"),
     ("src/polymarket_research/honest_riskless_backtester.py", "v6.0 Honest CLOB L2 Execution Kernel, Zero-Lookahead Harness & CompactCandidateL2Recorder"),
     ("src/polymarket_research/riskless_expansion_v6_engines.py", "v6.0 8-Sleeve Riskless Expansion Engine (XV Subset-NO, 0.001 Tail, BOND3, CAD/USD FX, Deribit USDC, Halftime, PreConv NR3, Yield Box)"),
+    ("src/polymarket_research/riskless_fast_feeds.py", "v6.2 $0/mo Fast Feeds: Pyth Hermes, Scoped Polygon Logs WS, Hyperliquid/Coinbase/Deribit WS, Macro RSS/EDGAR & Live CAD/USD FX"),
 ]
 
 HARVESTER_TEST_MODULES: List[Tuple[str, str]] = [

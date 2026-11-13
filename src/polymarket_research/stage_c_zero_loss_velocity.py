@@ -252,6 +252,10 @@ def is_verified_full_throttle_2leg_box(candidate_box: Mapping[str, Any]) -> bool
     btype = str(candidate_box.get("box_type") or "").strip().upper()
     if btype in {"DOMINANCE_MAKER_ANCHOR", "ZERO_FEE_MAKER_ANCHOR", "MAKER_ANCHOR", "SYNTHETIC_MAKER"}:
         return False
+    if bool(candidate_box.get("neg_risk_augmented", False)) and not (
+        btype == "NEGRISK_2LEG" and sl_src == "XV_SUBSET_NO_2LEG_BOX"
+    ):
+        return False
     c_net = _sf(candidate_box.get("box_cost_net"), 0.0)
     if btype != "CTF_OVERROUND" and c_net >= 1.0:
         return False
@@ -259,7 +263,20 @@ def is_verified_full_throttle_2leg_box(candidate_box: Mapping[str, Any]) -> bool
         cid = str(candidate_box.get("condition_id") or candidate_box.get("leg_a_condition_id") or "").strip()
         yt = str(candidate_box.get("yes_token_id") or candidate_box.get("leg_a_token_id") or "").strip()
         nt = str(candidate_box.get("no_token_id") or candidate_box.get("leg_b_token_id") or "").strip()
-        return bool(sl_src == "C1_SPLIT_AND_SELL_OVERROUND" and btype == "CTF_OVERROUND" and cid and yt and nt and yt != nt)
+        is_neg_risk = bool(
+            candidate_box.get("neg_risk", False)
+            or candidate_box.get("leg_a_neg_risk", False)
+            or candidate_box.get("leg_b_neg_risk", False)
+        )
+        return bool(
+            sl_src == "C1_SPLIT_AND_SELL_OVERROUND"
+            and btype == "CTF_OVERROUND"
+            and not is_neg_risk
+            and cid
+            and yt
+            and nt
+            and yt != nt
+        )
     if sl_src == "NR2_2LEG_CONVERT_NO_SUBSET_ARB" or btype == "NEGRISK_CONVERT":
         cm = str(candidate_box.get("convert_mode") or "NR2_PURE_CASH_CONVERT").strip().upper()
         no_legs = candidate_box.get("no_legs") or ()
@@ -303,7 +320,9 @@ def is_verified_full_throttle_2leg_box(candidate_box: Mapping[str, Any]) -> bool
         if (cid_a and cid_b and cid_a != cid_b) or (mid_a and mid_b and mid_a != mid_b):
             return False
         return btype in {"COMPLETE_SET", "C1_BINARY_COMPLETE_SET"}
-    if bool(candidate_box.get("neg_risk_augmented", False)):
+    if bool(candidate_box.get("neg_risk_augmented", False)) and not (
+        btype == "NEGRISK_2LEG" and sl_src == "XV_SUBSET_NO_2LEG_BOX"
+    ):
         return False
     t_early_ft = _sf(candidate_box.get("t_early_ts", candidate_box.get("leg_a_deadline_ts")), 0.0)
     t_late_ft = _sf(candidate_box.get("t_late_ts", candidate_box.get("leg_b_deadline_ts")), 0.0)
@@ -411,6 +430,13 @@ def verify_multileg_atomicity_or_inventory_cover(harvester: Any, candidate_box: 
     if not isinstance(candidate_box, Mapping):
         return False
     ex = getattr(harvester, "executor", None)
+    has_funder_dispatch = bool(
+        ex is not None
+        and (
+            callable(getattr(ex, "_dispatch_funder_calls_locked", None))
+            or callable(getattr(ex, "_dispatch_funder_calls", None))
+        )
+    )
     safe_atomic_router_ok = bool(
         ex is not None
         and (
@@ -420,6 +446,23 @@ def verify_multileg_atomicity_or_inventory_cover(harvester: Any, candidate_box: 
                 and (
                     bool(getattr(ex, "safe_atomic_router_verified", False))
                     or callable(getattr(ex, "submit_relayer_safe_multisend", None))
+                    or has_funder_dispatch
+                )
+            )
+        )
+    )
+    cm_upper = str(candidate_box.get("convert_mode") or "").strip().upper()
+    nr3_atomic_ok = bool(
+        cm_upper == "NR3_SYNTHETIC_ALL_YES_OVERROUND"
+        and ex is not None
+        and (
+            callable(getattr(ex, "execute_nr3_atomic_safe_split_convert", None))
+            or (
+                callable(getattr(ex, "execute_nr3_synthetic_all_yes_overround", None))
+                and (
+                    has_funder_dispatch
+                    or callable(getattr(ex, "submit_relayer_safe_multisend", None))
+                    or bool(getattr(ex, "safe_atomic_router_verified", False))
                 )
             )
         )
@@ -428,8 +471,10 @@ def verify_multileg_atomicity_or_inventory_cover(harvester: Any, candidate_box: 
         candidate_box.get("atomic_onchain_execution") is True
         and candidate_box.get("atomic_router_verified") is True
         and candidate_box.get("sequential_clob_legs") is not True
-        and str(candidate_box.get("convert_mode") or "").strip().upper() == "NR3_ATOMIC_SAFE_SPLIT_CONVERT"
-        and safe_atomic_router_ok
+        and (
+            (cm_upper == "NR3_ATOMIC_SAFE_SPLIT_CONVERT" and safe_atomic_router_ok)
+            or nr3_atomic_ok
+        )
     ):
         return True
     legs = candidate_box.get("legs") or ()
@@ -638,15 +683,38 @@ def check_strict_pure_riskless_candidate_gate(
     )
     if sl_src in PURE_RISKLESS_BLOCKED_SLEEVES and not (nr0_closed_ok or atomic_or_inv_ok):
         return f"PURE_RISKLESS_SLEEVE_BLOCKED:{sl_src}"
-    if btype in {"MULTI_LEG_BUNDLE", "CTF_OVERROUND"} and not (btype == "MULTI_LEG_BUNDLE" and (nr0_closed_ok or atomic_or_inv_ok)):
+    ctf_overround_verified_ok = bool(
+        btype == "CTF_OVERROUND"
+        and sl_src == "C1_SPLIT_AND_SELL_OVERROUND"
+        and is_verified_full_throttle_2leg_box(candidate_box)
+        and (
+            bool(candidate_box.get("atomic_split_sell_rollback_verified"))
+            or candidate_box.get("rule_verified") is True
+        )
+    )
+    if btype in {"MULTI_LEG_BUNDLE", "CTF_OVERROUND"} and not (
+        (btype == "MULTI_LEG_BUNDLE" and (nr0_closed_ok or atomic_or_inv_ok))
+        or ctf_overround_verified_ok
+    ):
         return f"PURE_RISKLESS_SPECIAL_BOX_BLOCKED:{btype}"
 
     if btype == "NEGRISK_CONVERT":
         cm = str(candidate_box.get("convert_mode") or "").strip().upper()
         no_legs = candidate_box.get("no_legs") or ()
+        yes_sells = candidate_box.get("liquid_yes_sells") or candidate_box.get("yes_sell_legs") or ()
         if cm == "NR2_PURE_CASH_CONVERT" and sl_src in {"", "NR2_CONVERT_NO_SUBSET_ARB"} and len(no_legs) == 2:
             return None
         if cm == "NR_M1_DEAD_SEED_OVERROUND" and sl_src in {"", "NR_M1_DEAD_SEED_OVERROUND"} and len(no_legs) == 1:
+            return None
+        if (
+            cm == "NR3_SYNTHETIC_ALL_YES_OVERROUND"
+            and bool(rb_cfg.get("enable_nr3_synthetic_overround", False))
+            and sl_src in {"", "NR3_SYNTHETIC_ALL_YES_OVERROUND"}
+            and candidate_box.get("neg_risk_augmented") is False
+            and 2 <= len(yes_sells) <= 15
+            and _sf(candidate_box.get("min_state_net_payoff_usd"), 1.0) > 0.0
+            and verify_multileg_atomicity_or_inventory_cover(harvester, candidate_box)
+        ):
             return None
         return f"PURE_RISKLESS_MULTI_LEG_CONVERT_BLOCKED:{cm or sl_src or len(no_legs)}"
 

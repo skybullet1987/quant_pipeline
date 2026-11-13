@@ -1962,6 +1962,7 @@ class PortfolioCandidateSpec:
     underlying_asset: str = ""
     resolution_source: str = ""
     directional_sign: int = 0
+    custom_liveness_hours: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -2059,7 +2060,16 @@ class DynamicMarginalCapitalAllocator:
     def effective_lockup_hours(cand: PortfolioCandidateSpec) -> float:
         if cand.can_instant_merge_or_recycle:
             return max(0.005, float(cand.settlement_or_merge_hours))
-        return max(0.02, float(cand.nominal_maturity_hours) + float(cand.settlement_or_merge_hours))
+        sett_h = float(cand.settlement_or_merge_hours)
+        if cand.custom_liveness_hours is not None and float(cand.custom_liveness_hours) > 0.0:
+            liveness_h = float(cand.custom_liveness_hours)
+            sett_h = min(sett_h, liveness_h) if sett_h > 0.0 else liveness_h
+        return max(0.02, float(cand.nominal_maturity_hours) + sett_h)
+
+    @staticmethod
+    def lockup_velocity_weight(cand: PortfolioCandidateSpec) -> float:
+        """Inverse effective lockup weighting (`1 / effective_lockup_hours`) prioritizing fast `customLiveness` & merges."""
+        return 1.0 / DynamicMarginalCapitalAllocator.effective_lockup_hours(cand)
 
     def _unit_realizable_net_edge(self, cand: PortfolioCandidateSpec, mode: ExecutionMode) -> float:
         base_edge = (
@@ -2147,8 +2157,11 @@ class DynamicMarginalCapitalAllocator:
             scored_pool.append((bps_hr, unit_rnv, cand))
 
         competing_top_bps = max(prelim_rates) if prelim_rates else 0.0
-        # Sort by realizable Dollar-Hour efficiency (`bps/hr`) descending, breaking ties by total RNV
-        scored_pool.sort(key=lambda t: (t[0], t[1] * t[2].max_executable_shares), reverse=True)
+        # Sort by realizable Dollar-Hour efficiency (`bps/hr` = `edge * 1/eff_h`) descending, breaking ties by USD/hr velocity
+        scored_pool.sort(
+            key=lambda t: (t[0], (t[1] * t[2].max_executable_shares) * self.lockup_velocity_weight(t[2])),
+            reverse=True,
+        )
 
         decisions: List[CandidateAllocationDecision] = []
         tot_rnv = 0.0
@@ -2421,10 +2434,19 @@ class DynamicMarginalCapitalAllocator:
             opp_cost_usd = alloc_cap * (lam_bps_hr / 10_000.0) * eff_h
 
             # Expected capital-recycling benefit when capital frees up well inside compounding_horizon_hours
-            freed_hours = max(0.0, self.compounding_horizon_hours - eff_h) if cand.can_instant_merge_or_recycle or eff_h < self.compounding_horizon_hours else 0.0
+            fast_liveness_recycles = bool(
+                cand.custom_liveness_hours is not None
+                and float(cand.custom_liveness_hours) > 0.0
+                and eff_h < self.compounding_horizon_hours
+            )
+            freed_hours = (
+                max(0.0, self.compounding_horizon_hours - eff_h)
+                if cand.can_instant_merge_or_recycle or eff_h < self.compounding_horizon_hours
+                else 0.0
+            )
             recycle_bonus_usd = (
                 alloc_cap * (self.expected_reinvestment_bps_per_hr / 10_000.0) * min(freed_hours, 6.0)
-                if cand.can_instant_merge_or_recycle
+                if (cand.can_instant_merge_or_recycle or fast_liveness_recycles)
                 else 0.0
             )
 

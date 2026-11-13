@@ -550,6 +550,174 @@ def parse_pyth_close_event(
     return out
 
 
+_TRADFI_PYTH_ALIASES: Dict[str, str] = {
+    "GOLD": "XAU",
+    "GC=F": "XAU",
+    "SILVER": "XAG",
+    "SI=F": "XAG",
+    "BTC": "BTC",
+    "ETH": "ETH",
+    "SOL": "SOL",
+    "XRP": "XRP",
+    "BNB": "BNB",
+    "DOGE": "DOGE",
+    "SPY": "SPY",
+    "QQQ": "QQQ",
+    "NVDA": "NVDA",
+    "TSLA": "TSLA",
+    "AAPL": "AAPL",
+    "MSFT": "MSFT",
+    "AMZN": "AMZN",
+    "GOOGL": "GOOGL",
+    "META": "META",
+    "NFLX": "NFLX",
+    "COIN": "COIN",
+    "XAU": "XAU",
+    "XAG": "XAG",
+}
+
+
+def _extract_polybolt_spot_sample(chainlink_stream: Any, sym: str, now_ts: float, max_age_sec: float) -> Optional[Tuple[float, float]]:
+    """Extracts `(price, ts)` from `PolymarketChainlinkLiveStream` / `PolyBolt V2` `price.equity` safely."""
+    if chainlink_stream is None or not sym or not hasattr(chainlink_stream, "get_latest_spot"):
+        return None
+    try:
+        res = chainlink_stream.get_latest_spot(sym, now_ts=now_ts, max_age_sec=max_age_sec)
+    except TypeError:
+        try:
+            res = chainlink_stream.get_latest_spot(sym)
+        except Exception:
+            return None
+    except Exception:
+        return None
+    if res is None:
+        return None
+    if isinstance(res, (tuple, list)) and len(res) >= 2:
+        px, ts_v = float(res[0] or 0.0), float(res[1] or now_ts)
+    elif isinstance(res, dict):
+        px = float(res.get("price") or res.get("spot") or 0.0)
+        ts_v = float(res.get("ts") or res.get("rx_ts") or now_ts)
+    elif isinstance(res, (int, float)) and not isinstance(res, bool):
+        px, ts_v = float(res), now_ts
+    else:
+        return None
+    if px <= 0.0 or (now_ts - ts_v) > max_age_sec:
+        return None
+    return px, ts_v
+
+
+def fetch_pyth_intraday_or_spot_sync(
+    asset: str,
+    yahoo_symbol: str = "",
+    vol_floor_annual: float = 0.25,
+    *,
+    pyth_stream: Any = None,
+    chainlink_stream: Any = None,
+    cached_yahoo: Optional[Dict[str, Any]] = None,
+    yahoo_ttl_sec: float = 90.0,
+    use_pyth_hermes: bool = True,
+    max_spot_age_sec: float = 4.0,
+    timeout: float = 2.0,
+    now_ts: Optional[float] = None,
+    session: Any = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Combines sub-second `PythHermesStream` / `fetch_pyth_hermes_latest_sync` (`price` + `conf`) and
+    `PolyBolt V2` `price.equity` consumer (`chainlink_stream`) with the `90s` Yahoo Finance `1m` fallback
+    for realized session volatility (`sigma_session`) and resilient spot anchoring.
+    """
+    import os
+    now = float(now_ts if now_ts is not None else time.time())
+    offline = str(os.environ.get("DOMINUS_NETWORK_MODE") or "").strip().lower() == "offline"
+    raw_asset = str(asset or "").strip().upper()
+    canon_sym = _TRADFI_PYTH_ALIASES.get(raw_asset) or _TRADFI_PYTH_ALIASES.get(str(yahoo_symbol or "").strip().upper(), "")
+
+    # 1. Reuse or refresh 90s Yahoo Finance 1m intraday baseline for session vol + spot fallback.
+    yahoo_data: Optional[Dict[str, Any]] = None
+    if isinstance(cached_yahoo, dict) and cached_yahoo.get("spot"):
+        if (now - float(cached_yahoo.get("yahoo_fetched_ts") or cached_yahoo.get("fetched_ts") or 0.0)) <= max(1.0, float(yahoo_ttl_sec)):
+            yahoo_data = cached_yahoo
+    if yahoo_data is None and yahoo_symbol and not offline:
+        yahoo_data = fetch_yahoo_1m_intraday_sync(
+            yahoo_symbol,
+            vol_floor_annual=vol_floor_annual,
+            timeout=max(2.0, float(timeout)),
+        )
+
+    # 2. Sub-second Pyth Hermes WS/SSE (+ conf) and PolyBolt V2 price.equity stream.
+    pyth_quote: Optional[Dict[str, Any]] = None
+    if canon_sym and pyth_stream is not None and hasattr(pyth_stream, "get_latest"):
+        try:
+            q = pyth_stream.get_latest(canon_sym, max_age_sec=max_spot_age_sec)
+            if isinstance(q, dict) and float(q.get("price") or 0.0) > 0.0:
+                pyth_quote = q
+        except Exception:
+            pyth_quote = None
+
+    polybolt_sample = _extract_polybolt_spot_sample(chainlink_stream, canon_sym or raw_asset, now, max_spot_age_sec)
+
+    if pyth_quote is None and canon_sym and use_pyth_hermes and not offline:
+        try:
+            from src.polymarket_research.riskless_fast_feeds import (
+                PYTH_FEED_IDS,
+                fetch_pyth_hermes_latest_sync,
+            )
+            if canon_sym in PYTH_FEED_IDS:
+                res_map = fetch_pyth_hermes_latest_sync([canon_sym], timeout=timeout, session=session)
+                if isinstance(res_map, dict) and isinstance(res_map.get(canon_sym), dict):
+                    cand_q = res_map[canon_sym]
+                    if float(cand_q.get("price") or 0.0) > 0.0:
+                        pyth_quote = cand_q
+        except Exception:
+            pyth_quote = None
+
+    # 3. Pick freshest fast spot (Pyth Hermes / PolyBolt V2 price.equity), falling back to Yahoo 1m.
+    pyth_px = float(pyth_quote["price"]) if isinstance(pyth_quote, dict) and float(pyth_quote.get("price") or 0.0) > 0.0 else None
+    pyth_conf = float(pyth_quote.get("conf") or 0.0) if isinstance(pyth_quote, dict) else 0.0
+    pyth_ts = float(pyth_quote.get("rx_ts") or pyth_quote.get("publish_time") or now) if isinstance(pyth_quote, dict) else 0.0
+    polybolt_px = float(polybolt_sample[0]) if polybolt_sample is not None else None
+    polybolt_ts = float(polybolt_sample[1]) if polybolt_sample is not None else 0.0
+    yahoo_px = float(yahoo_data["spot"]) if isinstance(yahoo_data, dict) and float(yahoo_data.get("spot") or 0.0) > 0.0 else None
+    yahoo_ts = float(yahoo_data.get("yahoo_fetched_ts") or yahoo_data.get("fetched_ts") or 0.0) if isinstance(yahoo_data, dict) else 0.0
+
+    chosen_px: Optional[float] = None
+    chosen_conf = 0.0
+    chosen_ts = now
+    chosen_src = ""
+    if pyth_px is not None and polybolt_px is not None:
+        if polybolt_ts > pyth_ts + 0.5:
+            chosen_px, chosen_conf, chosen_ts, chosen_src = polybolt_px, pyth_conf, polybolt_ts, "polybolt_price_equity"
+        else:
+            chosen_px, chosen_conf, chosen_ts, chosen_src = pyth_px, pyth_conf, pyth_ts, str(pyth_quote.get("source") or "pyth_hermes")
+    elif pyth_px is not None:
+        chosen_px, chosen_conf, chosen_ts, chosen_src = pyth_px, pyth_conf, pyth_ts, str(pyth_quote.get("source") or "pyth_hermes")
+    elif polybolt_px is not None:
+        chosen_px, chosen_conf, chosen_ts, chosen_src = polybolt_px, 0.0, polybolt_ts, "polybolt_price_equity"
+    elif yahoo_px is not None:
+        chosen_px, chosen_conf, chosen_ts, chosen_src = yahoo_px, 0.0, yahoo_ts or now, "yahoo_1m_fallback"
+
+    if chosen_px is None or chosen_px <= 0.0:
+        return None
+
+    sigma_eff = max(
+        float(vol_floor_annual),
+        float((yahoo_data or {}).get("sigma_session") or vol_floor_annual),
+    )
+    return {
+        "spot": float(chosen_px),
+        "sigma_session": round(sigma_eff, 4),
+        "bars": list((yahoo_data or {}).get("bars") or []),
+        "fetched_ts": float(chosen_ts),
+        "yahoo_fetched_ts": float(yahoo_ts),
+        "spot_source": chosen_src,
+        "conf": float(chosen_conf),
+        "conf_bps": round(10000.0 * chosen_conf / chosen_px, 2) if chosen_conf > 0.0 else 0.0,
+        "pyth_spot": pyth_px,
+        "polybolt_spot": polybolt_px,
+        "yahoo_spot": yahoo_px,
+    }
+
+
 def fetch_yahoo_1m_intraday_sync(
     yahoo_symbol: str,
     vol_floor_annual: float = 0.25,

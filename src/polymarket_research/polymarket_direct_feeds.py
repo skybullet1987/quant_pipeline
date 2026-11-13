@@ -44,8 +44,50 @@ logger = logging.getLogger("PolymarketDirectFeeds")
 
 NHL_OFFICIAL_SCORE_URL = "https://api-web.nhle.com/v1/score/now"
 MLB_OFFICIAL_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&hydrate=linescore"
+ESPN_TENNIS_SCOREBOARD_TMPL = "https://site.api.espn.com/apis/site/v2/sports/tennis/{tour}/scoreboard"
 
 _SESSION_LOCAL = threading.local()
+_CONDITIONAL_CACHE_LOCK = threading.Lock()
+_CONDITIONAL_URL_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+def _get_conditional_json_sync(url: str, *, timeout: float = 2.5) -> Optional[Dict[str, Any]]:
+    """Persistent keep-alive GET with `If-None-Match`/`If-Modified-Since` so 0.5s endgame polls cost near-zero on 304."""
+    sess = _get_keepalive_session()
+    with _CONDITIONAL_CACHE_LOCK:
+        ent = _CONDITIONAL_URL_CACHE.get(url)
+        hdrs: Dict[str, str] = {}
+        if ent:
+            if ent.get("etag"):
+                hdrs["If-None-Match"] = ent["etag"]
+            if ent.get("last_modified"):
+                hdrs["If-Modified-Since"] = ent["last_modified"]
+    resp = sess.get(url, headers=hdrs, timeout=timeout)
+    if resp.status_code == 304 and ent is not None:
+        return ent.get("payload")
+    if resp.status_code == 200:
+        data = resp.json()
+        with _CONDITIONAL_CACHE_LOCK:
+            _CONDITIONAL_URL_CACHE[url] = {
+                "etag": resp.headers.get("ETag", ""),
+                "last_modified": resp.headers.get("Last-Modified", ""),
+                "payload": data,
+            }
+            if len(_CONDITIONAL_URL_CACHE) > 64:
+                _CONDITIONAL_URL_CACHE.pop(next(iter(_CONDITIONAL_URL_CACHE)), None)
+        return data
+    return None
+
+
+def compute_adaptive_sports_poll_interval_sec(
+    *,
+    is_endgame_or_halftime: bool = False,
+    has_live_games: bool = True,
+) -> float:
+    """Adaptive cadence (`0.5s` inside final 120s / halftime freeze, `5.5s` normal live, `60s` idle)."""
+    if is_endgame_or_halftime:
+        return 0.75
+    return 5.5 if has_live_games else 60.0
 
 
 def _get_keepalive_session() -> requests.Session:
@@ -116,9 +158,9 @@ def parse_nba_cdn_scoreboard(payload: Dict[str, Any]) -> List[LiveNbaGameState]:
 
 def fetch_nba_cdn_scoreboard_sync(timeout: float = 2.8) -> List[LiveNbaGameState]:
     try:
-        resp = _get_keepalive_session().get(CDN_NBA_SCOREBOARD_URL, timeout=timeout)
-        if resp.status_code == 200:
-            return parse_nba_cdn_scoreboard(resp.json())
+        payload = _get_conditional_json_sync(CDN_NBA_SCOREBOARD_URL, timeout=timeout)
+        if isinstance(payload, dict):
+            return parse_nba_cdn_scoreboard(payload)
     except Exception as exc:
         logger.debug(f"NBA CDN direct feed fetch notice: {exc}")
     return []
@@ -214,9 +256,9 @@ def parse_nhl_official_scoreboard(payload: Dict[str, Any]) -> List[LiveMultiSpor
 
 def fetch_nhl_official_scoreboard_sync(timeout: float = 2.8) -> List[LiveMultiSportGame]:
     try:
-        resp = _get_keepalive_session().get(NHL_OFFICIAL_SCORE_URL, timeout=timeout)
-        if resp.status_code == 200:
-            return parse_nhl_official_scoreboard(resp.json())
+        payload = _get_conditional_json_sync(NHL_OFFICIAL_SCORE_URL, timeout=timeout)
+        if isinstance(payload, dict):
+            return parse_nhl_official_scoreboard(payload)
     except Exception as exc:
         logger.debug(f"NHL official feed fetch notice: {exc}")
     return []
@@ -290,9 +332,9 @@ def parse_mlb_statsapi_scoreboard(payload: Dict[str, Any]) -> List[LiveMultiSpor
 
 def fetch_mlb_statsapi_scoreboard_sync(timeout: float = 2.8) -> List[LiveMultiSportGame]:
     try:
-        resp = _get_keepalive_session().get(MLB_OFFICIAL_SCHEDULE_URL, timeout=timeout)
-        if resp.status_code == 200:
-            return parse_mlb_statsapi_scoreboard(resp.json())
+        payload = _get_conditional_json_sync(MLB_OFFICIAL_SCHEDULE_URL, timeout=timeout)
+        if isinstance(payload, dict):
+            return parse_mlb_statsapi_scoreboard(payload)
     except Exception as exc:
         logger.debug(f"MLB StatsAPI direct feed fetch notice: {exc}")
     return []
@@ -507,3 +549,64 @@ def reconcile_multisport_dual_source_boards(
         if idx_o not in used_off:
             merged.append(og)
     return merged
+
+
+def parse_atp_wta_scoreboard(payload: Dict[str, Any], *, tour: str = "atp") -> List[Dict[str, Any]]:
+    """
+    Parses public ESPN ATP/WTA live scoreboard JSON into structured tennis match records
+    (`completed_sets`, `status_state`, `retired_or_walkover`, `winner_name`) for `TEN1` / `Family G`.
+    """
+    out: List[Dict[str, Any]] = []
+    for ev in (payload or {}).get("events") or []:
+        if not isinstance(ev, dict):
+            continue
+        for grp in ev.get("groupings") or [ev]:
+            for comp in grp.get("competitions") or []:
+                if not isinstance(comp, dict):
+                    continue
+                st_type = ((comp.get("status") or {}).get("type") or {})
+                state = str(st_type.get("state") or "").lower()
+                detail = str(st_type.get("detail") or st_type.get("shortDetail") or "").lower()
+                completed = bool(st_type.get("completed", state == "post"))
+                retired = any(k in detail for k in ("ret", "walkover", "w/o", "default", "abandon"))
+                competitors = comp.get("competitors") or []
+                if len(competitors) < 2:
+                    continue
+                players: List[Dict[str, Any]] = []
+                max_sets_done = 0
+                winner_name = ""
+                for c in competitors[:2]:
+                    ath = c.get("athlete") or c.get("team") or {}
+                    nm = str(ath.get("displayName") or ath.get("shortName") or "").strip()
+                    sets = c.get("linescores") or []
+                    sets_won = sum(1 for ls in sets if isinstance(ls, dict) and ls.get("winner") is True)
+                    max_sets_done = max(max_sets_done, sum(1 for ls in sets if isinstance(ls, dict) and ls.get("winner") is not None))
+                    is_win = bool(c.get("winner"))
+                    if is_win and nm:
+                        winner_name = nm
+                    players.append({"name": nm, "sets_won": sets_won, "winner": is_win})
+                out.append(
+                    {
+                        "tour": tour.upper(),
+                        "match_id": str(comp.get("id") or ev.get("id") or ""),
+                        "state": state or ("post" if completed else "in"),
+                        "completed": completed,
+                        "completed_sets": max_sets_done,
+                        "retired_or_walkover": retired,
+                        "winner_name": winner_name,
+                        "players": players,
+                    }
+                )
+    return out
+
+
+def fetch_atp_wta_live_scores_sync(tour: str = "atp", *, timeout: float = 2.5) -> List[Dict[str, Any]]:
+    """Fetches `$0/mo` public ATP or WTA live scores with conditional ETag caching."""
+    t = "wta" if str(tour or "").strip().lower() == "wta" else "atp"
+    try:
+        payload = _get_conditional_json_sync(ESPN_TENNIS_SCOREBOARD_TMPL.format(tour=t), timeout=timeout)
+        if isinstance(payload, dict):
+            return parse_atp_wta_scoreboard(payload, tour=t)
+    except Exception as exc:
+        logger.debug(f"Tennis ({t}) direct feed notice: {exc}")
+    return []

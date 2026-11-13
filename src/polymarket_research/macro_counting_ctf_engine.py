@@ -9,12 +9,29 @@ import json
 import logging
 import math
 import re
+import threading
 import time
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
+
+_MACRO_FEED_LOCK = threading.RLock()
+_MACRO_FEED_CLIENT: Any = None
+_MACRO_FEED_CACHE: Tuple[float, str, Dict[str, Any]] = (0.0, "", {})
+
+
+def _get_macro_event_feed_client() -> Any:
+    global _MACRO_FEED_CLIENT
+    with _MACRO_FEED_LOCK:
+        if _MACRO_FEED_CLIENT is None:
+            try:
+                from src.polymarket_research.riskless_fast_feeds import MacroEventFeedClient
+                _MACRO_FEED_CLIENT = MacroEventFeedClient()
+            except Exception:
+                _MACRO_FEED_CLIENT = False
+        return None if _MACRO_FEED_CLIENT is False else _MACRO_FEED_CLIENT
 
 from src.polymarket_research.barrier_onetouch_svi_engine import first_passage_touch_prob
 from src.polymarket_research.tradfi_sports_zero_fee_engine import (
@@ -1123,6 +1140,54 @@ def is_in_scheduled_macro_catalyst_window(now_ts: float) -> Tuple[bool, str]:
     return False, ""
 
 
+def poll_macro_catalyst_feeds_sync(
+    now_ts: float,
+    *,
+    client: Any = None,
+    sec_ciks: Tuple[str, ...] = (),
+    bls_series_ids: Tuple[str, ...] = (),
+    ttl_sec: float = 20.0,
+) -> Dict[str, Any]:
+    """
+    Catalyst-window gated official Fed RSS / SEC EDGAR / optional BLS poller.
+    Strictly dormant (zero HTTP requests) outside `is_in_scheduled_macro_catalyst_window`.
+    """
+    global _MACRO_FEED_CACHE
+    in_win, cat_name = is_in_scheduled_macro_catalyst_window(now_ts)
+    if not in_win:
+        return {"in_window": False, "dormant": True, "catalyst": "", "fed_items": [], "sec_hits": [], "bls_data": None}
+    with _MACRO_FEED_LOCK:
+        c_ts, c_cat, c_pay = _MACRO_FEED_CACHE
+        if c_pay and c_cat == cat_name and (float(now_ts) - c_ts) < max(2.0, float(ttl_sec)):
+            return dict(c_pay)
+    cli = client if client is not None else _get_macro_event_feed_client()
+    if cli is None:
+        return {"in_window": True, "dormant": False, "catalyst": cat_name, "fed_items": [], "sec_hits": [], "bls_data": None}
+    fed_items = cli.fetch_fed_rss_sync(in_window=True) if hasattr(cli, "fetch_fed_rss_sync") else []
+    sec_hits = [
+        res
+        for cik in sec_ciks
+        if cik and (res := (cli.fetch_sec_submissions_sync(cik, in_window=True) if hasattr(cli, "fetch_sec_submissions_sync") else None)) is not None
+    ]
+    bls_data = (
+        cli.fetch_bls_series_sync(bls_series_ids, in_window=True)
+        if (cat_name == "US_0830_MACRO_RELEASE" and bls_series_ids and hasattr(cli, "fetch_bls_series_sync"))
+        else None
+    )
+    out = {
+        "in_window": True,
+        "dormant": False,
+        "catalyst": cat_name,
+        "fed_items": list(fed_items or []),
+        "sec_hits": sec_hits,
+        "bls_data": bls_data,
+        "fetched_ts": float(now_ts),
+    }
+    with _MACRO_FEED_LOCK:
+        _MACRO_FEED_CACHE = (float(now_ts), cat_name, dict(out))
+    return out
+
+
 def evaluate_pyth_catalyst_shock(
     asset: str,
     prev_spot: float,
@@ -1132,6 +1197,9 @@ def evaluate_pyth_catalyst_shock(
     eff_session_hours: float,
     sigma_session: float,
     now_ts: float,
+    *,
+    macro_client: Any = None,
+    poll_official_feeds: bool = False,
 ) -> Dict[str, Any]:
     """
     Graveyard-compliant `<1.5%` fee (`0.00%` Pyth `zero_fees`) scheduled macro release jump detector.
@@ -1141,6 +1209,13 @@ def evaluate_pyth_catalyst_shock(
     in_win, cat_name = is_in_scheduled_macro_catalyst_window(now_ts)
     if not in_win or prev_spot <= 0 or cur_spot <= 0 or eff_session_hours <= 0.1:
         return {"eligible": False}
+    macro_ctx: Optional[Dict[str, Any]] = None
+    if poll_official_feeds or macro_client is not None:
+        macro_ctx = poll_macro_catalyst_feeds_sync(now_ts, client=macro_client)
+    else:
+        with _MACRO_FEED_LOCK:
+            if _MACRO_FEED_CACHE[2] and (float(now_ts) - _MACRO_FEED_CACHE[0]) <= 120.0:
+                macro_ctx = _MACRO_FEED_CACHE[2]
     ret = (cur_spot - prev_spot) / prev_spot
     min_jump = 0.0035 if asset == "SPY" else 0.0045
     if abs(ret) < min_jump:
@@ -1153,7 +1228,7 @@ def evaluate_pyth_catalyst_shock(
         return {"eligible": False}
     side = "YES" if dp > 0 else "NO"
     p_fair = p_after if side == "YES" else (1.0 - p_after)
-    return {
+    res_out: Dict[str, Any] = {
         "eligible": bool(0.22 <= p_fair <= 0.94),
         "catalyst": cat_name,
         "side": side,
@@ -1161,6 +1236,14 @@ def evaluate_pyth_catalyst_shock(
         "delta_p": round(abs(dp), 4),
         "ret_pct": round(ret * 100.0, 3),
     }
+    if macro_ctx is not None:
+        res_out["official_macro_feed"] = {
+            "catalyst": cat_name,
+            "fed_release_count": len(macro_ctx.get("fed_items") or ()),
+            "sec_hits_count": len(macro_ctx.get("sec_hits") or ()),
+            "bls_present": bool(macro_ctx.get("bls_data")),
+        }
+    return res_out
 
 
 def evaluate_ai_elo_ci_lock(

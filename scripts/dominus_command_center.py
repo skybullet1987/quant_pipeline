@@ -673,9 +673,22 @@ if lh_path.exists():
         def _is_floor_zero_cc(p: dict) -> bool:
             return _is_unhedged_resid_cc(p) or _is_uma_disputed_cc(p)
 
+        def _intent_synced_eq_cc(i: dict) -> float:
+            if not isinstance(i, dict):
+                return 0.0
+            explicit_sync = max(0.0, float(i.get("synced_equity_usd", 0.0) or 0.0))
+            if explicit_sync > 0.0:
+                return explicit_sync
+            if not i.get("live_maker_anchor_inflight"):
+                return 0.0
+            matched_u = max(0.0, float(i.get("matched_notional_usd", 0.0) or 0.0))
+            drop_u = max(0.0, float(i.get("collat_drop_usd", 0.0) or 0.0))
+            posted_cap = max(matched_u, float(i.get("posted_notional_usd", i.get("notional_usd", 0.0)) or 0.0))
+            return min(posted_cap, drop_u) if drop_u > 0.0 else 0.0
+
         pending_synced = (
             sum(
-                max(0.0, float(i.get("synced_equity_usd", 0.0) or 0.0))
+                _intent_synced_eq_cc(i)
                 for i in (s_doc.get("pending_entry_intents") or {}).values()
                 if isinstance(i, dict)
             )
@@ -1322,6 +1335,9 @@ if lh_path.exists():
         "maker_skip_counts": dict(_raw_ft_st.get("maker_skip_counts") or {}),
     }
 
+    _active_undisputed_open_usd = round(max(0.0, _active_book_usd - _disputed_uma_cost_usd), 2)
+    _reconciled_undisputed_equity_usd = round(_wallet_cash + _active_undisputed_open_usd, 2)
+
     out["polymarket_live"] = {
         "bankroll_usd": round(_wallet_cash, 2),
         "riskless_lock_start_usd": _lock_start_eq,
@@ -1330,6 +1346,9 @@ if lh_path.exists():
         "post_lock_cash_delta_usd": _post_lock_cash_delta,
         "post_lock_cash_pct": round(100.0 * _post_lock_cash_delta / max(0.01, _contributed_basis_usd), 1),
         "open_book_usd": _active_book_usd,
+        "active_undisputed_open_usd": _active_undisputed_open_usd,
+        "frozen_disputed_open_usd": round(_disputed_uma_cost_usd, 2),
+        "reconciled_undisputed_equity_usd": _reconciled_undisputed_equity_usd,
         "free_cash_usd": _free_cash_usd,
         "quoting_cash_usd": round(_inflight_intents_usd, 2),
         "quoting_utilization_pct": _quoting_util_pct,
@@ -1884,6 +1903,44 @@ if _a_raw_doc or _mir_raw_doc:
         "HEDGED_PRESPLIT_CONV_GUN",
         "YIELD_STACKED_CARRY_BOX",
     }
+    by_slv = dict(by_slv)
+    try:
+        _v6_xv_pre_p = root / "data/cross_venue_shadow/v6_expansion_telemetry.json"
+        if _v6_xv_pre_p.exists():
+            _v6_xv_pre = json.loads(_v6_xv_pre_p.read_text(encoding="utf-8"))
+            if isinstance(_v6_xv_pre, dict):
+                for _vk, _vv in (_v6_xv_pre.get("by_sleeve") or {}).items():
+                    if _vk in v6_expansion_sleeves and isinstance(_vv, dict):
+                        _cur_v = dict(by_slv.get(_vk) or {})
+                        _tot_cl = int(_cur_v.get("closed", 0) or 0) + int(_vv.get("closed", 0) or 0)
+                        _tot_wn = int(_cur_v.get("wins", 0) or 0) + int(_vv.get("wins", 0) or 0)
+                        _tot_ls = int(_cur_v.get("losses", 0) or 0) + int(_vv.get("losses", 0) or 0)
+                        by_slv[_vk] = {
+                            **_cur_v,
+                            "open": int(_cur_v.get("open", 0) or 0) + int(_vv.get("open", 0) or 0),
+                            "closed": _tot_cl,
+                            "wins": _tot_wn,
+                            "losses": _tot_ls,
+                            "win_rate_pct": round(100.0 * _tot_wn / _tot_cl, 2) if _tot_cl else 0.0,
+                            "realized_pnl_t1000_usd": round(
+                                float(_cur_v.get("realized_pnl_t1000_usd", 0.0) or 0.0)
+                                + float(_vv.get("realized_pnl_t1000_usd", 0.0) or 0.0),
+                                2,
+                            ),
+                            "grad8_live_promoted": False,
+                        }
+                for _xv_op in (_v6_xv_pre.get("open_positions") or []):
+                    if isinstance(_xv_op, dict):
+                        open_p.append(_xv_op)
+        _v6_a124_pre_p = root / "data/polymarket/v6_expansion_alpha124_telemetry.json"
+        if _v6_a124_pre_p.exists():
+            _v6_a124_pre = json.loads(_v6_a124_pre_p.read_text(encoding="utf-8"))
+            if isinstance(_v6_a124_pre, dict):
+                _pmk_cnt = int(_v6_a124_pre.get("pending_maker_asks", 0) or 0)
+                if _pmk_cnt > 0:
+                    pend_by_slv["HEDGED_PRESPLIT_CONV_GUN"] = pend_by_slv.get("HEDGED_PRESPLIT_CONV_GUN", 0) + _pmk_cnt
+    except Exception:
+        pass
     machine_gun_sleeves = []
     for _mg_pat in ("*machine_gun*.json", "*mg_riskless*.json"):
         for _mg_fp in sorted((root / "data/polymarket").glob(_mg_pat)):
@@ -1945,13 +2002,21 @@ if _a_raw_doc or _mir_raw_doc:
             and not bool((strat_cfg.get("riskless_boxes") or {}).get("enable_pre_split_overround_gun", False))
         )
         _is_mg = ("MACHINE_GUN" in slv.upper()) or slv.upper().startswith("MG_") or (slv in machine_gun_sleeves)
-        g8_prom = (not _is_paused_rb) and bool(mm.get("grad8_live_promoted") or m.get("grad8_live_promoted") or (c_n >= 8 and l_n == 0 and float(m.get("realized_pnl_t1000_usd", 0.0) or 0.0) > 0))
+        is_v3 = slv in frontier_v3_grad8 or _is_mg
+        is_v6 = slv in v6_expansion_sleeves
+        g8_prom = (
+            (not _is_paused_rb)
+            and (not is_v6)
+            and bool(
+                mm.get("grad8_live_promoted")
+                or m.get("grad8_live_promoted")
+                or (c_n >= 8 and l_n == 0 and float(m.get("realized_pnl_t1000_usd", 0.0) or 0.0) > 0)
+            )
+        )
         if g8_prom:
             promoted_cnt += 1
         elif (not _is_paused_rb) and 4 <= w_n < 8 and l_n == 0:
             near_grad8_cnt += 1
-        is_v3 = slv in frontier_v3_grad8 or _is_mg
-        is_v6 = slv in v6_expansion_sleeves
         is_bridged = (not _is_paused_rb) and (slv in live_bridged_sleeves) and (l_n == 0 or g8_prom)
         is_live_slv = bool(g8_prom or is_bridged)
         if _is_paused_rb:
@@ -1964,7 +2029,7 @@ if _a_raw_doc or _mir_raw_doc:
             grad_lbl = f"MG G8 ({min(w_n, 8)}/8)" if l_n == 0 else f"REVOKED ({w_n}/{l_n})"
             tier_tag = "MACHINE_GUN"
         elif is_v6:
-            grad_lbl = f"V6 G8 ({min(w_n, 8)}/8)" if l_n == 0 else f"REVOKED ({w_n}/{l_n})"
+            grad_lbl = (f"V6 READY ({w_n}/0)" if w_n >= 8 else f"V6 G8 ({min(w_n, 8)}/8)") if l_n == 0 else f"REVOKED ({w_n}/{l_n})"
             tier_tag = "V6_RISKLESS"
         elif is_v3:
             grad_lbl = f"V3 G8 ({min(w_n, 8)}/8)" if l_n == 0 else f"REVOKED ({w_n}/{l_n})"
@@ -2490,6 +2555,7 @@ _v6_rows = []
 _v6_eval_tot = 0
 _v6_found_tot = 0
 _by_slv_ref = (a.get("by_sleeve") if ('a' in locals() and isinstance(a, dict)) else None) or {}
+_by_slv_xv_ref = (_v6_xv.get("by_sleeve") if isinstance(_v6_xv, dict) else None) or {}
 for _sid, _sdesc in _v6_meta:
     _ps_a = ((_v6_a124.get("per_sleeve") or {}).get(_sid)) or {}
     _ps_x = ((_v6_xv.get("per_sleeve") or {}).get(_sid)) or {}
@@ -2497,6 +2563,7 @@ for _sid, _sdesc in _v6_meta:
     _fn_c = int(_ps_a.get("opportunities_found", 0) or 0) + int(_ps_x.get("opportunities_found", 0) or 0)
     _cy_c = int(_ps_a.get("cycle_hits", 0) or 0) + int(_ps_x.get("cycle_hits", 0) or 0)
     _sm = _by_slv_ref.get(_sid) or {}
+    _sm_x = _by_slv_xv_ref.get(_sid) or {}
     _v6_eval_tot += _ev_c
     _v6_found_tot += _fn_c
     _v6_rows.append({
@@ -2505,9 +2572,14 @@ for _sid, _sdesc in _v6_meta:
         "evaluated": _ev_c,
         "opportunities_found": _fn_c,
         "cycle_hits": _cy_c,
-        "shadow_open": int(_sm.get("open", 0) or 0),
-        "shadow_wins": int(_sm.get("wins", 0) or 0),
-        "shadow_losses": int(_sm.get("losses", 0) or 0),
+        "shadow_open": int(_sm.get("open", 0) or 0) + int(_sm_x.get("open", 0) or 0),
+        "shadow_wins": int(_sm.get("wins", 0) or 0) + int(_sm_x.get("wins", 0) or 0),
+        "shadow_losses": int(_sm.get("losses", 0) or 0) + int(_sm_x.get("losses", 0) or 0),
+        "t1000_pnl_usd": round(
+            float(_sm.get("realized_pnl_t1000_usd", 0.0) or 0.0)
+            + float(_sm_x.get("realized_pnl_t1000_usd", 0.0) or 0.0),
+            2,
+        ),
     })
 
 for _vhit in ((_v6_xv.get("top_opportunities") or []) + (_v6_a124.get("top_opportunities") or []))[:12]:
@@ -2852,27 +2924,52 @@ if paa_db_p.exists():
             _fs = _conn.execute("SELECT * FROM financial_snapshots ORDER BY snapshot_id DESC LIMIT 1").fetchone()
             _cut_24h_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now_probe_u - 86400.0))
             _fs_24h = _conn.execute(
-                "SELECT recorded_at_utc, free_cash_pusd, open_cost_basis_usd, nav_mark_to_bid_usd FROM financial_snapshots WHERE recorded_at_utc <= ? AND accounting_ok = 1 ORDER BY snapshot_id DESC LIMIT 1",
+                "SELECT recorded_at_utc, free_cash_pusd, open_cost_basis_usd, nav_mark_to_bid_usd, verified_realized_net_pnl_usd FROM financial_snapshots WHERE recorded_at_utc <= ? AND accounting_ok = 1 ORDER BY snapshot_id DESC LIMIT 1",
                 (_cut_24h_iso,),
             ).fetchone()
             if not _fs_24h:
                 _fs_24h = _conn.execute(
-                    "SELECT recorded_at_utc, free_cash_pusd, open_cost_basis_usd, nav_mark_to_bid_usd FROM financial_snapshots WHERE accounting_ok = 1 ORDER BY snapshot_id ASC LIMIT 1"
+                    "SELECT recorded_at_utc, free_cash_pusd, open_cost_basis_usd, nav_mark_to_bid_usd, verified_realized_net_pnl_usd FROM financial_snapshots WHERE accounting_ok = 1 ORDER BY snapshot_id ASC LIMIT 1"
                 ).fetchone()
             if _fs_24h and out.get("polymarket_live"):
-                _book_24h = round(float(_fs_24h["free_cash_pusd"] or 0.0) + float(_fs_24h["open_cost_basis_usd"] or 0.0), 2)
+                _cash_24h = float(_fs_24h["free_cash_pusd"] or 0.0)
+                _open_cb_24h = float(_fs_24h["open_cost_basis_usd"] or 0.0)
                 _nav_24h = float(_fs_24h["nav_mark_to_bid_usd"] or 0.0)
-                _eq_24h_ago = _book_24h if _book_24h > 0 else round(_nav_24h, 2)
-                if _eq_24h_ago > 0:
-                    _cur_eq = float(out["polymarket_live"].get("equity_usd") or 0.0)
-                    _fs_24h_unix = _to_unix(_fs_24h["recorded_at_utc"])
-                    _dep_24h = 0.0
-                    for _c in (locals().get("_cf_rows") or []):
-                        _c_unix = _to_unix(_c.get("recorded_at_utc") or _c.get("ts_utc"))
-                        if _fs_24h_unix is not None and _c_unix is not None and _c_unix > _fs_24h_unix:
-                            _sgn = -1.0 if str(_c.get("type") or "DEPOSIT").strip().upper() in ("WITHDRAWAL", "WITHDRAW", "OUTFLOW") else 1.0
-                            _dep_24h += _sgn * abs(float(_c.get("amount_usd") or 0.0))
+                _frozen_disp_now = float(out["polymarket_live"].get("frozen_disputed_open_usd") or 0.0)
+                _raw_undisp_open_24h = max(0.0, _open_cb_24h - _frozen_disp_now)
+                # Guard against pre-reconciliation redemption snapshots where an already-redeemed lock
+                # was counted in free_cash_pusd while still present in open_cost_basis_usd (zero ERC-1155 MTM on-chain).
+                if _raw_undisp_open_24h > 0.50 and _nav_24h > 0.0 and (_nav_24h - _cash_24h) < 0.25 * _raw_undisp_open_24h:
+                    _undisp_open_24h = 0.0
+                else:
+                    _undisp_open_24h = _raw_undisp_open_24h
+                _cur_eq = float(
+                    out["polymarket_live"].get("reconciled_undisputed_equity_usd")
+                    or out["polymarket_live"].get("guaranteed_redemption_equity_usd")
+                    or out["polymarket_live"].get("bankroll_usd")
+                    or 0.0
+                )
+                _fs_24h_unix = _to_unix(_fs_24h["recorded_at_utc"])
+                _dep_24h = 0.0
+                for _c in (locals().get("_cf_rows") or []):
+                    _c_unix = _to_unix(_c.get("recorded_at_utc") or _c.get("ts_utc"))
+                    if _fs_24h_unix is not None and _c_unix is not None and _c_unix > _fs_24h_unix:
+                        _sgn = -1.0 if str(_c.get("type") or "DEPOSIT").strip().upper() in ("WITHDRAWAL", "WITHDRAW", "OUTFLOW") else 1.0
+                        _dep_24h += _sgn * abs(float(_c.get("amount_usd") or 0.0))
+                _has_realized_pair = (
+                    _fs is not None
+                    and "verified_realized_net_pnl_usd" in _fs.keys()
+                    and _fs["verified_realized_net_pnl_usd"] is not None
+                    and "verified_realized_net_pnl_usd" in _fs_24h.keys()
+                    and _fs_24h["verified_realized_net_pnl_usd"] is not None
+                )
+                if _has_realized_pair and _cur_eq > 0:
+                    _d24 = round(float(_fs["verified_realized_net_pnl_usd"]) - float(_fs_24h["verified_realized_net_pnl_usd"]), 2)
+                    _eq_24h_ago = round(max(0.01, _cur_eq - _d24 - _dep_24h), 2)
+                else:
+                    _eq_24h_ago = round(_cash_24h + _undisp_open_24h, 2) if _cash_24h > 0 else round(_nav_24h, 2)
                     _d24 = round(_cur_eq - _eq_24h_ago - _dep_24h, 2)
+                if _eq_24h_ago > 0:
                     _denom_24h = max(0.01, _eq_24h_ago + max(0.0, _dep_24h))
                     out["polymarket_live"]["equity_24h_ago_usd"] = _eq_24h_ago
                     out["polymarket_live"]["deposits_24h_usd"] = round(_dep_24h, 2)
@@ -4782,9 +4879,12 @@ function renderPmTables(pm) {
     const netDep = Number(pm.net_deposits_post_lock_usd || 0);
     const basisEq = Number(pm.contributed_capital_basis_usd ?? (lockStart + netDep));
     const curEq = Number(pm.equity_usd || pm.bankroll_usd || 0);
+    const frozenDispSpark = Number(pm.frozen_disputed_open_usd ?? Number((pm.nav_triad || {}).disputed_uma_cost_usd || 0));
+    const reconEqSpark = Number(pm.reconciled_undisputed_equity_usd ?? Math.max(0, curEq - frozenDispSpark));
     const postCash = Number(pm.post_lock_cash_delta_usd ?? (curEq - basisEq));
-    const depNote = netDep > 0 ? ` ($${lockStart.toFixed(2)} + $${netDep.toFixed(2)} dep = $${basisEq.toFixed(2)} basis &rarr; $${curEq.toFixed(2)})` : ` ($${lockStart.toFixed(2)} &rarr; $${curEq.toFixed(2)})`;
-    if (sparkLbl) sparkLbl.innerHTML = `All-Time Riskless: <b class="pos">+$${Number(pm.pure_riskless_pnl_usd || 0).toFixed(2)}</b> (${pm.pure_riskless_wins ?? 0}W/${pm.pure_riskless_losses ?? 0}L &bull; ${Number(pm.pure_riskless_wr_pct ?? 100).toFixed(1)}% WR) &bull; Post-Lock Trading Gain: <b class="pos">${postCash >= 0 ? '+' : ''}$${postCash.toFixed(2)}</b>${depNote}`;
+    const eqTargetNote = frozenDispSpark > 0.005 ? `$${reconEqSpark.toFixed(2)} liquid + $${frozenDispSpark.toFixed(2)} disputed KMIA` : `$${curEq.toFixed(2)}`;
+    const depNote = netDep > 0 ? ` ($${lockStart.toFixed(2)} + $${netDep.toFixed(2)} dep = $${basisEq.toFixed(2)} basis &rarr; ${eqTargetNote})` : ` ($${lockStart.toFixed(2)} &rarr; ${eqTargetNote})`;
+    if (sparkLbl) sparkLbl.innerHTML = `All-Time Riskless: <b class="pos">+$${Number(pm.pure_riskless_pnl_usd || 0).toFixed(2)}</b> (${pm.pure_riskless_wins ?? 0}W/${pm.pure_riskless_losses ?? 0}L &bull; ${Number(pm.pure_riskless_wr_pct ?? 100).toFixed(1)}% WR) &bull; Post-Lock Trading Gain (ex-KMIA dispute): <b class="pos">${postCash >= 0 ? '+' : ''}$${postCash.toFixed(2)}</b>${depNote}`;
   } else {
     drawSpark(pm.equity_curve || []);
     if (sparkLbl) sparkLbl.innerHTML = `All-Time Account Curve (Incl. Paused Legacy Directional): <b>${Number(pm.epoch_net_pnl_usd || 0) >= 0 ? '+' : ''}$${Number(pm.epoch_net_pnl_usd || 0).toFixed(2)}</b>`;
@@ -5179,17 +5279,28 @@ async function refreshNow(force=false) {
     const cash = Number(pm.bankroll_usd ?? 0);
     const openBook = Number(pm.open_book_usd ?? 0);
     const totalEq = Number(pm.equity_usd ?? (cash + openBook));
+    const frozenDisp = Number(pm.frozen_disputed_open_usd ?? Number((pm.nav_triad || {}).disputed_uma_cost_usd || 0));
+    const activeOpen = Number(pm.active_undisputed_open_usd ?? Math.max(0, openBook - frozenDisp));
+    const reconEq = Number(pm.reconciled_undisputed_equity_usd ?? (cash + activeOpen));
     const lockStartEq = Number(pm.riskless_lock_start_usd || 60.92);
     const netDepUsd = Number(pm.net_deposits_post_lock_usd || 0);
     const basisEq = Number(pm.contributed_capital_basis_usd ?? (lockStartEq + netDepUsd));
     const postLockDelta = Number(pm.post_lock_cash_delta_usd ?? (totalEq - basisEq));
     const postLockPct = Number(pm.post_lock_cash_pct ?? (100.0 * postLockDelta / Math.max(0.01, basisEq)));
     const d24Usd = pm.equity_24h_delta_usd !== undefined && pm.equity_24h_delta_usd !== null ? Number(pm.equity_24h_delta_usd) : null;
+    const d24Pct = pm.equity_24h_pct !== undefined && pm.equity_24h_pct !== null ? Number(pm.equity_24h_pct) : null;
+    const eq24Ago = pm.equity_24h_ago_usd !== undefined && pm.equity_24h_ago_usd !== null ? Number(pm.equity_24h_ago_usd) : (d24Usd !== null ? (reconEq - d24Usd) : reconEq);
     const badgeTitle = netDepUsd > 0
       ? `Out-of-pocket principal: $${lockStartEq.toFixed(2)} lock start + $${netDepUsd.toFixed(2)} manual deposit = $${basisEq.toFixed(2)} basis -> ${postLockDelta >= 0 ? '+' : ''}$${postLockDelta.toFixed(2)} pure trading gain`
       : `Exact wallet gain since $${lockStartEq.toFixed(2)} Pure Riskless Lock`;
     const badgeLbl = netDepUsd > 0 ? `$${basisEq.toFixed(2)} basis` : `$${lockStartEq.toFixed(2)}`;
     const lockBadge = `<span class="pill ${postLockDelta >= 0 ? 'pill-ok' : 'pill-warn'}" style="font-size:11px;vertical-align:middle;margin-left:4px;" title="${badgeTitle}">${badgeLbl} &rarr; ${postLockDelta >= 0 ? '+' : ''}$${postLockDelta.toFixed(2)} (${postLockPct >= 0 ? '+' : ''}${postLockPct.toFixed(1)}%)</span>`;
+    const d24Badge = d24Usd !== null
+      ? `<span class="pill ${d24Usd >= 0 ? 'pill-ok' : 'pill-warn'}" style="font-size:11px;vertical-align:middle;margin-left:4px;" title="24h reconciled undisputed NAV change ($${eq24Ago.toFixed(2)} -> $${reconEq.toFixed(2)})">24h: ${d24Usd >= 0 ? '+' : ''}$${d24Usd.toFixed(2)}${d24Pct !== null ? ` (${d24Pct >= 0 ? '+' : ''}${d24Pct.toFixed(1)}%)` : ''}</span>`
+      : '';
+    const bookBadge = frozenDisp > 0.005
+      ? `<span class="pill pill-info" style="font-size:11px;vertical-align:middle;margin-left:4px;" title="$${basisEq.toFixed(2)} basis -> ${postLockDelta >= 0 ? '+' : ''}$${postLockDelta.toFixed(2)} (${postLockPct >= 0 ? '+' : ''}${postLockPct.toFixed(1)}%) book gain if $${frozenDisp.toFixed(2)} disputed KMIA recovers cost; $${reconEq.toFixed(2)} worst-case floor if KMIA = $0">Book w/ KMIA: $${totalEq.toFixed(2)}</span>`
+      : lockBadge;
     const quoteCash = Number(pm.quoting_cash_usd ?? 0);
     const freeCash = Number(pm.free_cash_usd ?? cash);
     const utilPct = Number(pm.quoting_utilization_pct ?? (cash > 0 ? (100 * quoteCash / cash) : 0));
@@ -5204,8 +5315,7 @@ async function refreshNow(force=false) {
     const prPnl = Number(pm.pure_riskless_pnl_usd ?? 0);
     const plW = Number(pm.post_lock_wins ?? 0);
     const plL = Number(pm.post_lock_losses ?? 0);
-    const d24Sub = d24Usd !== null ? ` (24h: <b class="${d24Usd >= 0 ? 'pos' : 'warn'}">${d24Usd >= 0 ? '+' : ''}$${d24Usd.toFixed(2)}</b>)` : '';
-    const openSub = openBook > 0.005 ? ` &bull; Open: <b>$${openBook.toFixed(2)}</b>` : '';
+    const frozenSub = frozenDisp > 0.005 ? ` &bull; Frozen KMIA Dispute: <b class="warn">$${frozenDisp.toFixed(2)}</b>` : '';
 
     const zlPnl = Number(a124.zero_loss_t1000_pnl_usd || vf.zero_loss_shadow_t1000_pnl_usd || 0);
     const zlWins = Number(a124.zero_loss_wins_total || vf.zero_loss_shadow_wins || 0);
@@ -5220,15 +5330,15 @@ async function refreshNow(force=false) {
 
     document.getElementById('kpis').innerHTML = `
       <div class="card">
-        <div class="label">On-Chain Cash &amp; Account Equity</div>
-        <div class="val pos">$${totalEq.toFixed(2)} ${lockBadge}</div>
+        <div class="label">On-Chain Cash &amp; Reconciled NAV</div>
+        <div class="val pos">$${reconEq.toFixed(2)} ${d24Badge}${bookBadge}</div>
         <div class="util-bar"><div class="util-fill" style="width:${Math.min(100, utilPct)}%;"></div></div>
-        <div class="sub">Cash: <b>$${cash.toFixed(2)}</b>${d24Sub}${openSub} &bull; Quoting: <b class="pos">$${quoteCash.toFixed(2)}</b> (${utilPct.toFixed(0)}%) &bull; Free: <b>$${freeCash.toFixed(2)}</b></div>
+        <div class="sub">Cash: <b>$${cash.toFixed(2)}</b> &bull; Active Open: <b>$${activeOpen.toFixed(2)}</b> &bull; Quoting: <b class="pos">$${quoteCash.toFixed(2)}</b> (${utilPct.toFixed(0)}%) &bull; Free: <b>$${freeCash.toFixed(2)}</b>${frozenSub}</div>
       </div>
       <div class="card">
         <div class="label">Pure Riskless Live Record</div>
         <div class="val ${prL === 0 ? 'pos' : 'warn'}">${prW}W / ${prL}L (${prWr}%)</div>
-        <div class="sub">Post-Lock Trading: <b class="pos">${postLockDelta >= 0 ? '+' : ''}$${postLockDelta.toFixed(2)}</b> (${plW}W/${plL}L) &bull; All-Time Riskless: <b class="pos">${prPnl >= 0 ? '+' : ''}$${prPnl.toFixed(2)}</b> &bull; Losses: <b class="${plL === 0 ? 'pos' : 'neg'}">${plL}</b></div>
+        <div class="sub">Post-Lock Realized: <b class="pos">${postLockDelta >= 0 ? '+' : ''}$${postLockDelta.toFixed(2)}</b> (${plW}W/${plL}L${frozenDisp > 0.005 ? ', ex-KMIA' : ''}) &bull; All-Time Riskless: <b class="pos">${prPnl >= 0 ? '+' : ''}$${prPnl.toFixed(2)}</b> &bull; Losses: <b class="${plL === 0 ? 'pos' : 'neg'}">${plL}</b></div>
       </div>
       <div class="card">
         <div class="label">Working CLOB Orders &amp; Book</div>

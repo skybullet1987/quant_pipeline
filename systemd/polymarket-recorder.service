@@ -7,14 +7,16 @@ Conflicts=polymarket-recorder-eth.service polymarket-recorder-sol.service polyma
 [Service]
 Type=simple
 WorkingDirectory=/home/skybullet1987/quant_pipeline
+Environment=MALLOC_ARENA_MAX=2
 ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python3 src/polymarket_research/polymarket_terminal_recorder.py --asset BTC --co-assets ETH,SOL,XAU,XAG,XRP,BNB,DOGE,HYPE,ZEC --riskless-bus-only
 Restart=on-failure
 RestartSec=3
-CPUWeight=1000
-IOWeight=1000
+CPUWeight=80
+IOWeight=80
 OOMScoreAdjust=-400
-MemoryHigh=950M
-MemoryMax=1150M
+MemoryHigh=650M
+MemoryMax=750M
+MemorySwapMax=0
 KillSignal=SIGTERM
 KillMode=process
 TimeoutStopSec=15s

@@ -1,85 +1,86 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET COMPLETE UNIFIED CODEBASE (v4.0 FULL LIVE + ALPHA-124 11-SLEEVE EDITION)
-Generated: 2026-11-12 21:55:04 UTC
+Generated: 2026-11-13 15:06:24 UTC
 100% Un-Truncated Source Code, Mathematical Oracles, Execution Stack, Systemd Units & Unit Tests
 Repository: C:/Users/Anton/source/repos/Dominus
 ========================================================================================
 
 TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
-  [01] config/polymarket_risk_config.json (Lines 81 - 139 | 1,649 B) :: Centralized Risk & Sizing Limits ($12 min, 15% dynamic, $110 slot-2 gate)
-  [02] config/polymarket_strategy_and_risk.json (Lines 140 - 400 | 9,435 B) :: v5.3 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Governance Config
-  [03] systemd/polymarket-live-harvester.service (Lines 401 - 441 | 1,955 B) :: Live Harvester v5.3 systemd Unit
-  [04] systemd/polymarket-alpha124-shadow.service (Lines 442 - 480 | 980 B) :: Alpha-124 Multi-Sleeve Unified Shadow Daemon systemd Unit
-  [05] systemd/polymarket-recorder.service (Lines 481 - 515 | 1,053 B) :: Consolidated uvloop BTC+ETH+SOL+XAU Terminal Recorder systemd Unit
-  [06] systemd/polymarket-recorder-eth.service (Lines 516 - 546 | 684 B) :: ETH Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
-  [07] systemd/polymarket-recorder-sol.service (Lines 547 - 577 | 688 B) :: SOL Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
-  [08] systemd/polymarket-recorder-xrp.service (Lines 578 - 608 | 688 B) :: XRP Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
-  [09] systemd/polymarket-trader.service (Lines 609 - 639 | 720 B) :: Forward Paper Trader systemd Unit
-  [10] systemd/polymarket-exp316-shadow.service (Lines 640 - 668 | 566 B) :: EXP-316 Macro Strike Convergence Shadow systemd Unit
-  [11] src/polymarket_research/holistic_strategy_governance.py (Lines 669 - 1,670 | 48,762 B) :: v5.3 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
-  [12] src/polymarket_research/polymarket_live_harvester.py (Lines 1,671 - 13,571 | 721,244 B) :: v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor
-  [13] src/polymarket_research/polymarket_live_executor.py (Lines 13,572 - 23,895 | 529,628 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
-  [14] src/polymarket_research/riskless_machine_gun_engine.py (Lines 23,896 - 26,885 | 154,323 B) :: v5.5.0 Riskless Machine-Gun Engine (Relayer V2 Batch Merge, Verified m=1 Convert, Multi-Leg & Overround)
-  [15] src/polymarket_research/riskless_protocol_v2_expansion.py (Lines 26,886 - 45,407 | 963,671 B) :: v5.5.0 Protocol V2 & Zero-Loss Frontier Expansion (NR_M1 Dead-Seed, RT_MONO1 Scalar Ladders, Velocity Scorer)
-  [16] src/polymarket_research/polymarket_ws_streams.py (Lines 45,408 - 47,391 | 87,995 B) :: Sub-ms CLOB Market, Perps Lead-Lag & Authenticated User L2 WebSocket Trackers
-  [17] src/polymarket_research/polymarket_direct_feeds.py (Lines 47,392 - 47,906 | 23,294 B) :: Official NBA/NHL/MLB Direct LiveData Push Adapters & Dual-Source Reconcilers
-  [18] src/polymarket_research/latency_trace.py (Lines 47,907 - 48,626 | 31,640 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
-  [19] src/polymarket_research/economic_attribution_ledger.py (Lines 48,627 - 50,190 | 68,118 B) :: Stage B Opportunity Funnel, Sub-ms Competitor Decay Curve & Reconciled Attribution Engine
-  [20] src/polymarket_research/stage_c_zero_loss_velocity.py (Lines 50,191 - 51,949 | 82,662 B) :: Stage C Pure-Riskless Velocity Recycler, Pre-Split Quarantine & Clinched Dead-Leg Split-to-Sell
-  [21] src/polymarket_research/synthetic_maker_quoter.py (Lines 51,950 - 52,506 | 25,740 B) :: Stage D v5.9.0 Continuous #1 FIFO Synthetic Maker Quoter, Sub-50ms WS Shield & $0.50 Unwind Breaker
-  [22] src/polymarket_research/polymarket_terminal_recorder.py (Lines 52,507 - 56,260 | 201,111 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
-  [23] src/polymarket_research/deribit_svi_surface.py (Lines 56,261 - 56,839 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
-  [24] src/polymarket_research/polymarket_paper_trader.py (Lines 56,840 - 59,246 | 127,481 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  [25] src/polymarket_research/check_polymarket_balance.py (Lines 59,247 - 59,359 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  [26] src/polymarket_research/verify_onchain_allowances.py (Lines 59,360 - 59,476 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  [27] src/polymarket_research/redeem_settled_positions.py (Lines 59,477 - 59,830 | 15,024 B) :: CTF Settled Position Redemption CLI
-  [28] src/polymarket_research/setup_polymarket_account.py (Lines 59,831 - 60,096 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
-  [29] audit_losing_trades.py (Lines 60,097 - 60,669 | 26,363 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  [30] scripts/honest_purged_wfo_optimizer.py (Lines 60,670 - 62,147 | 66,113 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
-  [31] src/polymarket_research/directional_wfo_shadow_sleeves.py (Lines 62,148 - 63,715 | 72,784 B) :: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
-  [32] src/polymarket_research/orderflow_wfo_simulators.py (Lines 63,716 - 65,122 | 67,237 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
-  [33] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 65,123 - 66,267 | 49,207 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
-  [34] src/polymarket_research/weather_metar_engine.py (Lines 66,268 - 67,836 | 68,360 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
-  [35] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 67,837 - 68,392 | 22,955 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
-  [36] src/polymarket_research/multistrike_svi_scalper.py (Lines 68,393 - 69,168 | 33,496 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
-  [37] src/polymarket_research/same_oracle_dominance_box.py (Lines 69,169 - 70,276 | 45,702 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
-  [38] src/polymarket_research/exact_twap_lock_engine.py (Lines 70,277 - 70,616 | 13,478 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
-  [39] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 70,617 - 72,399 | 73,605 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
-  [40] src/polymarket_research/macro_counting_ctf_engine.py (Lines 72,400 - 73,669 | 58,264 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
-  [41] src/polymarket_research/uma_nba_endgame_engine.py (Lines 73,670 - 74,473 | 35,659 B) :: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
-  [42] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 74,474 - 76,302 | 87,117 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
-  [43] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 76,303 - 78,600 | 111,459 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
-  [44] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 78,601 - 80,977 | 119,757 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
-  [45] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 80,978 - 96,529 | 868,706 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
-  [46] scripts/backtest_alpha_124.py (Lines 96,530 - 97,392 | 40,201 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
-  [47] scripts/polymarket_daily_projections.py (Lines 97,393 - 99,175 | 75,445 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
-  [48] scripts/alpha124_status.py (Lines 99,176 - 99,254 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
-  [49] scripts/polymarket_scorecard_snapshot.py (Lines 99,255 - 99,404 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
-  [50] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 99,405 - 101,299 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
-  [51] src/polymarket_research/honest_riskless_backtester.py (Lines 101,300 - 102,199 | 42,478 B) :: v6.0 Honest CLOB L2 Execution Kernel, Zero-Lookahead Harness & CompactCandidateL2Recorder
-  [52] src/polymarket_research/riskless_expansion_v6_engines.py (Lines 102,200 - 104,756 | 119,983 B) :: v6.0 8-Sleeve Riskless Expansion Engine (XV Subset-NO, 0.001 Tail, BOND3, CAD/USD FX, Deribit USDC, Halftime, PreConv NR3, Yield Box)
-  [53] tests/test_alpha_124_oracles.py (Lines 104,757 - 108,837 | 216,226 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
-  [54] tests/test_polymarket_wfo_5fixes.py (Lines 108,838 - 114,569 | 293,910 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
-  [55] tests/test_zero_trust_forensic_audit.py (Lines 114,570 - 115,328 | 33,478 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
-  [56] tests/test_riskless_frontier_v4.py (Lines 115,329 - 116,171 | 44,264 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
-  [57] tests/test_v530_forensic_plumbing_fixes.py (Lines 116,172 - 116,951 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
-  [58] tests/test_v531_qa_audit_fixes.py (Lines 116,952 - 118,753 | 95,568 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
-  [59] tests/test_v550_zero_loss_frontier_and_velocity.py (Lines 118,754 - 119,520 | 37,480 B) :: Unit Tests: v5.5.0 Zero-Loss Frontier, Relayer V2 Batch Merge, Verified m=1 Convert & Velocity
-  [60] tests/test_v560_fill_rate_and_profit_growth.py (Lines 119,521 - 122,605 | 158,467 B) :: Unit Tests: v5.6.0 Fill-Rate, Profit-Growth, NR_M1 Bridge, WS Clinch Sniper & Sticky FIFO Queue
-  [61] tests/test_v570_ms_velocity_and_ws_sniper.py (Lines 122,606 - 124,226 | 82,028 B) :: Unit Tests: v5.7.0 Sub-ms Hot-Path Velocity, 450-Token WS Sniper, 2h UMA Recycle & Dynamic Scaling
-  [62] tests/test_v580_sharded_ws_d1fast_pusd_and_direct_feeds.py (Lines 124,227 - 125,015 | 34,863 B) :: Unit Tests: v5.8.0 4-Shard WS, D1FAST IPC, V2 pUSD Redemption/Wrap & Direct Feeds
-  [63] tests/test_stage_b_economic_attribution.py (Lines 125,016 - 125,458 | 19,968 B) :: Unit Tests: Stage B Opportunity Funnel, Competitor Decay, Markouts & 10 Institutional KPIs
-  [64] tests/test_stage_c_zero_loss_velocity.py (Lines 125,459 - 126,798 | 61,447 B) :: Unit Tests: Stage C Zero-Loss Velocity Recycler, Pre-Split Lock & Clinched Split-to-Sell
-  [65] tests/test_priority0_live_leak_fixes.py (Lines 126,799 - 127,719 | 46,004 B) :: Unit Tests: Priority 0 Live Leaks (Unified Event Cap, UNWRESID Guard, 0%-Fee Plumbing, Stage B & Fast D1 Loop)
-  [66] tests/test_v590_fast_cancel_ws_hedge_and_synthetic_maker.py (Lines 127,720 - 128,425 | 36,015 B) :: Unit Tests: v5.9.0 1-RTT Fast Cancel, 0-REST WS Fill-to-Hedge, Synthetic Maker Shield & AFF1 Settled Locks
-  [67] tests/test_riskless_remediation_and_8_new_engines.py (Lines 128,426 - 129,591 | 47,955 B) :: Unit Tests: v6.0 Riskless Remediation, Honest Backtester, CompactCandidateL2Recorder & All 8 New Engines
+  [01] config/polymarket_risk_config.json (Lines 82 - 140 | 1,649 B) :: Centralized Risk & Sizing Limits ($12 min, 15% dynamic, $110 slot-2 gate)
+  [02] config/polymarket_strategy_and_risk.json (Lines 141 - 401 | 9,436 B) :: v5.3 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Governance Config
+  [03] systemd/polymarket-live-harvester.service (Lines 402 - 444 | 1,995 B) :: Live Harvester v5.3 systemd Unit
+  [04] systemd/polymarket-alpha124-shadow.service (Lines 445 - 485 | 1,025 B) :: Alpha-124 Multi-Sleeve Unified Shadow Daemon systemd Unit
+  [05] systemd/polymarket-recorder.service (Lines 486 - 522 | 1,095 B) :: Consolidated uvloop BTC+ETH+SOL+XAU Terminal Recorder systemd Unit
+  [06] systemd/polymarket-recorder-eth.service (Lines 523 - 553 | 684 B) :: ETH Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
+  [07] systemd/polymarket-recorder-sol.service (Lines 554 - 584 | 688 B) :: SOL Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
+  [08] systemd/polymarket-recorder-xrp.service (Lines 585 - 615 | 688 B) :: XRP Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
+  [09] systemd/polymarket-trader.service (Lines 616 - 646 | 720 B) :: Forward Paper Trader systemd Unit
+  [10] systemd/polymarket-exp316-shadow.service (Lines 647 - 675 | 566 B) :: EXP-316 Macro Strike Convergence Shadow systemd Unit
+  [11] src/polymarket_research/holistic_strategy_governance.py (Lines 676 - 1,677 | 48,762 B) :: v5.3 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
+  [12] src/polymarket_research/polymarket_live_harvester.py (Lines 1,678 - 14,325 | 761,192 B) :: v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor
+  [13] src/polymarket_research/polymarket_live_executor.py (Lines 14,326 - 25,209 | 561,245 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
+  [14] src/polymarket_research/riskless_machine_gun_engine.py (Lines 25,210 - 28,199 | 154,323 B) :: v5.5.0 Riskless Machine-Gun Engine (Relayer V2 Batch Merge, Verified m=1 Convert, Multi-Leg & Overround)
+  [15] src/polymarket_research/riskless_protocol_v2_expansion.py (Lines 28,200 - 47,277 | 987,230 B) :: v5.5.0 Protocol V2 & Zero-Loss Frontier Expansion (NR_M1 Dead-Seed, RT_MONO1 Scalar Ladders, Velocity Scorer)
+  [16] src/polymarket_research/polymarket_ws_streams.py (Lines 47,278 - 49,387 | 94,188 B) :: Sub-ms CLOB Market, Perps Lead-Lag & Authenticated User L2 WebSocket Trackers
+  [17] src/polymarket_research/polymarket_direct_feeds.py (Lines 49,388 - 50,005 | 28,183 B) :: Official NBA/NHL/MLB Direct LiveData Push Adapters & Dual-Source Reconcilers
+  [18] src/polymarket_research/latency_trace.py (Lines 50,006 - 50,725 | 31,640 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
+  [19] src/polymarket_research/economic_attribution_ledger.py (Lines 50,726 - 52,289 | 68,118 B) :: Stage B Opportunity Funnel, Sub-ms Competitor Decay Curve & Reconciled Attribution Engine
+  [20] src/polymarket_research/stage_c_zero_loss_velocity.py (Lines 52,290 - 54,116 | 85,168 B) :: Stage C Pure-Riskless Velocity Recycler, Pre-Split Quarantine & Clinched Dead-Leg Split-to-Sell
+  [21] src/polymarket_research/synthetic_maker_quoter.py (Lines 54,117 - 54,673 | 25,740 B) :: Stage D v5.9.0 Continuous #1 FIFO Synthetic Maker Quoter, Sub-50ms WS Shield & $0.50 Unwind Breaker
+  [22] src/polymarket_research/polymarket_terminal_recorder.py (Lines 54,674 - 58,459 | 202,766 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
+  [23] src/polymarket_research/deribit_svi_surface.py (Lines 58,460 - 59,038 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
+  [24] src/polymarket_research/polymarket_paper_trader.py (Lines 59,039 - 61,445 | 127,481 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  [25] src/polymarket_research/check_polymarket_balance.py (Lines 61,446 - 61,558 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  [26] src/polymarket_research/verify_onchain_allowances.py (Lines 61,559 - 61,675 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  [27] src/polymarket_research/redeem_settled_positions.py (Lines 61,676 - 62,029 | 15,024 B) :: CTF Settled Position Redemption CLI
+  [28] src/polymarket_research/setup_polymarket_account.py (Lines 62,030 - 62,295 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
+  [29] audit_losing_trades.py (Lines 62,296 - 62,868 | 26,363 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  [30] scripts/honest_purged_wfo_optimizer.py (Lines 62,869 - 64,346 | 66,113 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  [31] src/polymarket_research/directional_wfo_shadow_sleeves.py (Lines 64,347 - 65,914 | 72,784 B) :: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
+  [32] src/polymarket_research/orderflow_wfo_simulators.py (Lines 65,915 - 67,321 | 67,237 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
+  [33] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 67,322 - 68,534 | 51,345 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
+  [34] src/polymarket_research/weather_metar_engine.py (Lines 68,535 - 70,238 | 73,834 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
+  [35] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 70,239 - 70,794 | 22,955 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
+  [36] src/polymarket_research/multistrike_svi_scalper.py (Lines 70,795 - 71,570 | 33,496 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
+  [37] src/polymarket_research/same_oracle_dominance_box.py (Lines 71,571 - 72,678 | 45,702 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
+  [38] src/polymarket_research/exact_twap_lock_engine.py (Lines 72,679 - 73,018 | 13,478 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
+  [39] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 73,019 - 74,969 | 80,846 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
+  [40] src/polymarket_research/macro_counting_ctf_engine.py (Lines 74,970 - 76,322 | 61,607 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
+  [41] src/polymarket_research/uma_nba_endgame_engine.py (Lines 76,323 - 77,197 | 39,046 B) :: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
+  [42] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 77,198 - 79,026 | 87,117 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
+  [43] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 79,027 - 81,324 | 111,459 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
+  [44] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 81,325 - 83,701 | 119,757 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
+  [45] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 83,702 - 99,375 | 876,007 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
+  [46] scripts/backtest_alpha_124.py (Lines 99,376 - 100,238 | 40,201 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
+  [47] scripts/polymarket_daily_projections.py (Lines 100,239 - 102,021 | 75,445 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
+  [48] scripts/alpha124_status.py (Lines 102,022 - 102,100 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
+  [49] scripts/polymarket_scorecard_snapshot.py (Lines 102,101 - 102,250 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
+  [50] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 102,251 - 104,145 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
+  [51] src/polymarket_research/honest_riskless_backtester.py (Lines 104,146 - 105,045 | 42,478 B) :: v6.0 Honest CLOB L2 Execution Kernel, Zero-Lookahead Harness & CompactCandidateL2Recorder
+  [52] src/polymarket_research/riskless_expansion_v6_engines.py (Lines 105,046 - 108,716 | 175,952 B) :: v6.0 8-Sleeve Riskless Expansion Engine (XV Subset-NO, 0.001 Tail, BOND3, CAD/USD FX, Deribit USDC, Halftime, PreConv NR3, Yield Box)
+  [53] src/polymarket_research/riskless_fast_feeds.py (Lines 108,717 - 110,049 | 56,861 B) :: v6.2 $0/mo Fast Feeds: Pyth Hermes, Scoped Polygon Logs WS, Hyperliquid/Coinbase/Deribit WS, Macro RSS/EDGAR & Live CAD/USD FX
+  [54] tests/test_alpha_124_oracles.py (Lines 110,050 - 114,130 | 216,226 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
+  [55] tests/test_polymarket_wfo_5fixes.py (Lines 114,131 - 119,862 | 293,910 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
+  [56] tests/test_zero_trust_forensic_audit.py (Lines 119,863 - 120,621 | 33,478 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
+  [57] tests/test_riskless_frontier_v4.py (Lines 120,622 - 121,464 | 44,264 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
+  [58] tests/test_v530_forensic_plumbing_fixes.py (Lines 121,465 - 122,244 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
+  [59] tests/test_v531_qa_audit_fixes.py (Lines 122,245 - 124,046 | 95,568 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
+  [60] tests/test_v550_zero_loss_frontier_and_velocity.py (Lines 124,047 - 124,813 | 37,480 B) :: Unit Tests: v5.5.0 Zero-Loss Frontier, Relayer V2 Batch Merge, Verified m=1 Convert & Velocity
+  [61] tests/test_v560_fill_rate_and_profit_growth.py (Lines 124,814 - 127,898 | 158,467 B) :: Unit Tests: v5.6.0 Fill-Rate, Profit-Growth, NR_M1 Bridge, WS Clinch Sniper & Sticky FIFO Queue
+  [62] tests/test_v570_ms_velocity_and_ws_sniper.py (Lines 127,899 - 129,519 | 82,028 B) :: Unit Tests: v5.7.0 Sub-ms Hot-Path Velocity, 450-Token WS Sniper, 2h UMA Recycle & Dynamic Scaling
+  [63] tests/test_v580_sharded_ws_d1fast_pusd_and_direct_feeds.py (Lines 129,520 - 130,308 | 34,863 B) :: Unit Tests: v5.8.0 4-Shard WS, D1FAST IPC, V2 pUSD Redemption/Wrap & Direct Feeds
+  [64] tests/test_stage_b_economic_attribution.py (Lines 130,309 - 130,751 | 19,968 B) :: Unit Tests: Stage B Opportunity Funnel, Competitor Decay, Markouts & 10 Institutional KPIs
+  [65] tests/test_stage_c_zero_loss_velocity.py (Lines 130,752 - 132,091 | 61,447 B) :: Unit Tests: Stage C Zero-Loss Velocity Recycler, Pre-Split Lock & Clinched Split-to-Sell
+  [66] tests/test_priority0_live_leak_fixes.py (Lines 132,092 - 133,012 | 46,004 B) :: Unit Tests: Priority 0 Live Leaks (Unified Event Cap, UNWRESID Guard, 0%-Fee Plumbing, Stage B & Fast D1 Loop)
+  [67] tests/test_v590_fast_cancel_ws_hedge_and_synthetic_maker.py (Lines 133,013 - 133,718 | 36,015 B) :: Unit Tests: v5.9.0 1-RTT Fast Cancel, 0-REST WS Fill-to-Hedge, Synthetic Maker Shield & AFF1 Settled Locks
+  [68] tests/test_riskless_remediation_and_8_new_engines.py (Lines 133,719 - 134,884 | 47,955 B) :: Unit Tests: v6.0 Riskless Remediation, Honest Backtester, CompactCandidateL2Recorder & All 8 New Engines
 """
 
 from __future__ import annotations
 
 # ======================================================================================
-# [01/67] MODULE: config/polymarket_risk_config.json
+# [01/68] MODULE: config/polymarket_risk_config.json
 # PURPOSE: Centralized Risk & Sizing Limits ($12 min, 15% dynamic, $110 slot-2 gate)
 # ======================================================================================
 
@@ -138,7 +139,7 @@ POLYMARKET_RISK_CONFIG_JSON = r'''
 '''
 
 # ======================================================================================
-# [02/67] MODULE: config/polymarket_strategy_and_risk.json
+# [02/68] MODULE: config/polymarket_strategy_and_risk.json
 # PURPOSE: v5.3 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Governance Config
 # ======================================================================================
 
@@ -383,7 +384,7 @@ POLYMARKET_STRATEGY_AND_RISK_JSON = r'''
     "ipc_subhourly_d1_max_age_sec": 15.0,
     "bond1_postonly_requote_delay_sec": 1.0,
     "enable_inventory_backed_maker_completion": true,
-    "ft_funnel_persist_interval_sec": 5.0
+    "ft_funnel_persist_interval_sec": 60.0
   },
   "shadow_governance": {
     "enable_btc_5m_sniper_shadow": false,
@@ -399,7 +400,7 @@ POLYMARKET_STRATEGY_AND_RISK_JSON = r'''
 '''
 
 # ======================================================================================
-# [03/67] MODULE: systemd/polymarket-live-harvester.service
+# [03/68] MODULE: systemd/polymarket-live-harvester.service
 # PURPOSE: Live Harvester v5.3 systemd Unit
 # ======================================================================================
 
@@ -421,10 +422,12 @@ WorkingDirectory=/home/skybullet1987/quant_pipeline
 # Option B (v5.4.0) enforces Z>=0.90, Ask<=$0.82 Taker-Only across [150s, 900s] 1h + [120s, 510s] 15m (while BOND1 Maker stays 100% live),
 # and --allowed-assets BTC ETH SOL promotes BTC (1.0x) + ETH (0.85x canary) + SOL (0.85x canary) across 2->3->4 directional slots.
 Environment="PM_ENFORCE_V5_TIER_SLOTS=1"
+Environment=MALLOC_ARENA_MAX=2
 ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/polymarket_research/polymarket_live_harvester.py --dynamic-sizing --no-hold-to-maturity --exit-policy hold_98 --max-concurrent 99 --max-ticket-cap 200.0 --max-trades-per-market 4 --max-trades-per-hour 180 --min-price-floor 0.52 --max-price-ceiling 0.82 --max-tte 2400.0 --allowed-assets BTC ETH SOL
 # Exit 0 (circuit breaker / graceful SIGTERM) stays down; non-zero (crash) restarts after 3s.
 Restart=on-failure
 RestartSec=3
+Nice=-10
 CPUWeight=1000
 IOWeight=1000
 OOMScoreAdjust=-900
@@ -440,7 +443,7 @@ WantedBy=default.target
 '''
 
 # ======================================================================================
-# [04/67] MODULE: systemd/polymarket-alpha124-shadow.service
+# [04/68] MODULE: systemd/polymarket-alpha124-shadow.service
 # PURPOSE: Alpha-124 Multi-Sleeve Unified Shadow Daemon systemd Unit
 # ======================================================================================
 
@@ -455,17 +458,19 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/home/skybullet1987/quant_pipeline
 Environment=PYTHONUNBUFFERED=1
+Environment=MALLOC_ARENA_MAX=2
 Environment=PM_DISABLE_SHADOW_M4_CATCHUP=1
 Environment=PM_DISABLE_SHADOW_W2_TAKER=1
 Environment=PM_UNQUARANTINE_S2_TWAP_LOCK=1
 # 2-vCPU host: keep below the live harvester + BTC/ETH recorders (1000) so shadow scans never starve
 # the latency-critical live path (CPU starvation caused recorder WS ping timeouts / slow-consumer drops).
-CPUWeight=200
+CPUWeight=50
 IOWeight=200
 Nice=10
 OOMScoreAdjust=500
-MemoryHigh=1300M
-MemoryMax=1550M
+MemoryHigh=950M
+MemoryMax=1100M
+MemorySwapMax=0
 ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/polymarket_research/alpha_124_shadow_daemon.py --riskless-bridge-only
 Restart=always
 RestartSec=10
@@ -479,7 +484,7 @@ WantedBy=default.target
 '''
 
 # ======================================================================================
-# [05/67] MODULE: systemd/polymarket-recorder.service
+# [05/68] MODULE: systemd/polymarket-recorder.service
 # PURPOSE: Consolidated uvloop BTC+ETH+SOL+XAU Terminal Recorder systemd Unit
 # ======================================================================================
 
@@ -494,14 +499,16 @@ Conflicts=polymarket-recorder-eth.service polymarket-recorder-sol.service polyma
 [Service]
 Type=simple
 WorkingDirectory=/home/skybullet1987/quant_pipeline
+Environment=MALLOC_ARENA_MAX=2
 ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python3 src/polymarket_research/polymarket_terminal_recorder.py --asset BTC --co-assets ETH,SOL,XAU,XAG,XRP,BNB,DOGE,HYPE,ZEC --riskless-bus-only
 Restart=on-failure
 RestartSec=3
-CPUWeight=1000
-IOWeight=1000
+CPUWeight=80
+IOWeight=80
 OOMScoreAdjust=-400
-MemoryHigh=950M
-MemoryMax=1150M
+MemoryHigh=650M
+MemoryMax=750M
+MemorySwapMax=0
 KillSignal=SIGTERM
 KillMode=process
 TimeoutStopSec=15s
@@ -514,7 +521,7 @@ WantedBy=default.target
 '''
 
 # ======================================================================================
-# [06/67] MODULE: systemd/polymarket-recorder-eth.service
+# [06/68] MODULE: systemd/polymarket-recorder-eth.service
 # PURPOSE: ETH Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
 # ======================================================================================
 
@@ -545,7 +552,7 @@ WantedBy=default.target
 '''
 
 # ======================================================================================
-# [07/67] MODULE: systemd/polymarket-recorder-sol.service
+# [07/68] MODULE: systemd/polymarket-recorder-sol.service
 # PURPOSE: SOL Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
 # ======================================================================================
 
@@ -576,7 +583,7 @@ WantedBy=default.target
 '''
 
 # ======================================================================================
-# [08/67] MODULE: systemd/polymarket-recorder-xrp.service
+# [08/68] MODULE: systemd/polymarket-recorder-xrp.service
 # PURPOSE: XRP Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
 # ======================================================================================
 
@@ -607,7 +614,7 @@ WantedBy=default.target
 '''
 
 # ======================================================================================
-# [09/67] MODULE: systemd/polymarket-trader.service
+# [09/68] MODULE: systemd/polymarket-trader.service
 # PURPOSE: Forward Paper Trader systemd Unit
 # ======================================================================================
 
@@ -638,7 +645,7 @@ WantedBy=default.target
 '''
 
 # ======================================================================================
-# [10/67] MODULE: systemd/polymarket-exp316-shadow.service
+# [10/68] MODULE: systemd/polymarket-exp316-shadow.service
 # PURPOSE: EXP-316 Macro Strike Convergence Shadow systemd Unit
 # ======================================================================================
 
@@ -667,7 +674,7 @@ WantedBy=default.target
 '''
 
 # ======================================================================================
-# [11/67] MODULE: src/polymarket_research/holistic_strategy_governance.py
+# [11/68] MODULE: src/polymarket_research/holistic_strategy_governance.py
 # PURPOSE: v5.3 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
 # ======================================================================================
 
@@ -1669,7 +1676,7 @@ def compute_stop_risk_fractional_kelly_ticket(
     return round(min(float(max_ticket_cap), max(float(min_lot_usd), sized)), 2)
 
 # ======================================================================================
-# [12/67] MODULE: src/polymarket_research/polymarket_live_harvester.py
+# [12/68] MODULE: src/polymarket_research/polymarket_live_harvester.py
 # PURPOSE: v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor
 # ======================================================================================
 
@@ -3763,7 +3770,7 @@ class PolymarketLiveHarvester:
                 if not line.strip():
                     continue
                 try:
-                    data = json.loads(line)
+                    data = _json_loads(line)
                     title_l = str(data.get("title", "") or "").lower()
                     horiz_l = str(data.get("horizon", "") or data.get("candle_interval", "")).lower()
                     slug_l = str(data.get("series_slug", "") or data.get("slug", "")).lower()
@@ -4011,13 +4018,34 @@ class PolymarketLiveHarvester:
         pre_bal_cache = self.__dict__.setdefault("_d1_clean_pre_bal_cache", {})
         warmed = 0
         now_utc = datetime.now(timezone.utc)
-        for slug in series_slugs:
+        use_async_http = (
+            "_sync_session" not in getattr(self.executor, "__dict__", {})
+            and hasattr(self.executor, "get_async_client")
+        )
+        async_cli = self.executor.get_async_client() if use_async_http else None
+
+        async def _fetch_slug_events(slug: str) -> Tuple[str, Optional[List[Dict[str, Any]]]]:
+            url = f"https://gamma-api.polymarket.com/events?series_slug={slug}&limit=3&closed=false"
             try:
-                url = f"https://gamma-api.polymarket.com/events?series_slug={slug}&limit=3&closed=false"
-                resp = await asyncio.to_thread(self.executor._sync_session.get, url, timeout=3.0)
-                if resp.status_code != 200:
-                    continue
-                events = resp.json()
+                if async_cli is not None:
+                    resp = await async_cli.get(url, timeout=3.0)
+                else:
+                    resp = await asyncio.to_thread(self.executor._sync_session.get, url, timeout=3.0)
+                if getattr(resp, "status_code", 0) != 200:
+                    return slug, None
+                raw_content = getattr(resp, "content", None)
+                if _orjson is not None and isinstance(raw_content, (bytes, bytearray)) and raw_content:
+                    return slug, _orjson.loads(raw_content)
+                return slug, resp.json()
+            except Exception as e:
+                logger.debug(f"[PREWARM NOTICE] Error pre-warming series {slug}: {e}")
+                return slug, None
+
+        results = await asyncio.gather(*[_fetch_slug_events(slug) for slug in series_slugs])
+        for slug, events in results:
+            if not events:
+                continue
+            try:
                 for event in events:
                     for market in event.get("markets", []):
                         m_id = str(market.get("id"))
@@ -4034,7 +4062,10 @@ class PolymarketLiveHarvester:
                         # Pre-warm upcoming markets within next 2 hours
                         if 0 < secs_left <= 7200:
                             raw_tokens = market.get("clobTokenIds")
-                            tokens = json.loads(raw_tokens) if isinstance(raw_tokens, str) else raw_tokens
+                            if isinstance(raw_tokens, str):
+                                tokens = _orjson.loads(raw_tokens) if _orjson is not None else json.loads(raw_tokens)
+                            else:
+                                tokens = raw_tokens
                             if tokens and len(tokens) >= 2:
                                 t_up = str(tokens[0])
                                 t_down = str(tokens[1])
@@ -6545,9 +6576,9 @@ class PolymarketLiveHarvester:
                             gm = self.executor._sync_session.get(f"https://gamma-api.polymarket.com/markets/{m_id_str}", timeout=3.0).json()
                             uma_st = str(gm.get("umaResolutionStatus") or "").strip().lower()
                             raw_op = gm.get("outcomePrices")
-                            op = json.loads(raw_op) if isinstance(raw_op, str) else raw_op
+                            op = _json_loads(raw_op) if isinstance(raw_op, str) else raw_op
                             raw_toks = gm.get("clobTokenIds")
-                            clob_toks = json.loads(raw_toks) if isinstance(raw_toks, str) else raw_toks
+                            clob_toks = _json_loads(raw_toks) if isinstance(raw_toks, str) else raw_toks
                             if uma_st in ("", "resolved") and isinstance(op, list) and len(op) >= 2:
                                 pos_tok = str(pos.get("token_id") or "")
                                 if isinstance(clob_toks, list) and pos_tok and pos_tok in [str(x) for x in clob_toks]:
@@ -7263,6 +7294,79 @@ class PolymarketLiveHarvester:
             seen_boxes.discard(oldest_k)
             seen_ts.pop(oldest_k, None)
 
+    def _live_sleeve_graduation_stats(self, sleeve_src: str) -> Tuple[int, int, int, float]:
+        """Returns cached `(closed, wins, losses, net_pnl_usd)` from real filled live `closed_positions`."""
+        sl_target = str(sleeve_src or "").strip().upper()
+        if not sl_target:
+            return 0, 0, 0, 0.0
+        closed_list = getattr(self, "closed_positions", None) or []
+        closed_len = len(closed_list)
+        cache = self.__dict__.get("_live_sleeve_grad_cache")
+        if not (isinstance(cache, tuple) and len(cache) == 2 and cache[0] == closed_len):
+            stats: Dict[str, List[Any]] = {}
+            for p in closed_list:
+                if not isinstance(p, dict):
+                    continue
+                if str(p.get("status") or "").upper() == "NOT_EXECUTED":
+                    continue
+                if str(p.get("exit_decomposition_bucket") or "").upper() == "NOT_EXECUTED":
+                    continue
+                if float(p.get("notional_usd") or 0.0) <= 0.01:
+                    continue
+                net_p = float(p.get("net_pnl_usd") or 0.0)
+                if p.get("won") is None and abs(net_p) <= 1e-6:
+                    continue
+                sl_k = str(p.get("sleeve") or p.get("sleeve_source") or "").strip().upper()
+                if not sl_k:
+                    continue
+                rec = stats.setdefault(sl_k, [0, 0, 0, 0.0])
+                rec[0] += 1
+                is_win = bool(p.get("won")) if p.get("won") is not None else (net_p > 0.0)
+                if is_win:
+                    rec[1] += 1
+                else:
+                    rec[2] += 1
+                rec[3] += net_p
+            frozen = {k: (v[0], v[1], v[2], round(v[3], 6)) for k, v in stats.items()}
+            self._live_sleeve_grad_cache = (closed_len, frozen)
+            cache = self._live_sleeve_grad_cache
+        return cache[1].get(sl_target, (0, 0, 0, 0.0))
+
+    def _has_recent_asset_legging_cooldown(self, cand_asset: str, now_ts: float) -> bool:
+        """O(1)-cached 12h per-asset legging-out cooldown check (replaces full closed_positions scan per candidate)."""
+        if not cand_asset:
+            return False
+        closed_list = getattr(self, "closed_positions", None) or []
+        bucket_60s = int(now_ts // 60.0)
+        cache = self.__dict__.get("_asset_legging_cd_cache")
+        if not (isinstance(cache, tuple) and len(cache) == 3 and cache[0] == len(closed_list) and cache[1] == bucket_60s):
+            cutoff = now_ts - 43200.0
+            agg: Dict[str, List[Any]] = {}
+            for p in closed_list:
+                if not isinstance(p, dict):
+                    continue
+                ast = str(p.get("asset") or "").upper()
+                if not ast:
+                    continue
+                t_exit = float(p.get("exit_ts") or p.get("exit_time_unix") or p.get("entry_ts") or 0.0)
+                if t_exit < cutoff:
+                    continue
+                if (
+                    "LEGGED_OUT" in str(p.get("close_reason") or "").upper()
+                    or "LEGGED_OUT" in str(p.get("sleeve") or "").upper()
+                    or "_LEG_RESID" in str(p.get("trade_id") or "")
+                    or "_UNWRESID_" in str(p.get("trade_id") or "")
+                    or bool(p.get("is_legged_out_residual"))
+                    or str(p.get("box_type") or "").upper() in {"MULTI_LEG_RESIDUAL", "CTF_OVERROUND_RESIDUAL"}
+                ):
+                    st = agg.setdefault(ast, [0, 0.0])
+                    st[0] += 1
+                    st[1] += float(p.get("net_pnl_usd") or 0.0)
+            blocked = {ast for ast, st in agg.items() if st[0] >= 2 or st[1] <= -2.50}
+            self._asset_legging_cd_cache = (len(closed_list), bucket_60s, blocked)
+            cache = self._asset_legging_cd_cache
+        return cand_asset in cache[2]
+
     def _is_d1_box_halted(self) -> bool:
         """
         Decouples $1.00-payout riskless 2-leg/1-leg boxes from directional daily-loss variance halts,
@@ -7286,8 +7390,138 @@ class PolymarketLiveHarvester:
             return True
         return False
 
-    def maybe_execute_graduated_d1_box(self, candidate_box: Dict[str, Any]) -> Dict[str, Any]:
-        """Executes verified 8/8-graduated 2-leg riskless boxes (D1 7-coin, C1, M3, B3, 2-leg N1) with multi-box concurrency."""
+    def _d1_acquire_inflight_slot(
+        self, dedupe_k: str, m_a: str, m_b: str, concurrent_ok: bool = False
+    ) -> Optional[Tuple[bool, Optional[threading.Lock], str, Set[str]]]:
+        inflight_lock = self.__dict__.setdefault("_d1_inflight_exec_lock", threading.Lock())
+        if not concurrent_ok:
+            if not inflight_lock.acquire(blocking=False):
+                return None
+            return (False, inflight_lock, "", set())
+        if inflight_lock.locked():
+            return None
+        guard = self.__dict__.setdefault("_d1_inflight_set_lock", threading.Lock())
+        keys = self.__dict__.setdefault("_d1_inflight_keys", set())
+        mkts = self.__dict__.setdefault("_d1_inflight_mkts", set())
+        k_slot = str(dedupe_k or "")
+        m_set = {str(m) for m in (m_a, m_b) if m}
+        with guard:
+            if (k_slot and k_slot in keys) or (m_set & mkts):
+                return None
+            if k_slot:
+                keys.add(k_slot)
+            mkts.update(m_set)
+        return (True, None, k_slot, m_set)
+
+    def _d1_release_inflight_slot(
+        self, slot_info: Optional[Tuple[bool, Optional[threading.Lock], str, Set[str]]]
+    ) -> None:
+        if not slot_info:
+            return
+        is_conc, lock_obj, k_slot, m_set = slot_info
+        if not is_conc:
+            if lock_obj is not None:
+                try:
+                    lock_obj.release()
+                except RuntimeError:
+                    pass
+            return
+        guard = self.__dict__.get("_d1_inflight_set_lock")
+        keys = self.__dict__.get("_d1_inflight_keys")
+        mkts = self.__dict__.get("_d1_inflight_mkts")
+        if guard is not None:
+            with guard:
+                if keys is not None and k_slot:
+                    keys.discard(k_slot)
+                if mkts is not None and m_set:
+                    mkts.difference_update(m_set)
+
+    def _notify_maker_preempt_released(self) -> None:
+        ev = self.__dict__.get("_maker_preempt_released_ev")
+        lp = self.__dict__.get("_maker_preempt_released_ev_loop")
+        if ev is None:
+            return
+        try:
+            if lp is not None and lp.is_running():
+                try:
+                    if asyncio.get_running_loop() is lp:
+                        ev.set()
+                        return
+                except RuntimeError:
+                    pass
+                lp.call_soon_threadsafe(ev.set)
+                return
+            ev.set()
+        except Exception:
+            pass
+
+    def _has_inflight_maker_anchor(self, m_a: str, m_b: str, preempt_keys: Set[str]) -> bool:
+        return any(
+            isinstance(_i_p, dict)
+            and _i_p.get("live_maker_anchor_inflight")
+            and (
+                str(_i_p.get("inflight_key") or "") in preempt_keys
+                if preempt_keys
+                else str(_i_p.get("market_id") or "") in {m_a, m_b}
+            )
+            for _i_p in getattr(self, "pending_entry_intents", {}).values()
+        )
+
+    async def _wait_maker_anchor_preempt_async(self, m_a: str, m_b: str, preempt_keys: Set[str]) -> None:
+        loop = asyncio.get_running_loop()
+        if self.__dict__.get("_maker_preempt_released_ev_loop") is not loop or self.__dict__.get("_maker_preempt_released_ev") is None:
+            self._maker_preempt_released_ev = asyncio.Event()
+            self._maker_preempt_released_ev_loop = loop
+        ev = self._maker_preempt_released_ev
+        deadline = time.monotonic() + 0.90
+        while self._has_inflight_maker_anchor(m_a, m_b, preempt_keys):
+            rem = deadline - time.monotonic()
+            if rem <= 0.0:
+                break
+            ev.clear()
+            if not self._has_inflight_maker_anchor(m_a, m_b, preempt_keys):
+                break
+            try:
+                await asyncio.wait_for(ev.wait(), timeout=min(0.05, rem))
+            except asyncio.TimeoutError:
+                pass
+
+    def _get_d1_books_from_ws(
+        self, candidate_box: Dict[str, Any], tok_a: str, tok_b: str, opp_a: str, opp_b: str, need_sep_opp: bool, custom_book_fn: bool
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        ws_bks = candidate_box.get("ws_books") if not custom_book_fn else None
+        ws_bks_ts = float(candidate_box.get("ws_books_ts") or 0.0)
+        if (
+            isinstance(ws_bks, dict)
+            and (time.time() - ws_bks_ts) <= 0.65
+            and isinstance(ws_bks.get(tok_a), dict)
+            and isinstance(ws_bks.get(tok_b), dict)
+            and (not need_sep_opp or (isinstance(ws_bks.get(opp_a), dict) and isinstance(ws_bks.get(opp_b), dict)))
+        ):
+            return (
+                ws_bks[tok_a],
+                ws_bks[tok_b],
+                ws_bks[tok_b] if not need_sep_opp else ws_bks[opp_a],
+                ws_bks[tok_a] if not need_sep_opp else ws_bks[opp_b],
+            )
+        mkt_ws = getattr(self, "_pos_market_ws", None)
+        if mkt_ws is not None and not custom_book_fn and hasattr(mkt_ws, "get_book"):
+            def _fresh_ws_bk(tok: str) -> Optional[Dict[str, Any]]:
+                bk = mkt_ws.get_book(tok, max_age_sec=0.65)
+                if not isinstance(bk, dict):
+                    return None
+                if bk.get("is_partial_delta") and (not bk.get("bids") or not bk.get("asks")):
+                    return None
+                return bk
+            bk_a = _fresh_ws_bk(tok_a)
+            bk_b = _fresh_ws_bk(tok_b)
+            bk_oa = bk_b if not need_sep_opp else _fresh_ws_bk(opp_a)
+            bk_ob = bk_a if not need_sep_opp else _fresh_ws_bk(opp_b)
+            return bk_a, bk_b, bk_oa, bk_ob
+        return None, None, None, None
+
+    def _d1_step1_gate_and_preempt(self, candidate_box: Dict[str, Any], concurrent_ok: bool = False) -> Dict[str, Any]:
+        """Executes D1 governance/graduation prechecks, acquires inflight slot, and triggers maker preemption."""
         if self._is_d1_box_halted():
             return {"executed": False, "reason": "DISABLED_OR_HALTED"}
         box_type = str(candidate_box.get("box_type") or "DOMINANCE").strip().upper()
@@ -7463,22 +7697,8 @@ class PolymarketLiveHarvester:
         retry_cd = self.__dict__.setdefault("_d1_retry_cooldown_until", {})
         if dedupe_k and float(retry_cd.get(dedupe_k, 0.0) or 0.0) > now_ts:
             return {"executed": False, "reason": "RETRY_COOLDOWN_10S"}
-        if cand_asset:
-            leg_outs_12h = [
-                p for p in getattr(self, "closed_positions", [])
-                if str(p.get("asset") or "").upper() == cand_asset
-                and (now_ts - float(p.get("exit_ts") or p.get("exit_time_unix") or p.get("entry_ts") or 0.0)) <= 43200.0
-                and (
-                    "LEGGED_OUT" in str(p.get("close_reason") or "").upper()
-                    or "LEGGED_OUT" in str(p.get("sleeve") or "").upper()
-                    or "_LEG_RESID" in str(p.get("trade_id") or "")
-                    or "_UNWRESID_" in str(p.get("trade_id") or "")
-                    or bool(p.get("is_legged_out_residual"))
-                    or str(p.get("box_type") or "").upper() in {"MULTI_LEG_RESIDUAL", "CTF_OVERROUND_RESIDUAL"}
-                )
-            ]
-            if len(leg_outs_12h) >= 2 or sum(float(p.get("net_pnl_usd") or 0.0) for p in leg_outs_12h) <= -2.50:
-                return {"executed": False, "reason": f"ASSET_LEGGING_COOLDOWN:{cand_asset}"}
+        if self._has_recent_asset_legging_cooldown(cand_asset, now_ts):
+            return {"executed": False, "reason": f"ASSET_LEGGING_COOLDOWN:{cand_asset}"}
         try:
             from src.polymarket_research.stage_c_zero_loss_velocity import load_alpha124_graduation_maps_with_lkg_cache
 
@@ -7562,8 +7782,16 @@ class PolymarketLiveHarvester:
             else:
                 sl_rec = by_sl_map.get(sleeve_src) or {}
                 b1_rec_inh = by_sl_map.get("BOND1_UMA_RESOLUTION_CARRY") or {}
-                no_loss = int(sl_rec.get("losses", 0) or 0) == 0 and (
-                    sleeve_src != "UMA_READY1_LIVENESS_PRIORITY" or int(b1_rec_inh.get("losses", 0) or 0) == 0
+                _lv_c, _lv_w, _lv_l, _lv_pnl = self._live_sleeve_graduation_stats(sleeve_src)
+                _lv_grad8 = (_lv_l == 0 and _lv_c >= 8 and _lv_w == _lv_c and _lv_pnl > 0.0)
+                _lv_no_loss_proven = (_lv_l == 0 and _lv_c >= 3 and _lv_w == _lv_c and _lv_pnl > 0.0)
+                no_loss = (_lv_l == 0) and (
+                    (
+                        int(sl_rec.get("losses", 0) or 0) == 0
+                        and (sleeve_src != "UMA_READY1_LIVENESS_PRIORITY" or int(b1_rec_inh.get("losses", 0) or 0) == 0)
+                    )
+                    or _lv_grad8
+                    or (_lv_no_loss_proven and sleeve_src in {"BOND1_UMA_RESOLUTION_CARRY", "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY", "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"})
                 )
                 d1_g8 = _grad8(by_sl_map.get("D1_SAME_ORACLE_DOMINANCE_BOX") or {})
                 _prob_sll_sleeves = {"W1_SOLAR_PEAK_LOCK", "W1_LOW_TROUGH_LOCK", "W_SOLAR1_POST_2351_LOCK", "SP2_NBA_ENDGAME_LOCK", "U1_DAILY_UPDOWN_LOCK", "CM_B2_PYTH_SESSION_NO_LOCK", "CM_U1_PYTH_CLOSE_LOCK"}
@@ -7571,7 +7799,7 @@ class PolymarketLiveHarvester:
                 _pm_raw_sll = float(candidate_box.get("p_model") or 0.0)
                 _prob_sll_ok = not (_ro_sll and box_type == "SINGLE_LEG_LOCK" and sleeve_src in _prob_sll_sleeves) or _pm_raw_sll >= 0.999
                 own_grad = (
-                    (_grad8(sl_rec) or (sleeve_src == "UMA_READY1_LIVENESS_PRIORITY" and _grad8(b1_rec_inh)))
+                    (_grad8(sl_rec) or _lv_grad8 or (sleeve_src == "UMA_READY1_LIVENESS_PRIORITY" and _grad8(b1_rec_inh)))
                     and no_loss
                     and _prob_sll_ok
                 )
@@ -7628,9 +7856,15 @@ class PolymarketLiveHarvester:
         except Exception as exc:
             return {"executed": False, "reason": f"STATE_READ_ERROR:{exc}"}
 
-        inflight_lock = self.__dict__.setdefault("_d1_inflight_exec_lock", threading.Lock())
-        if not inflight_lock.acquire(blocking=False):
+        slot_info = self._d1_acquire_inflight_slot(
+            dedupe_k,
+            str(candidate_box.get("leg_a_market_id") or ""),
+            str(candidate_box.get("leg_b_market_id") or ""),
+            concurrent_ok=concurrent_ok,
+        )
+        if slot_info is None:
             return {"executed": False, "reason": "BOX_EXECUTION_INFLIGHT"}
+        _s1_committed = False
         try:
             from src.polymarket_research.stage_c_zero_loss_velocity import check_multileg_3plus_nav_and_certification_gate
 
@@ -7660,6 +7894,10 @@ class PolymarketLiveHarvester:
             fe_a = float(candidate_box.get("leg_a_fee_exponent", 1.0) or 1.0)
             fe_b = float(candidate_box.get("leg_b_fee_exponent", 1.0) or 1.0)
             pre_bal_a, pre_bal_b = 0.0, 0.0
+            m_a, m_b = str(candidate_box.get("leg_a_market_id") or ""), str(candidate_box.get("leg_b_market_id") or "")
+            exp_ts = float(candidate_box.get("expiry_ts") or 0.0)
+            _signaled_d1 = 0
+            _preempt_keys_d1: Set[str] = set()
 
             is_live_ctf_box = (
                 (not self.dry_run)
@@ -7679,7 +7917,6 @@ class PolymarketLiveHarvester:
             ):
                 return {"executed": False, "reason": "LIVE_PRECHECK_UNAVAILABLE"}
             if is_live_ctf_box:
-                exp_ts = float(candidate_box.get("expiry_ts") or 0.0)
                 is_4h_box = str(candidate_box.get("leg_a_horizon") or "").lower() in ("4h", "1h") or str(candidate_box.get("leg_b_horizon") or "").lower() in ("4h", "1h")
                 if box_type == "DOMINANCE":
                     max_tte_box = 900.0 if is_4h_box else 300.0
@@ -7703,20 +7940,11 @@ class PolymarketLiveHarvester:
                 )
                 if (now_ts - cand_ts) > _max_ipc_age or (exp_ts > 0.0 and not (16.0 <= (exp_ts - now_ts) <= max_tte_box)):
                     return {"executed": False, "reason": "STALE_OR_OUTSIDE_TTE_WINDOW"}
-                m_a = str(candidate_box.get("leg_a_market_id") or "")
-                m_b = str(candidate_box.get("leg_b_market_id") or "")
                 if m_a in {"6707502", "6707503"} or m_b in {"6707502", "6707503"}:
                     return {"executed": False, "reason": "D001_DISPUTED_KMIA_NON_INTERFERENCE"}
                 from src.polymarket_research.riskless_protocol_v2_expansion import (
-                    check_per_event_concentration_cap,
-                    compute_d1_per_market_notional_cap,
-                    compute_sll_and_carry_gatling_budget,
-                    is_market_busy_for_scaling,
-                    open_market_notional_usd,
                     pending_intents_cash_reserved_usd,
-                    pending_intents_synced_equity_usd,
                     preempt_makers_for_instant_taker_arb,
-                    sync_pending_intents_on_collateral_refresh,
                 )
                 _lk_c_d1 = getattr(self, "_last_known_collateral", None)
                 _free_pre_d1 = (
@@ -7736,38 +7964,83 @@ class PolymarketLiveHarvester:
                     force_cross_market_when_low_cash=_force_cross_d1,
                     now_ts=now_ts,
                 )
-                _ev_loop_ref = getattr(self, "_main_loop", None)
-                _same_ev_thr = _ev_loop_ref is not None and getattr(_ev_loop_ref, "_thread_id", None) == threading.get_ident()
-                if _signaled_d1 > 0 and not _same_ev_thr:
-                    for _ in range(60):
-                        if not any(
-                            isinstance(_i_p, dict)
-                            and _i_p.get("live_maker_anchor_inflight")
-                            and (
-                                str(_i_p.get("inflight_key") or "") in _preempt_keys_d1
-                                if _preempt_keys_d1
-                                else str(_i_p.get("market_id") or "") in {m_a, m_b}
-                            )
-                            for _i_p in getattr(self, "pending_entry_intents", {}).values()
-                        ):
-                            break
-                        time.sleep(0.015)
-                if (m_a and is_market_busy_for_scaling(self, m_a)) or (m_b and is_market_busy_for_scaling(self, m_b)):
-                    return {"executed": False, "reason": "MARKET_ALREADY_OCCUPIED"}
-                _prev_c_d1 = getattr(self, "_last_known_collateral", None)
-                collat = None if (_signaled_d1 > 0 and not self.dry_run) else _prev_c_d1
-                if collat is None:
-                    try:
-                        collat = self.executor.get_collateral_balance()
-                        if isinstance(collat, (int, float)) and not isinstance(collat, bool) and math.isfinite(float(collat)) and float(collat) >= 0.0:
-                            self._last_known_collateral = float(collat)
-                            sync_pending_intents_on_collateral_refresh(self, _prev_c_d1, float(collat))
-                    except Exception:
-                        collat = None
-                _pend_d1 = getattr(self, "pending_entry_intents", None)
-                inflight_intent_usd = pending_intents_cash_reserved_usd(_pend_d1)
-                collat_f = max(0.0, float(collat or 0.0) - inflight_intent_usd)
-                rem_tte_s = max(1.0, exp_ts - now_ts) if exp_ts > 0.0 else 0.0
+            _s1_committed = True
+            return {
+                "_s1_ok": True,
+                "slot_info": slot_info,
+                "candidate_box": candidate_box, "box_type": box_type, "sleeve_src": sleeve_src,
+                "cand_asset": cand_asset, "tok_a": tok_a, "tok_b": tok_b, "lbl_a": lbl_a, "lbl_b": lbl_b,
+                "px_a_lim": px_a_lim, "px_b_lim": px_b_lim, "sh_req": sh_req,
+                "sh_a_gross": sh_a_gross, "sh_b_gross": sh_b_gross, "cap_net": cap_net,
+                "fresh_box_net": fresh_box_net, "avail_a": avail_a, "avail_b": avail_b,
+                "fr_a": fr_a, "fr_b": fr_b, "fe_a": fe_a, "fe_b": fe_b,
+                "pre_bal_a": pre_bal_a, "pre_bal_b": pre_bal_b,
+                "pre_bal_ms": pre_bal_ms, "book_walk_ms": book_walk_ms, "ipc_age_ms": ipc_age_ms,
+                "is_live_ctf_box": is_live_ctf_box, "m_a": m_a, "m_b": m_b, "exp_ts": exp_ts,
+                "now_ts": now_ts, "dedupe_k": dedupe_k, "retry_cd": retry_cd, "seen_boxes": seen_boxes,
+                "by_sl_map": by_sl_map, "exp_d1": exp_d1, "own_grad": own_grad, "own_asset_grad": own_asset_grad,
+                "zero_fee_box": zero_fee_box, "_ft_cert_2l": _ft_cert_2l, "_v3_7d": _v3_7d,
+                "_zf1_cap": _zf1_cap, "_zf_c1_merge_ok": _zf_c1_merge_ok, "_merge_wallet_ok": _merge_wallet_ok,
+                "_signaled_d1": _signaled_d1, "_preempt_keys_d1": _preempt_keys_d1, "_grad8": _grad8,
+            }
+        finally:
+            if not _s1_committed:
+                self._d1_release_inflight_slot(slot_info)
+
+    def _d1_step2_budget_and_bal_prep(
+        self, s1: Dict[str, Any], fetched_collat: Any, prev_c_d1: Any, async_reserved_usd: float = 0.0
+    ) -> Dict[str, Any]:
+        """Computes live D1 box budget/concentration caps and prepares opp tokens & pre-bal cache."""
+        _grad8 = s1["_grad8"]
+        candidate_box = s1["candidate_box"]
+        box_type = s1["box_type"]
+        sleeve_src = s1["sleeve_src"]
+        cand_asset = s1["cand_asset"]
+        tok_a, tok_b = s1["tok_a"], s1["tok_b"]
+        lbl_a, lbl_b = s1["lbl_a"], s1["lbl_b"]
+        px_a_lim, px_b_lim = s1["px_a_lim"], s1["px_b_lim"]
+        sh_req, sh_a_gross, sh_b_gross = s1["sh_req"], s1["sh_a_gross"], s1["sh_b_gross"]
+        cap_net, fresh_box_net = s1["cap_net"], s1["fresh_box_net"]
+        avail_a, avail_b = s1["avail_a"], s1["avail_b"]
+        fr_a, fr_b, fe_a, fe_b = s1["fr_a"], s1["fr_b"], s1["fe_a"], s1["fe_b"]
+        is_live_ctf_box = s1["is_live_ctf_box"]
+        m_a, m_b, exp_ts, now_ts = s1["m_a"], s1["m_b"], s1["exp_ts"], s1["now_ts"]
+        by_sl_map, exp_d1 = s1["by_sl_map"], s1["exp_d1"]
+        own_grad, own_asset_grad = s1["own_grad"], s1["own_asset_grad"]
+        zero_fee_box, _ft_cert_2l = s1["zero_fee_box"], s1["_ft_cert_2l"]
+        _v3_7d, _zf1_cap = s1["_v3_7d"], s1["_zf1_cap"]
+        _zf_c1_merge_ok, _merge_wallet_ok = s1["_zf_c1_merge_ok"], s1["_merge_wallet_ok"]
+        _signaled_d1 = s1["_signaled_d1"]
+        target_budget = float(fresh_box_net * sh_req)
+        rem_tte_s = max(1.0, exp_ts - now_ts) if exp_ts > 0.0 else 0.0
+        use_bal_cache = False
+        bal_ttl = 360.0
+        now_pb = time.time()
+        c_ba, c_bb = None, None
+        opp_a, opp_b, need_sep_opp = "", "", False
+        if is_live_ctf_box:
+            from src.polymarket_research.riskless_protocol_v2_expansion import (
+                check_per_event_concentration_cap,
+                compute_d1_per_market_notional_cap,
+                compute_sll_and_carry_gatling_budget,
+                is_market_busy_for_scaling,
+                open_market_notional_usd,
+                pending_intents_cash_reserved_usd,
+                pending_intents_synced_equity_usd,
+                sync_pending_intents_on_collateral_refresh,
+            )
+            if (m_a and is_market_busy_for_scaling(self, m_a)) or (m_b and is_market_busy_for_scaling(self, m_b)):
+                return {"executed": False, "reason": "MARKET_ALREADY_OCCUPIED"}
+            collat = prev_c_d1 if not (_signaled_d1 > 0 and not self.dry_run) else None
+            if collat is None:
+                collat = fetched_collat
+                if isinstance(collat, (int, float)) and not isinstance(collat, bool) and math.isfinite(float(collat)) and float(collat) >= 0.0:
+                    self._last_known_collateral = float(collat)
+                    sync_pending_intents_on_collateral_refresh(self, prev_c_d1, float(collat))
+            _pend_d1 = getattr(self, "pending_entry_intents", None)
+            inflight_intent_usd = pending_intents_cash_reserved_usd(_pend_d1)
+            collat_f = max(0.0, float(collat or 0.0) - inflight_intent_usd - float(async_reserved_usd or 0.0))
+            if True:
                 _gov_rb_d1r = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {})
                 _d1_clip_rec = min(26.0, max(12.0, float(_gov_rb_d1r.get("gatling_base_clip_d1_usd", 22.0) or 22.0)))
                 if (
@@ -7938,7 +8211,6 @@ class PolymarketLiveHarvester:
                             token_id=t_id, tick_size=tk_sz_raw, neg_risk=nr_raw,
                             fee_rate_bps=int(round(fr_f * 10000)), condition_id=c_id, fee_rate=fr_f, fee_exponent=fe_f,
                         )
-                hot_pool = _get_hot_io_pool()
                 pre_bal_cache = self.__dict__.setdefault("_d1_clean_pre_bal_cache", {})
                 use_bal_cache = "_wallet_token_balance" not in self.__dict__
                 now_pb = time.time()
@@ -7969,20 +8241,7 @@ class PolymarketLiveHarvester:
                     c_ba = (0.0, now_pb)
                 if use_bal_cache and tok_b not in prior_toks and c_bb is None and not (uws_d1_ok and uws_d1.has_token_fill_since(tok_b, now_pb - 300.0)):
                     c_bb = (0.0, now_pb)
-                t_pb0 = time.perf_counter_ns()
-                fb_a = None if (c_ba is not None and (now_pb - c_ba[1]) <= bal_ttl) else hot_pool.submit(self._wallet_token_balance, tok_a)
-                fb_b = None if (c_bb is not None and (now_pb - c_bb[1]) <= bal_ttl) else hot_pool.submit(self._wallet_token_balance, tok_b)
-                b_a = c_ba[0] if fb_a is None else fb_a.result()[0]
-                b_b = c_bb[0] if fb_b is None else fb_b.result()[0]
-                pre_bal_ms = round((time.perf_counter_ns() - t_pb0) / 1_000_000.0, 2)
-                pre_bal_a = float(b_a or 0.0)
-                pre_bal_b = float(b_b or 0.0)
-                if use_bal_cache:
-                    now_pb_done = time.time()
-                    pre_bal_cache[tok_a] = (pre_bal_a, now_pb_done)
-                    pre_bal_cache[tok_b] = (pre_bal_b, now_pb_done)
                 if walk_equal_shares_dominance_box is not None and hasattr(self.executor, "get_market_book"):
-                    t_bk0 = time.perf_counter_ns()
                     opp_a = str(candidate_box.get("leg_a_opp_token_id") or "").strip()
                     opp_b = str(candidate_box.get("leg_b_opp_token_id") or "").strip()
                     cid_a_opp = str(candidate_box.get("leg_a_condition_id") or "").strip()
@@ -8006,37 +8265,54 @@ class PolymarketLiveHarvester:
                                 candidate_box["leg_b_opp_token_id"] = opp_b
                         if not (len(opp_a) >= 20 and opp_a.isdigit() and len(opp_b) >= 20 and opp_b.isdigit()):
                             return {"executed": False, "reason": "ANTI_BOX_COMPLEMENT_UNVERIFIED:MISSING_OPP_TOKENS"}
-                    custom_book_fn = "get_market_book" in getattr(self.executor, "__dict__", {})
-                    ws_bks = candidate_box.get("ws_books") if not custom_book_fn else None
-                    ws_bks_ts = float(candidate_box.get("ws_books_ts") or 0.0)
-                    use_ws_bks = (
-                        isinstance(ws_bks, dict)
-                        and (time.time() - ws_bks_ts) <= 0.65
-                        and isinstance(ws_bks.get(tok_a), dict)
-                        and isinstance(ws_bks.get(tok_b), dict)
-                        and (not need_sep_opp or (isinstance(ws_bks.get(opp_a), dict) and isinstance(ws_bks.get(opp_b), dict)))
-                    )
-                    if use_ws_bks:
-                        bk_a = ws_bks[tok_a]
-                        bk_b = ws_bks[tok_b]
-                        bk_oa_pre = bk_b if not need_sep_opp else ws_bks[opp_a]
-                        bk_ob_pre = bk_a if not need_sep_opp else ws_bks[opp_b]
-                    elif not custom_book_fn and hasattr(self.executor, "get_market_books_batch"):
-                        req_toks = [tok_a, tok_b] + ([opp_a, opp_b] if need_sep_opp else [])
-                        batch_map = self.executor.get_market_books_batch(req_toks)
-                        bk_a = batch_map.get(tok_a) or {}
-                        bk_b = batch_map.get(tok_b) or {}
-                        bk_oa_pre = bk_b if not need_sep_opp else (batch_map.get(opp_a) or {})
-                        bk_ob_pre = bk_a if not need_sep_opp else (batch_map.get(opp_b) or {})
-                    else:
-                        fk_a = hot_pool.submit(self.executor.get_market_book, tok_a)
-                        fk_b = hot_pool.submit(self.executor.get_market_book, tok_b)
-                        fk_oa = hot_pool.submit(self.executor.get_market_book, opp_a) if need_sep_opp else None
-                        fk_ob = hot_pool.submit(self.executor.get_market_book, opp_b) if need_sep_opp else None
-                        bk_a = fk_a.result() or {}
-                        bk_b = fk_b.result() or {}
-                        bk_oa_pre = bk_b if not need_sep_opp else (fk_oa.result() or {})
-                        bk_ob_pre = bk_a if not need_sep_opp else (fk_ob.result() or {})
+        return {
+            "_s2_ok": True,
+            "s1": s1,
+            "target_budget": target_budget,
+            "rem_tte_s": rem_tte_s,
+            "use_bal_cache": use_bal_cache,
+            "bal_ttl": bal_ttl,
+            "now_pb": now_pb,
+            "c_ba": c_ba,
+            "c_bb": c_bb,
+            "need_books": bool(is_live_ctf_box and walk_equal_shares_dominance_box is not None and hasattr(self.executor, "get_market_book")),
+            "opp_a": opp_a,
+            "opp_b": opp_b,
+            "need_sep_opp": need_sep_opp,
+        }
+
+    def _d1_step3_walk_and_call(
+        self,
+        s2: Dict[str, Any],
+        bk_a: Optional[Dict[str, Any]],
+        bk_b: Optional[Dict[str, Any]],
+        bk_oa_pre: Optional[Dict[str, Any]],
+        bk_ob_pre: Optional[Dict[str, Any]],
+        pre_bal_a: float,
+        pre_bal_b: float,
+        pre_bal_ms: float,
+        t_bk0: int,
+    ) -> Dict[str, Any]:
+        """Runs fresh L2 dominance book walk, FOK quantization, and builds execution kwargs."""
+        s1 = s2["s1"]
+        candidate_box = s1["candidate_box"]
+        box_type, sleeve_src, cand_asset = s1["box_type"], s1["sleeve_src"], s1["cand_asset"]
+        tok_a, tok_b, lbl_a, lbl_b = s1["tok_a"], s1["tok_b"], s1["lbl_a"], s1["lbl_b"]
+        px_a_lim, px_b_lim = s1["px_a_lim"], s1["px_b_lim"]
+        sh_req, sh_a_gross, sh_b_gross = s1["sh_req"], s1["sh_a_gross"], s1["sh_b_gross"]
+        cap_net, fresh_box_net = s1["cap_net"], s1["fresh_box_net"]
+        avail_a, avail_b = s1["avail_a"], s1["avail_b"]
+        fr_a, fr_b, fe_a, fe_b = s1["fr_a"], s1["fr_b"], s1["fe_a"], s1["fe_b"]
+        ipc_age_ms, is_live_ctf_box = s1["ipc_age_ms"], s1["is_live_ctf_box"]
+        now_ts, dedupe_k = s1["now_ts"], s1["dedupe_k"]
+        own_grad, zero_fee_box = s1["own_grad"], s1["zero_fee_box"]
+        _ft_cert_2l, _v3_7d = s1["_ft_cert_2l"], s1["_v3_7d"]
+        _zf1_cap, _zf_c1_merge_ok = s1["_zf1_cap"], s1["_zf_c1_merge_ok"]
+        target_budget, rem_tte_s = s2["target_budget"], s2["rem_tte_s"]
+        book_walk_ms = 0.0
+        if s2["need_books"]:
+            if True:
+                if True:
                     try:
                         bk_oa = bk_oa_pre
                         bk_ob = bk_ob_pre
@@ -8224,91 +8500,97 @@ class PolymarketLiveHarvester:
                         sh_req = _q_d1["net_paired_shares"]
                         fresh_box_net = max(fresh_box_net, _q_d1["eff_box_cost_net"])
 
-            if fresh_box_net < 0.860:
-                return {"executed": False, "reason": f"ANTI_BOX_COST_FLOOR_REJECT:{fresh_box_net:.4f}"}
-            is_4h_cand = (
-                str(candidate_box.get("leg_a_horizon") or "").lower() == "4h"
-                or str(candidate_box.get("leg_b_horizon") or "").lower() == "4h"
+        if fresh_box_net < 0.860:
+            return {"executed": False, "reason": f"ANTI_BOX_COST_FLOOR_REJECT:{fresh_box_net:.4f}"}
+        is_4h_cand = (
+            str(candidate_box.get("leg_a_horizon") or "").lower() == "4h"
+            or str(candidate_box.get("leg_b_horizon") or "").lower() == "4h"
+        )
+        is_zero_itode_box = box_type == "COMPLETE_SET" or (
+            zero_fee_box
+            and box_type in {"NEGRISK_2LEG", "NEGRISK_CROSS", "NBA_DOMINANCE", "SPORTS_CORRIDOR", "MACRO_DOMINANCE", "COUNTING_DOMINANCE", "BARRIER_MONO"}
+        )
+        _rcfg_d1 = getattr(self, "risk_config", None) or RISK_CONFIG
+        _d1_route_mode = str(_rcfg_d1.get("d1_routing_mode", "hybrid_auto"))
+        if _d1_route_mode == "fragile_first":
+            use_parallel_d1 = False
+        elif _d1_route_mode == "parallel_2leg":
+            use_parallel_d1 = bool((not is_4h_cand) and min(px_a_lim, px_b_lim) >= (0.05 if is_zero_itode_box else 0.30))
+        else:
+            _mock_exec_override = (
+                "execute_atomic_dominance_box" in getattr(self.executor, "__dict__", {})
+                and not bool(candidate_box.get("force_parallel_batch"))
             )
-            is_zero_itode_box = box_type == "COMPLETE_SET" or (
-                zero_fee_box
-                and box_type in {"NEGRISK_2LEG", "NEGRISK_CROSS", "NBA_DOMINANCE", "SPORTS_CORRIDOR", "MACRO_DOMINANCE", "COUNTING_DOMINANCE", "BARRIER_MONO"}
-            )
-            _rcfg_d1 = getattr(self, "risk_config", None) or RISK_CONFIG
-            _d1_route_mode = str(_rcfg_d1.get("d1_routing_mode", "hybrid_auto"))
-            if _d1_route_mode == "fragile_first":
-                use_parallel_d1 = False
-            elif _d1_route_mode == "parallel_2leg":
-                use_parallel_d1 = bool((not is_4h_cand) and min(px_a_lim, px_b_lim) >= (0.05 if is_zero_itode_box else 0.30))
-            else:
-                _mock_exec_override = (
-                    "execute_atomic_dominance_box" in getattr(self.executor, "__dict__", {})
-                    and not bool(candidate_box.get("force_parallel_batch"))
-                )
-                _par_net_cap = 0.975 if _mock_exec_override else 0.994
-                use_parallel_d1 = bool(
-                    (
-                        is_zero_itode_box
-                        or (
-                            (not is_4h_cand)
-                            and (not cand_asset or cand_asset in {"BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "HYPE", "ZEC", "XAU", "XAG"})
-                            and fresh_box_net <= _par_net_cap
-                        )
-                    )
-                    and min(px_a_lim, px_b_lim) >= (0.05 if is_zero_itode_box else 0.20)
-                    and (
-                        avail_a is None
-                        or avail_b is None
-                        or min(float(avail_a), float(avail_b)) >= 1.50 * sh_req
+            _par_net_cap = 0.975 if _mock_exec_override else 0.994
+            use_parallel_d1 = bool(
+                (
+                    is_zero_itode_box
+                    or (
+                        (not is_4h_cand)
+                        and (not cand_asset or cand_asset in {"BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "HYPE", "ZEC", "XAU", "XAG"})
+                        and fresh_box_net <= _par_net_cap
                     )
                 )
-            box_id = str(candidate_box.get("box_id") or f"D1_LIVE_{int(now_ts)}")
-            st_lock = getattr(self, "_state_save_lock", None) or self._GLOBAL_STATE_SAVE_LOCK
-            t_fok0 = time.perf_counter_ns()
-            _box_call_kw = dict(
-                box_id=box_id,
-                leg_a_token_id=tok_a,
-                leg_a_label=lbl_a,
-                leg_a_limit_price=px_a_lim,
-                leg_b_token_id=tok_b,
-                leg_b_label=lbl_b,
-                leg_b_limit_price=px_b_lim,
-                shares=sh_req,
-                max_box_cost_net=cap_net,
-                leg_a_avail_shares=avail_a,
-                leg_b_avail_shares=avail_b,
-                fee_rate_a=fr_a,
-                fee_rate_b=fr_b,
-                fee_exponent_a=fe_a,
-                fee_exponent_b=fe_b,
-                parallel_dispatch=use_parallel_d1,
-            )
-            try:
-                res = self.executor.execute_atomic_dominance_box(
-                    **_box_call_kw,
-                    leg_a_pre_balance=pre_bal_a,
-                    leg_b_pre_balance=pre_bal_b,
-                    min_box_cost_floor=0.860,
-                    leg_a_shares=sh_a_gross,
-                    leg_b_shares=sh_b_gross,
+                and min(px_a_lim, px_b_lim) >= (0.05 if is_zero_itode_box else 0.20)
+                and (
+                    avail_a is None
+                    or avail_b is None
+                    or min(float(avail_a), float(avail_b)) >= 1.50 * sh_req
                 )
-            except TypeError:
-                try:
-                    res = self.executor.execute_atomic_dominance_box(
-                        **_box_call_kw,
-                        leg_a_pre_balance=pre_bal_a,
-                        leg_b_pre_balance=pre_bal_b,
-                        min_box_cost_floor=0.860,
-                    )
-                except TypeError:
-                    try:
-                        res = self.executor.execute_atomic_dominance_box(
-                            **_box_call_kw,
-                            leg_a_pre_balance=pre_bal_a,
-                            leg_b_pre_balance=pre_bal_b,
-                        )
-                    except TypeError:
-                        res = self.executor.execute_atomic_dominance_box(**_box_call_kw)
+            )
+        box_id = str(candidate_box.get("box_id") or f"D1_LIVE_{int(now_ts)}")
+        st_lock = getattr(self, "_state_save_lock", None) or self._GLOBAL_STATE_SAVE_LOCK
+        t_fok0 = time.perf_counter_ns()
+        _box_call_kw = dict(
+            box_id=box_id,
+            leg_a_token_id=tok_a,
+            leg_a_label=lbl_a,
+            leg_a_limit_price=px_a_lim,
+            leg_b_token_id=tok_b,
+            leg_b_label=lbl_b,
+            leg_b_limit_price=px_b_lim,
+            shares=sh_req,
+            max_box_cost_net=cap_net,
+            leg_a_avail_shares=avail_a,
+            leg_b_avail_shares=avail_b,
+            fee_rate_a=fr_a,
+            fee_rate_b=fr_b,
+            fee_exponent_a=fe_a,
+            fee_exponent_b=fe_b,
+            parallel_dispatch=use_parallel_d1,
+        )
+        return {
+            "_s3_ok": True,
+            "box_id": box_id,
+            "st_lock": st_lock,
+            "t_fok0": t_fok0,
+            "box_call_kw": _box_call_kw,
+            "use_parallel_d1": use_parallel_d1,
+            "sh_req": sh_req,
+            "sh_a_gross": sh_a_gross,
+            "sh_b_gross": sh_b_gross,
+            "fresh_box_net": fresh_box_net,
+            "pre_bal_a": pre_bal_a,
+            "pre_bal_b": pre_bal_b,
+            "pre_bal_ms": pre_bal_ms,
+            "book_walk_ms": book_walk_ms,
+        }
+
+    def _d1_step4_commit_result(
+        self, s1: Dict[str, Any], s3: Dict[str, Any], res: Dict[str, Any], defer_save: bool = False
+    ) -> Tuple[Dict[str, Any], bool]:
+        """Logs telemetry, updates pre-bal cache/cooldowns/positions, and optionally defers save_state()."""
+        box_id, st_lock, t_fok0 = s3["box_id"], s3["st_lock"], s3["t_fok0"]
+        use_parallel_d1, sh_req, fresh_box_net = s3["use_parallel_d1"], s3["sh_req"], s3["fresh_box_net"]
+        pre_bal_a, pre_bal_b = s3["pre_bal_a"], s3["pre_bal_b"]
+        pre_bal_ms, book_walk_ms = s3["pre_bal_ms"], s3["book_walk_ms"]
+        candidate_box, box_type, sleeve_src = s1["candidate_box"], s1["box_type"], s1["sleeve_src"]
+        cand_asset, tok_a, tok_b = s1["cand_asset"], s1["tok_a"], s1["tok_b"]
+        ipc_age_ms, is_live_ctf_box = s1["ipc_age_ms"], s1["is_live_ctf_box"]
+        now_ts, dedupe_k = s1["now_ts"], s1["dedupe_k"]
+        retry_cd, seen_boxes = s1["retry_cd"], s1["seen_boxes"]
+        need_save = False
+        if True:
             fok_box_ms = round((time.perf_counter_ns() - t_fok0) / 1_000_000.0, 2)
             _fok_ok = bool(res.get("success"))
             _fok_err = "" if _fok_ok else f" | abort={res.get('stage') or res.get('error') or 'FAILED'}"
@@ -8372,7 +8654,10 @@ class PolymarketLiveHarvester:
                                 retry_cd.pop(k_cd, None)
                         retry_cd[dedupe_k] = now_ts + 9.5
                         if is_live_ctf_box:
-                            self.save_state()
+                            if defer_save:
+                                need_save = True
+                            else:
+                                self.save_state()
                     else:
                         retry_cd.pop(dedupe_k, None)
                         self._record_seen_d1_box_key(dedupe_k)
@@ -8389,10 +8674,220 @@ class PolymarketLiveHarvester:
                     else:
                         self._record_inline_d1_legged_out_close(box_id, candidate_box, resid, res)
                 elif dedupe_k and not clean_zero_cost_abort:
-                    self.save_state()
-            return {"executed": bool(res.get("success")), "result": res, "leg_trade_ids": leg_tids}
+                    if defer_save:
+                        need_save = True
+                    else:
+                        self.save_state()
+            return {"executed": bool(res.get("success")), "result": res, "leg_trade_ids": leg_tids}, need_save
+
+    def _call_atomic_box_sync(self, s3: Dict[str, Any]) -> Dict[str, Any]:
+        kw = s3["box_call_kw"]
+        pre_a, pre_b = s3["pre_bal_a"], s3["pre_bal_b"]
+        sh_a, sh_b = s3["sh_a_gross"], s3["sh_b_gross"]
+        try:
+            return self.executor.execute_atomic_dominance_box(
+                **kw, leg_a_pre_balance=pre_a, leg_b_pre_balance=pre_b,
+                min_box_cost_floor=0.860, leg_a_shares=sh_a, leg_b_shares=sh_b,
+            )
+        except TypeError:
+            try:
+                return self.executor.execute_atomic_dominance_box(
+                    **kw, leg_a_pre_balance=pre_a, leg_b_pre_balance=pre_b, min_box_cost_floor=0.860,
+                )
+            except TypeError:
+                try:
+                    return self.executor.execute_atomic_dominance_box(
+                        **kw, leg_a_pre_balance=pre_a, leg_b_pre_balance=pre_b,
+                    )
+                except TypeError:
+                    return self.executor.execute_atomic_dominance_box(**kw)
+
+    def _cache_d1_pre_bals(self, s2: Dict[str, Any], b_a: float, b_b: float) -> Tuple[float, float]:
+        pre_bal_a, pre_bal_b = float(b_a or 0.0), float(b_b or 0.0)
+        if s2["use_bal_cache"]:
+            s1 = s2["s1"]
+            now_done = time.time()
+            pb_cache = self.__dict__.setdefault("_d1_clean_pre_bal_cache", {})
+            pb_cache[s1["tok_a"]] = (pre_bal_a, now_done)
+            pb_cache[s1["tok_b"]] = (pre_bal_b, now_done)
+        return pre_bal_a, pre_bal_b
+
+    def maybe_execute_graduated_d1_box(self, candidate_box: Dict[str, Any]) -> Dict[str, Any]:
+        """Executes verified 8/8-graduated 2-leg riskless boxes (sync compatibility entry point)."""
+        s1 = self._d1_step1_gate_and_preempt(candidate_box, concurrent_ok=False)
+        if not s1.get("_s1_ok"):
+            return s1
+        slot_info = s1["slot_info"]
+        try:
+            m_a, m_b = s1["m_a"], s1["m_b"]
+            _ev_loop_ref = getattr(self, "_main_loop", None)
+            _same_ev_thr = _ev_loop_ref is not None and getattr(_ev_loop_ref, "_thread_id", None) == threading.get_ident()
+            if s1["is_live_ctf_box"] and s1["_signaled_d1"] > 0 and not _same_ev_thr:
+                for _ in range(60):
+                    if not self._has_inflight_maker_anchor(m_a, m_b, s1["_preempt_keys_d1"]):
+                        break
+                    time.sleep(0.015)
+            prev_c_d1 = getattr(self, "_last_known_collateral", None)
+            fetched_collat = prev_c_d1
+            if s1["is_live_ctf_box"] and (prev_c_d1 is None or (s1["_signaled_d1"] > 0 and not self.dry_run)):
+                try:
+                    fetched_collat = self.executor.get_collateral_balance()
+                except Exception:
+                    fetched_collat = None
+            s2 = self._d1_step2_budget_and_bal_prep(s1, fetched_collat, prev_c_d1, async_reserved_usd=0.0)
+            if not s2.get("_s2_ok"):
+                return s2
+            bk_a = bk_b = bk_oa_pre = bk_ob_pre = None
+            pre_bal_a = pre_bal_b = pre_bal_ms = 0.0
+            t_bk0 = time.perf_counter_ns()
+            if s1["is_live_ctf_box"]:
+                hot_pool = _get_hot_io_pool()
+                now_pb, bal_ttl, c_ba, c_bb = s2["now_pb"], s2["bal_ttl"], s2["c_ba"], s2["c_bb"]
+                tok_a, tok_b = s1["tok_a"], s1["tok_b"]
+                t_pb0 = time.perf_counter_ns()
+                fb_a = None if (c_ba is not None and (now_pb - c_ba[1]) <= bal_ttl) else hot_pool.submit(self._wallet_token_balance, tok_a)
+                fb_b = None if (c_bb is not None and (now_pb - c_bb[1]) <= bal_ttl) else hot_pool.submit(self._wallet_token_balance, tok_b)
+                b_a = c_ba[0] if fb_a is None else fb_a.result()[0]
+                b_b = c_bb[0] if fb_b is None else fb_b.result()[0]
+                pre_bal_ms = round((time.perf_counter_ns() - t_pb0) / 1_000_000.0, 2)
+                pre_bal_a, pre_bal_b = self._cache_d1_pre_bals(s2, b_a, b_b)
+                if s2["need_books"]:
+                    t_bk0 = time.perf_counter_ns()
+                    opp_a, opp_b, need_sep_opp = s2["opp_a"], s2["opp_b"], s2["need_sep_opp"]
+                    custom_book_fn = "get_market_book" in getattr(self.executor, "__dict__", {})
+                    bk_a, bk_b, bk_oa_pre, bk_ob_pre = self._get_d1_books_from_ws(
+                        s1["candidate_box"], tok_a, tok_b, opp_a, opp_b, need_sep_opp, custom_book_fn
+                    )
+                    missing_toks = [t for t, b in ((tok_a, bk_a), (tok_b, bk_b)) if b is None]
+                    if need_sep_opp:
+                        missing_toks.extend([t for t, b in ((opp_a, bk_oa_pre), (opp_b, bk_ob_pre)) if b is None and t not in missing_toks])
+                    if missing_toks:
+                        if not custom_book_fn and hasattr(self.executor, "get_market_books_batch"):
+                            b_map = self.executor.get_market_books_batch(missing_toks) or {}
+                        else:
+                            futs = {t: hot_pool.submit(self.executor.get_market_book, t) for t in missing_toks}
+                            b_map = {t: (f.result() or {}) for t, f in futs.items()}
+                        if bk_a is None:
+                            bk_a = b_map.get(tok_a) or {}
+                        if bk_b is None:
+                            bk_b = b_map.get(tok_b) or {}
+                        if bk_oa_pre is None:
+                            bk_oa_pre = bk_b if not need_sep_opp else (b_map.get(opp_a) or {})
+                        if bk_ob_pre is None:
+                            bk_ob_pre = bk_a if not need_sep_opp else (b_map.get(opp_b) or {})
+            s3 = self._d1_step3_walk_and_call(s2, bk_a, bk_b, bk_oa_pre, bk_ob_pre, pre_bal_a, pre_bal_b, pre_bal_ms, t_bk0)
+            if not s3.get("_s3_ok"):
+                return s3
+            res = self._call_atomic_box_sync(s3)
+            out, _ = self._d1_step4_commit_result(s1, s3, res, defer_save=False)
+            return out
         finally:
-            inflight_lock.release()
+            self._d1_release_inflight_slot(slot_info)
+
+    async def maybe_execute_graduated_d1_box_async(
+        self, candidate_box: Dict[str, Any], concurrent_ok: bool = False
+    ) -> Dict[str, Any]:
+        """Native uvloop async D1 execution: Event preempt wait, _pos_market_ws->batch REST, direct async FOK."""
+        box_t_pre = str(candidate_box.get("box_type") or "DOMINANCE").strip().upper()
+        if box_t_pre in {"SINGLE_LEG_LOCK", "NEGRISK_CONVERT", "CTF_OVERROUND", "MULTI_LEG_BUNDLE"}:
+            return await asyncio.to_thread(self.maybe_execute_graduated_d1_box, candidate_box)
+        s1 = self._d1_step1_gate_and_preempt(candidate_box, concurrent_ok=concurrent_ok)
+        if not s1.get("_s1_ok"):
+            return s1
+        slot_info = s1["slot_info"]
+        reserved_added = 0.0
+        try:
+            if s1["is_live_ctf_box"] and s1["_signaled_d1"] > 0:
+                await self._wait_maker_anchor_preempt_async(s1["m_a"], s1["m_b"], s1["_preempt_keys_d1"])
+            prev_c_d1 = getattr(self, "_last_known_collateral", None)
+            fetched_collat = prev_c_d1
+            if s1["is_live_ctf_box"] and (prev_c_d1 is None or (s1["_signaled_d1"] > 0 and not self.dry_run)):
+                try:
+                    fetched_collat = await asyncio.to_thread(self.executor.get_collateral_balance)
+                except Exception:
+                    fetched_collat = None
+            cur_res = float(getattr(self, "_d1_async_reserved_usd", 0.0) or 0.0)
+            s2 = self._d1_step2_budget_and_bal_prep(s1, fetched_collat, prev_c_d1, async_reserved_usd=cur_res)
+            if not s2.get("_s2_ok"):
+                return s2
+            if s1["is_live_ctf_box"]:
+                reserved_added = float(s2["target_budget"] or 0.0)
+                self._d1_async_reserved_usd = cur_res + reserved_added
+            bk_a = bk_b = bk_oa_pre = bk_ob_pre = None
+            pre_bal_a = pre_bal_b = pre_bal_ms = 0.0
+            t_bk0 = time.perf_counter_ns()
+            if s1["is_live_ctf_box"]:
+                now_pb, bal_ttl, c_ba, c_bb = s2["now_pb"], s2["bal_ttl"], s2["c_ba"], s2["c_bb"]
+                tok_a, tok_b = s1["tok_a"], s1["tok_b"]
+                need_ba = not (c_ba is not None and (now_pb - c_ba[1]) <= bal_ttl)
+                need_bb = not (c_bb is not None and (now_pb - c_bb[1]) <= bal_ttl)
+                opp_a, opp_b, need_sep_opp = s2["opp_a"], s2["opp_b"], s2["need_sep_opp"]
+                custom_book_fn = "get_market_book" in getattr(self.executor, "__dict__", {})
+                missing_toks: List[str] = []
+                if s2["need_books"]:
+                    bk_a, bk_b, bk_oa_pre, bk_ob_pre = self._get_d1_books_from_ws(
+                        s1["candidate_box"], tok_a, tok_b, opp_a, opp_b, need_sep_opp, custom_book_fn
+                    )
+                    missing_toks = [t for t, b in ((tok_a, bk_a), (tok_b, bk_b)) if b is None]
+                    if need_sep_opp:
+                        missing_toks.extend([t for t, b in ((opp_a, bk_oa_pre), (opp_b, bk_ob_pre)) if b is None and t not in missing_toks])
+
+                async def _fetch_bks() -> Dict[str, Any]:
+                    if not missing_toks:
+                        return {}
+                    if not custom_book_fn and asyncio.iscoroutinefunction(getattr(self.executor, "get_market_books_batch_async", None)):
+                        return await self.executor.get_market_books_batch_async(missing_toks) or {}
+                    if not custom_book_fn and asyncio.iscoroutinefunction(getattr(self.executor, "get_market_book_async", None)):
+                        vals = await asyncio.gather(*[self.executor.get_market_book_async(t) for t in missing_toks])
+                        return {t: (v or {}) for t, v in zip(missing_toks, vals)}
+                    vals = await asyncio.gather(*[asyncio.to_thread(self.executor.get_market_book, t) for t in missing_toks])
+                    return {t: (v or {}) for t, v in zip(missing_toks, vals)}
+
+                t_pb0 = time.perf_counter_ns()
+                res_a, res_b, b_map = await asyncio.gather(
+                    asyncio.to_thread(self._wallet_token_balance, tok_a) if need_ba else asyncio.sleep(0, result=(c_ba[0], 0.0)),
+                    asyncio.to_thread(self._wallet_token_balance, tok_b) if need_bb else asyncio.sleep(0, result=(c_bb[0], 0.0)),
+                    _fetch_bks(),
+                )
+                pre_bal_ms = round((time.perf_counter_ns() - t_pb0) / 1_000_000.0, 2)
+                pre_bal_a, pre_bal_b = self._cache_d1_pre_bals(s2, res_a[0], res_b[0])
+                if s2["need_books"]:
+                    if missing_toks:
+                        mkt_ws = getattr(self, "_pos_market_ws", None)
+                        if mkt_ws is not None and not custom_book_fn and hasattr(mkt_ws, "seed_book"):
+                            for _tk_s, _bk_s in b_map.items():
+                                if isinstance(_bk_s, dict) and (_bk_s.get("bids") or _bk_s.get("asks")):
+                                    mkt_ws.seed_book(_tk_s, _bk_s)
+                    if bk_a is None:
+                        bk_a = b_map.get(tok_a) or {}
+                    if bk_b is None:
+                        bk_b = b_map.get(tok_b) or {}
+                    if bk_oa_pre is None:
+                        bk_oa_pre = bk_b if not need_sep_opp else (b_map.get(opp_a) or {})
+                    if bk_ob_pre is None:
+                        bk_ob_pre = bk_a if not need_sep_opp else (b_map.get(opp_b) or {})
+            s3 = self._d1_step3_walk_and_call(s2, bk_a, bk_b, bk_oa_pre, bk_ob_pre, pre_bal_a, pre_bal_b, pre_bal_ms, t_bk0)
+            if not s3.get("_s3_ok"):
+                return s3
+            if "execute_atomic_dominance_box" in getattr(self.executor, "__dict__", {}) or not hasattr(self.executor, "execute_atomic_dominance_box_async"):
+                res = await asyncio.to_thread(self._call_atomic_box_sync, s3)
+            else:
+                res = await self.executor.execute_atomic_dominance_box_async(
+                    **s3["box_call_kw"],
+                    leg_a_pre_balance=s3["pre_bal_a"],
+                    leg_b_pre_balance=s3["pre_bal_b"],
+                    min_box_cost_floor=0.860,
+                    leg_a_shares=s3["sh_a_gross"],
+                    leg_b_shares=s3["sh_b_gross"],
+                )
+            out, need_save = self._d1_step4_commit_result(s1, s3, res, defer_save=True)
+            if need_save:
+                await asyncio.to_thread(self.save_state)
+            return out
+        finally:
+            if reserved_added > 0.0:
+                self._d1_async_reserved_usd = max(0.0, float(getattr(self, "_d1_async_reserved_usd", 0.0) or 0.0) - reserved_added)
+            self._d1_release_inflight_slot(slot_info)
 
     def _make_single_leg_lock_pos(
         self, lid: str, box_type: str, sleeve_src: str, cand_asset: str, horizon_s: str,
@@ -8753,15 +9248,23 @@ class PolymarketLiveHarvester:
                 return {"executed": False, "reason": _pure_mkr_veto}
             sl_rec_s = by_sl_map.get(sleeve_src) or {}
             b1_rec_s = by_sl_map.get("BOND1_UMA_RESOLUTION_CARRY") or {}
-            no_l_s = int(sl_rec_s.get("losses", 0) or 0) == 0 and (
-                sleeve_src != "UMA_READY1_LIVENESS_PRIORITY" or int(b1_rec_s.get("losses", 0) or 0) == 0
+            _lv_c_s, _lv_w_s, _lv_l_s, _lv_pnl_s = self._live_sleeve_graduation_stats(sleeve_src)
+            _lv_grad8_s = (_lv_l_s == 0 and _lv_c_s >= 8 and _lv_w_s == _lv_c_s and _lv_pnl_s > 0.0)
+            _lv_no_loss_s = (_lv_l_s == 0 and _lv_c_s >= 3 and _lv_w_s == _lv_c_s and _lv_pnl_s > 0.0)
+            no_l_s = (_lv_l_s == 0) and (
+                (
+                    int(sl_rec_s.get("losses", 0) or 0) == 0
+                    and (sleeve_src != "UMA_READY1_LIVENESS_PRIORITY" or int(b1_rec_s.get("losses", 0) or 0) == 0)
+                )
+                or _lv_grad8_s
+                or (_lv_no_loss_s and sleeve_src in {"BOND1_UMA_RESOLUTION_CARRY", "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY", "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"})
             )
             d1_s_ok = _grad8_s(by_sl_map.get("D1_SAME_ORACLE_DOMINANCE_BOX") or {})
             _prob_mkr_sleeves = {"W1_SOLAR_PEAK_LOCK", "W1_LOW_TROUGH_LOCK", "W_SOLAR1_POST_2351_LOCK", "SP2_NBA_ENDGAME_LOCK", "U1_DAILY_UPDOWN_LOCK", "CM_B2_PYTH_SESSION_NO_LOCK", "CM_U1_PYTH_CLOSE_LOCK"}
             _ro_mkr = bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("directional", {}).get("riskless_only_mode", False)) and not self.dry_run
             _prob_mkr_ok = not (_ro_mkr and sleeve_src in _prob_mkr_sleeves) or float(candidate_box.get("p_model") or 0.0) >= 0.999
             own_mkr_grad = (
-                (_grad8_s(sl_rec_s) or (sleeve_src == "UMA_READY1_LIVENESS_PRIORITY" and _grad8_s(b1_rec_s)))
+                (_grad8_s(sl_rec_s) or _lv_grad8_s or (sleeve_src == "UMA_READY1_LIVENESS_PRIORITY" and _grad8_s(b1_rec_s)))
                 and no_l_s
                 and _prob_mkr_ok
             )
@@ -9073,6 +9576,7 @@ class PolymarketLiveHarvester:
         if mkt_ws_s is not None and hasattr(mkt_ws_s, "subscribe_tokens_immediate"):
             mkt_ws_s.subscribe_tokens_immediate([tok_a, opp_a])
         _ws_bk_ev = asyncio.Event()
+        _bw_wait_task: Optional[asyncio.Task] = None
         self.__dict__.setdefault("_sll_ws_book_events", {})[intent_id] = (tok_a, opp_a, _ws_bk_ev)
         try:
             if self.dry_run:
@@ -9089,11 +9593,25 @@ class PolymarketLiveHarvester:
                 if isinstance(bk_opp_f, dict) and bk_opp_f.get("is_partial_delta") and not bk_opp_f.get("bids"):
                     bk_opp_f = None
                 if bk_win_f is None or bk_opp_f is None:
-                    pre_bal_a, bk_win_f, bk_opp_f = await asyncio.gather(
-                        self._resolve_fast_pre_token_balance_async(tok_a, exclude_intent_id=intent_id),
-                        asyncio.to_thread(self.executor.get_market_book, tok_a) if bk_win_f is None else asyncio.sleep(0, result=bk_win_f),
-                        asyncio.to_thread(self.executor.get_market_book, opp_a) if bk_opp_f is None else asyncio.sleep(0, result=bk_opp_f),
-                    )
+                    if (
+                        bk_win_f is None
+                        and bk_opp_f is None
+                        and not custom_bk_s
+                        and asyncio.iscoroutinefunction(getattr(self.executor, "get_market_books_batch_async", None))
+                    ):
+                        pre_bal_a, _bmap_sll = await asyncio.gather(
+                            self._resolve_fast_pre_token_balance_async(tok_a, exclude_intent_id=intent_id),
+                            self.executor.get_market_books_batch_async([tok_a, opp_a]),
+                        )
+                        bk_win_f = (_bmap_sll or {}).get(tok_a)
+                        bk_opp_f = (_bmap_sll or {}).get(opp_a)
+                    else:
+                        _async_bk = (not custom_bk_s) and asyncio.iscoroutinefunction(getattr(self.executor, "get_market_book_async", None))
+                        pre_bal_a, bk_win_f, bk_opp_f = await asyncio.gather(
+                            self._resolve_fast_pre_token_balance_async(tok_a, exclude_intent_id=intent_id),
+                            (self.executor.get_market_book_async(tok_a) if _async_bk else asyncio.to_thread(self.executor.get_market_book, tok_a)) if bk_win_f is None else asyncio.sleep(0, result=bk_win_f),
+                            (self.executor.get_market_book_async(opp_a) if _async_bk else asyncio.to_thread(self.executor.get_market_book, opp_a)) if bk_opp_f is None else asyncio.sleep(0, result=bk_opp_f),
+                        )
                     if mkt_ws_s is not None and not custom_bk_s and hasattr(mkt_ws_s, "seed_book"):
                         if isinstance(bk_win_f, dict):
                             mkt_ws_s.seed_book(tok_a, bk_win_f)
@@ -9112,7 +9630,11 @@ class PolymarketLiveHarvester:
                 )
                 if _tk_wf <= 0.0 and hasattr(self.executor, "get_token_tick_size") and (_real_clob_sll or _custom_tk_fn):
                     try:
-                        _tk_wf = float((await asyncio.to_thread(self.executor.get_token_tick_size, tok_a, anc_bid_px)) or 0.0)
+                        if not _custom_tk_fn and asyncio.iscoroutinefunction(getattr(self.executor, "get_token_metadata_async", None)):
+                            _tk_str_sll, _ = await self.executor.get_token_metadata_async(tok_a, price_hint=anc_bid_px)
+                            _tk_wf = float(_tk_str_sll or 0.0)
+                        else:
+                            _tk_wf = float((await asyncio.to_thread(self.executor.get_token_tick_size, tok_a, anc_bid_px)) or 0.0)
                     except TypeError:
                         _tk_wf = float((await asyncio.to_thread(self.executor.get_token_tick_size, tok_a)) or 0.0)
                     except Exception:
@@ -9223,7 +9745,7 @@ class PolymarketLiveHarvester:
             _use_async_mkr_post = bool(
                 not self.dry_run
                 and "post_maker_entry_order" not in getattr(self.executor, "__dict__", {})
-                and hasattr(self.executor, "post_maker_entry_order_async")
+                and asyncio.iscoroutinefunction(getattr(self.executor, "post_maker_entry_order_async", None))
                 and bool(getattr(self.executor, "_can_use_native_async_post_order", lambda: False)())
             )
             _mkr_px_floor = max(0.02 if _is_inv_comp_mkr else (0.50 if _is_s2_mkr else 0.90), min_rb)
@@ -9380,11 +9902,12 @@ class PolymarketLiveHarvester:
                                     await asyncio.sleep(0)
                                 else:
                                     _t_fw = asyncio.create_task(uws.wait_for_fill_or_timeout(rem_w, prev_seq=uws.fill_sequence))
-                                    _t_bw = asyncio.create_task(_ws_bk_ev.wait())
-                                    _, _pend_w = await asyncio.wait({_t_fw, _t_bw}, return_when=asyncio.FIRST_COMPLETED)
-                                    for _pw in _pend_w:
-                                        _pw.cancel()
-                                    await asyncio.gather(*_pend_w, return_exceptions=True)
+                                    if _bw_wait_task is None or _bw_wait_task.done():
+                                        _bw_wait_task = asyncio.create_task(_ws_bk_ev.wait())
+                                    _done_w, _ = await asyncio.wait({_t_fw, _bw_wait_task}, return_when=asyncio.FIRST_COMPLETED)
+                                    if _t_fw not in _done_w:
+                                        _t_fw.cancel()
+                                        await asyncio.gather(_t_fw, return_exceptions=True)
                             else:
                                 await uws.wait_for_fill_or_timeout(rem_w, prev_seq=uws.fill_sequence)
                             snap_o = uws.get_order_snapshot(maker_oid, max_age_sec=5.0)
@@ -9434,10 +9957,21 @@ class PolymarketLiveHarvester:
                                 bk_wc = None
                             if bk_oc is None or bk_wc is None:
                                 try:
-                                    bk_oc, bk_wc = await asyncio.gather(
-                                        asyncio.to_thread(self.executor.get_market_book, opp_a) if bk_oc is None else asyncio.sleep(0, result=bk_oc),
-                                        asyncio.to_thread(self.executor.get_market_book, tok_a) if bk_wc is None else asyncio.sleep(0, result=bk_wc),
-                                    )
+                                    if (
+                                        bk_oc is None
+                                        and bk_wc is None
+                                        and not custom_bk_l
+                                        and hasattr(self.executor, "get_market_books_batch_async")
+                                    ):
+                                        _bm_loop = await self.executor.get_market_books_batch_async([opp_a, tok_a])
+                                        bk_oc = (_bm_loop or {}).get(opp_a)
+                                        bk_wc = (_bm_loop or {}).get(tok_a)
+                                    else:
+                                        _async_bk_l = (not custom_bk_l) and hasattr(self.executor, "get_market_book_async")
+                                        bk_oc, bk_wc = await asyncio.gather(
+                                            (self.executor.get_market_book_async(opp_a) if _async_bk_l else asyncio.to_thread(self.executor.get_market_book, opp_a)) if bk_oc is None else asyncio.sleep(0, result=bk_oc),
+                                            (self.executor.get_market_book_async(tok_a) if _async_bk_l else asyncio.to_thread(self.executor.get_market_book, tok_a)) if bk_wc is None else asyncio.sleep(0, result=bk_wc),
+                                        )
                                     if mkt_ws_s is not None and not custom_bk_l and hasattr(mkt_ws_s, "seed_book"):
                                         if isinstance(bk_oc, dict):
                                             mkt_ws_s.seed_book(opp_a, bk_oc)
@@ -9847,6 +10381,9 @@ class PolymarketLiveHarvester:
                 spawn_fast_htm_maker_fill_reconcile(self, lid)
             return {"executed": True, "result": summary or post_res, "leg_trade_ids": [] if h_mat else [lid]}
         finally:
+            if _bw_wait_task is not None and not _bw_wait_task.done():
+                _bw_wait_task.cancel()
+                await asyncio.gather(_bw_wait_task, return_exceptions=True)
             (self.__dict__.get("_sll_ws_book_events") or {}).pop(intent_id, None)
             _prepost_res.pop(intent_id, None)
             _prepost_mkts.pop(intent_id, None)
@@ -9857,16 +10394,23 @@ class PolymarketLiveHarvester:
             inflight_mkr_types.discard(mkr_type_k)
             inflight_s2_mkr.discard(inflight_key)
             preempt_events.pop(inflight_key, None)
+            self._notify_maker_preempt_released()
 
     def _notify_sll_ws_book_change(self, _tok: str, loop_ref: Any = None) -> int:
         _sll_ev_map = getattr(self, "_sll_ws_book_events", None)
         if not _sll_ev_map:
             return 0
         lp = loop_ref or getattr(self, "_main_loop", None)
+        same_lp = False
+        if lp is not None:
+            try:
+                same_lp = asyncio.get_running_loop() is lp
+            except RuntimeError:
+                same_lp = False
         woke = 0
         for _tk_w, _op_w, _ev_s in list(_sll_ev_map.values()):
             if _tok in (_tk_w, _op_w) and not _ev_s.is_set():
-                if lp is not None:
+                if lp is not None and not same_lp:
                     lp.call_soon_threadsafe(_ev_s.set)
                 else:
                     _ev_s.set()
@@ -9916,6 +10460,7 @@ class PolymarketLiveHarvester:
             tasks.discard(done_t)
             if by_type.get(b_key) is done_t:
                 by_type.pop(b_key, None)
+            self._notify_maker_preempt_released()
             try:
                 if not done_t.cancelled() and done_t.exception() is None:
                     _r = done_t.result()
@@ -9929,7 +10474,21 @@ class PolymarketLiveHarvester:
 
     def _desired_market_ws_tokens(self, now_ts: Optional[float] = None) -> List[str]:
         from src.polymarket_research.riskless_protocol_v2_expansion import desired_market_ws_tokens_impl
-        return desired_market_ws_tokens_impl(self, now_ts=now_ts)
+        toks = list(desired_market_ws_tokens_impl(self, now_ts=now_ts))
+        try:
+            from src.polymarket_research.full_throttle_pipeline import load_dormant_fast_rescan_tokens
+            dormant_toks = load_dormant_fast_rescan_tokens(max_age_sec=1800.0)
+            if dormant_toks:
+                seen = set(toks)
+                for dt_k in dormant_toks:
+                    if dt_k and dt_k not in seen:
+                        seen.add(dt_k)
+                        toks.append(dt_k)
+        except ImportError:
+            pass
+        except Exception:
+            pass
+        return toks
 
     def register_clinched_ws_watch_cand(self, cand: Dict[str, Any], now_ts: Optional[float] = None) -> bool:
         from src.polymarket_research.riskless_protocol_v2_expansion import register_clinched_ws_watch_cand_impl
@@ -10014,10 +10573,21 @@ class PolymarketLiveHarvester:
             except Exception as exc:
                 logger.error(f"[D1 LIVE BRIDGE] Error evaluating candidate: {exc}", exc_info=True)
         if not self.dry_run and getattr(self, "_pos_market_ws", None) is not None and (taker_cands or mkr_cands):
-            try:
-                self._pos_market_ws.set_desired_tokens(self._desired_market_ws_tokens(now_ts))
-            except Exception:
-                pass
+            _ws_state_sig = (
+                len(self.active_positions),
+                len(getattr(self, "pending_entry_intents", {}) or {}),
+                len(getattr(self, "_clinched_ws_watchlist", {}) or {}),
+            )
+            if (
+                _ws_state_sig != getattr(self, "_last_ws_desired_sig", None)
+                or (now_ts - float(getattr(self, "_last_ws_desired_sync_ts", 0.0) or 0.0)) >= 1.0
+            ):
+                self._last_ws_desired_sig = _ws_state_sig
+                self._last_ws_desired_sync_ts = now_ts
+                try:
+                    self._pos_market_ws.set_desired_tokens(self._desired_market_ws_tokens(now_ts))
+                except Exception:
+                    pass
 
         from src.polymarket_research.riskless_protocol_v2_expansion import score_live_candidate_velocity_ev
 
@@ -10025,33 +10595,94 @@ class PolymarketLiveHarvester:
             return score_live_candidate_velocity_ev(c, is_maker, now_ts, compute_capital_velocity_ev)
 
         if taker_cands:
-            taker_cands.sort(key=lambda item: _cand_vel_ev(item[1], False), reverse=True)
+            if len(taker_cands) > 1:
+                taker_cands.sort(key=lambda item: _cand_vel_ev(item[1], False), reverse=True)
             max_batch_boxes = int(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("max_concurrent_riskless_boxes", 10)) if self._is_v5_unleashed_active() else max(1, int(RISK_CONFIG.get("max_concurrent_d1_boxes", 4)))
-            for emit_id, cand in taker_cands:
-                try:
-                    seen_emits[emit_id] = None
-                    while len(seen_emits) > 4096:
-                        seen_emits.pop(next(iter(seen_emits)), None)
-                    out = await loop.run_in_executor(_get_hot_io_pool(), self.maybe_execute_graduated_d1_box, cand)
-                    if out.get("executed"):
-                        self._record_ft_candidate_funnel(cand, stage="TAKER_EXECUTED", executed=True)
-                        if not self.dry_run:
-                            for tid in out.get("leg_trade_ids") or []:
-                                if not (self.active_positions.get(tid) or {}).get("hold_to_maturity_lock"):
-                                    self._spawn_fast_confirm(tid)
-                        executed += 1
-                        if executed >= max_batch_boxes:
-                            break
-                    else:
-                        _skip_r = str(out.get("reason") or "UNKNOWN")
-                        self._record_ft_candidate_funnel(cand, stage="TAKER_REJECTED", reason=_skip_r)
-                        if _skip_r not in {"DUPLICATE_BOX_KEY", "RETRY_COOLDOWN_10S", "BOX_EXECUTION_INFLIGHT"}:
-                            logger.info(
-                                f"[D1 LIVE BOX SKIP] {cand.get('box_id') or cand.get('dedupe_key')} "
-                                f"({cand.get('sleeve_source') or cand.get('box_type')} {cand.get('asset')}): {_skip_r}"
-                            )
-                except Exception as exc:
-                    logger.error(f"[D1 LIVE BRIDGE] Error evaluating candidate: {exc}", exc_info=True)
+            use_async_d1 = (
+                "maybe_execute_graduated_d1_box" not in getattr(self, "__dict__", {})
+                and hasattr(self, "maybe_execute_graduated_d1_box_async")
+            )
+            if use_async_d1 and len(taker_cands) > 1 and max_batch_boxes > 1:
+                sem = asyncio.Semaphore(min(max_batch_boxes, 3))
+
+                async def _exec_d1_cand(e_id: str, c_box: Dict[str, Any]) -> Tuple[str, Dict[str, Any], Optional[Dict[str, Any]], Optional[Exception]]:
+                    async with sem:
+                        try:
+                            res_c = await self.maybe_execute_graduated_d1_box_async(c_box, concurrent_ok=True)
+                            return e_id, c_box, res_c, None
+                        except Exception as exc_c:
+                            return e_id, c_box, None, exc_c
+
+                remaining = list(taker_cands)
+                while remaining and executed < max_batch_boxes:
+                    wave: List[Tuple[str, Dict[str, Any]]] = []
+                    deferred: List[Tuple[str, Dict[str, Any]]] = []
+                    wave_mkts: Set[str] = set()
+                    wave_keys: Set[str] = set()
+                    max_wave = max(1, max_batch_boxes - executed)
+                    for e_id, c_box in remaining:
+                        dk_w = str(c_box.get("dedupe_key") or c_box.get("box_id") or "")
+                        mkts_w = {str(m) for m in (c_box.get("leg_a_market_id"), c_box.get("leg_b_market_id")) if m}
+                        if len(wave) < max_wave and not (dk_w and dk_w in wave_keys) and not (mkts_w & wave_mkts):
+                            seen_emits[e_id] = None
+                            while len(seen_emits) > 4096:
+                                seen_emits.pop(next(iter(seen_emits)), None)
+                            if dk_w:
+                                wave_keys.add(dk_w)
+                            wave_mkts.update(mkts_w)
+                            wave.append((e_id, c_box))
+                        else:
+                            deferred.append((e_id, c_box))
+                    wave_results = await asyncio.gather(*[_exec_d1_cand(e_id, c_box) for e_id, c_box in wave])
+                    for _, cand, out, exc in wave_results:
+                        if exc is not None:
+                            logger.error(f"[D1 LIVE BRIDGE] Error evaluating candidate: {exc}", exc_info=True)
+                            continue
+                        if out and out.get("executed"):
+                            self._record_ft_candidate_funnel(cand, stage="TAKER_EXECUTED", executed=True)
+                            if not self.dry_run:
+                                for tid in out.get("leg_trade_ids") or []:
+                                    if not (self.active_positions.get(tid) or {}).get("hold_to_maturity_lock"):
+                                        self._spawn_fast_confirm(tid)
+                            executed += 1
+                        else:
+                            _skip_r = str((out or {}).get("reason") or "UNKNOWN")
+                            self._record_ft_candidate_funnel(cand, stage="TAKER_REJECTED", reason=_skip_r)
+                            if _skip_r not in {"DUPLICATE_BOX_KEY", "RETRY_COOLDOWN_10S", "BOX_EXECUTION_INFLIGHT"}:
+                                logger.info(
+                                    f"[D1 LIVE BOX SKIP] {cand.get('box_id') or cand.get('dedupe_key')} "
+                                    f"({cand.get('sleeve_source') or cand.get('box_type')} {cand.get('asset')}): {_skip_r}"
+                                )
+                    remaining = deferred
+            else:
+                for emit_id, cand in taker_cands:
+                    try:
+                        seen_emits[emit_id] = None
+                        while len(seen_emits) > 4096:
+                            seen_emits.pop(next(iter(seen_emits)), None)
+                        if use_async_d1:
+                            out = await self.maybe_execute_graduated_d1_box_async(cand, concurrent_ok=False)
+                        else:
+                            out = await loop.run_in_executor(_get_hot_io_pool(), self.maybe_execute_graduated_d1_box, cand)
+                        if out.get("executed"):
+                            self._record_ft_candidate_funnel(cand, stage="TAKER_EXECUTED", executed=True)
+                            if not self.dry_run:
+                                for tid in out.get("leg_trade_ids") or []:
+                                    if not (self.active_positions.get(tid) or {}).get("hold_to_maturity_lock"):
+                                        self._spawn_fast_confirm(tid)
+                            executed += 1
+                            if executed >= max_batch_boxes:
+                                break
+                        else:
+                            _skip_r = str(out.get("reason") or "UNKNOWN")
+                            self._record_ft_candidate_funnel(cand, stage="TAKER_REJECTED", reason=_skip_r)
+                            if _skip_r not in {"DUPLICATE_BOX_KEY", "RETRY_COOLDOWN_10S", "BOX_EXECUTION_INFLIGHT"}:
+                                logger.info(
+                                    f"[D1 LIVE BOX SKIP] {cand.get('box_id') or cand.get('dedupe_key')} "
+                                    f"({cand.get('sleeve_source') or cand.get('box_type')} {cand.get('asset')}): {_skip_r}"
+                                )
+                    except Exception as exc:
+                        logger.error(f"[D1 LIVE BRIDGE] Error evaluating candidate: {exc}", exc_info=True)
 
         if mkr_cands and os.environ.get("PM_DISABLE_LIVE_MAKER_ANCHOR_BOX", "0") != "1":
             _rcfg_mkr_p = getattr(self, "risk_config", None) or RISK_CONFIG
@@ -10069,7 +10700,8 @@ class PolymarketLiveHarvester:
                 check_per_event_concentration_cap,
                 extract_canonical_event_keys,
             )
-            mkr_cands.sort(key=lambda item: _cand_vel_ev(item[1], True), reverse=True)
+            if len(mkr_cands) > 1:
+                mkr_cands.sort(key=lambda item: _cand_vel_ev(item[1], True), reverse=True)
             _batch_evt_slot_counts: Dict[str, int] = {}
             _max_evt_slots_b = int((_gov_rb_p.get("max_concurrent_intents_per_event") if isinstance(_gov_rb_p, dict) else None) or 1)
             for emit_id, cand in mkr_cands:
@@ -10895,7 +11527,7 @@ class PolymarketLiveHarvester:
                         if not line.strip():
                             continue
                         try:
-                            res = json.loads(line)
+                            res = _json_loads(line)
                             res_m_id = str(res.get("market_id"))
                             winning_outcome = res.get("winning_outcome")
                             for tid, pos in list(self.active_positions.items()):
@@ -10927,9 +11559,9 @@ class PolymarketLiveHarvester:
                                 pos["umaResolutionStatus"] = str(r_gm.get("umaResolutionStatus") or "")
                             if isinstance(r_gm, dict) and (r_gm.get("umaResolutionStatus") == "resolved" or r_gm.get("closed")):
                                 raw_p = r_gm.get("outcomePrices")
-                                p_list = json.loads(raw_p) if isinstance(raw_p, str) else (raw_p or [])
+                                p_list = _json_loads(raw_p) if isinstance(raw_p, str) else (raw_p or [])
                                 raw_t = r_gm.get("clobTokenIds")
-                                t_list = json.loads(raw_t) if isinstance(raw_t, str) else (raw_t or [])
+                                t_list = _json_loads(raw_t) if isinstance(raw_t, str) else (raw_t or [])
                                 pos_tok = str(pos.get("token_id") or "")
                                 tgt_tok = str(pos.get("target_token") or "UP")
                                 _opp_lbls = {"UP": "DOWN", "DOWN": "UP", "YES": "NO", "NO": "YES"}
@@ -12744,6 +13376,82 @@ class PolymarketLiveHarvester:
             if wakeup_supervision_event is not None:
                 wakeup_supervision_event.set()
 
+    def _rebuild_active_recycle_tok_map(self) -> Dict[str, Tuple[bool, bool]]:
+        tok_map: Dict[str, Tuple[bool, bool]] = {}
+        for p in getattr(self, "active_positions", {}).values():
+            if not isinstance(p, dict):
+                continue
+            tk = str(p.get("token_id") or "")
+            if not tk:
+                continue
+            prev_dom, prev_htm = tok_map.get(tk, (False, False))
+            tok_map[tk] = (
+                prev_dom or bool(p.get("is_dominance_box")),
+                prev_htm or bool(p.get("hold_to_maturity_lock")),
+            )
+        self._active_recycle_tok_map = tok_map
+        return tok_map
+
+    def _drain_and_handle_lifecycle_events(self, poly_logs_ws: Any = None) -> bool:
+        """Drains CLOB WS + Polygon logs lifecycle events, enforcing strict D-001 KMIA quarantine."""
+        events: List[Dict[str, Any]] = []
+        mkt_ws = getattr(self, "_pos_market_ws", None)
+        if mkt_ws is not None and hasattr(mkt_ws, "drain_lifecycle_events"):
+            try:
+                events.extend(mkt_ws.drain_lifecycle_events(max_items=64) or [])
+            except Exception:
+                pass
+        if poly_logs_ws is not None and hasattr(poly_logs_ws, "drain_events"):
+            try:
+                events.extend(poly_logs_ws.drain_events(max_items=64) or [])
+            except Exception:
+                pass
+        if not events:
+            return False
+
+        quarantined_mids: Set[str] = {"6707502", "6707503"}
+        quarantined_cids: Set[str] = set()
+        quarantined_toks: Set[str] = set()
+        for p in getattr(self, "active_positions", {}).values():
+            if isinstance(p, dict) and str(p.get("market_id") or "") in quarantined_mids:
+                if p.get("condition_id"):
+                    quarantined_cids.add(str(p.get("condition_id")).lower())
+                if p.get("token_id"):
+                    quarantined_toks.add(str(p.get("token_id")))
+
+        triggered = False
+        refresh_tokens = False
+        for ev in events:
+            if not isinstance(ev, dict) or ev.get("quarantined_d001"):
+                continue
+            ev_mids = {str(x) for x in (ev.get("market_ids") or []) if x}
+            if ev.get("market_id"):
+                ev_mids.add(str(ev.get("market_id")))
+            if ev_mids & quarantined_mids:
+                continue
+            ev_cid = str(ev.get("condition_id") or "").lower()
+            if ev_cid and ev_cid in quarantined_cids:
+                continue
+            ev_toks = {str(x) for x in (ev.get("assets_ids") or ev.get("token_ids") or []) if x}
+            for k_t in ("asset_id", "token_id", "winning_asset_id"):
+                if ev.get(k_t):
+                    ev_toks.add(str(ev.get(k_t)))
+            if ev_toks & quarantined_toks:
+                continue
+            kind = str(ev.get("event_type") or ev.get("event_kind") or ev.get("type") or "").lower()
+            if kind in {"market_resolved", "new_market"}:
+                refresh_tokens = True
+            if kind in {"market_resolved", "oo_settle", "ctf_condition_resolution", "payout_redemption", "ctf_payout_redemption", "negrisk_payout_redemption"}:
+                triggered = True
+        if refresh_tokens and mkt_ws is not None and hasattr(mkt_ws, "set_desired_tokens"):
+            try:
+                mkt_ws.set_desired_tokens(self._desired_market_ws_tokens())
+            except Exception:
+                pass
+        if triggered:
+            self._lifecycle_urgent_ts = time.time()
+        return triggered
+
     async def _fast_d1_consumer_loop(
         self,
         fast_d1_event: asyncio.Event,
@@ -12754,12 +13462,16 @@ class PolymarketLiveHarvester:
             while not self._shutdown_requested:
                 fast_d1_event.clear()
                 now_d1 = time.time()
+                inotify_dirty = bool(getattr(self, "_d1_inotify_dirty", False))
+                if inotify_dirty:
+                    self._d1_inotify_dirty = False
                 if self._is_d1_box_halted():
                     _fq_clr = getattr(self, "_fast_d1_cand_lines", None)
                     if _fq_clr:
                         _fq_clr.clear()
                 elif (
-                    bool(getattr(self, "_fast_d1_cand_lines", None))
+                    inotify_dirty
+                    or bool(getattr(self, "_fast_d1_cand_lines", None))
                     or (now_d1 - getattr(self, "_last_d1_cand_poll", 0.0) >= 0.50)
                 ):
                     self._last_d1_cand_poll = now_d1
@@ -12770,7 +13482,7 @@ class PolymarketLiveHarvester:
                         logger.exception("[FAST D1 CONSUMER] Candidate poll failed; continuing.")
                 if self._shutdown_requested:
                     break
-                if not self._is_d1_box_halted() and bool(getattr(self, "_fast_d1_cand_lines", None)):
+                if not self._is_d1_box_halted() and (bool(getattr(self, "_fast_d1_cand_lines", None)) or bool(getattr(self, "_d1_inotify_dirty", False))):
                     await asyncio.sleep(0)
                     continue
                 try:
@@ -12848,6 +13560,7 @@ class PolymarketLiveHarvester:
 
             # P1: Zero-Polling Fast IPC via Linux inotify file descriptor
             watcher = LinuxInotifyWatcher(TRIGGER_FILE)
+            d1_watcher = LinuxInotifyWatcher(D1_LIVE_CANDIDATES_FILE)
             loop = asyncio.get_running_loop()
 
             # Graceful shutdown: SIGTERM/SIGINT only set a flag; the loop finishes its in-flight step, flushes
@@ -12886,6 +13599,15 @@ class PolymarketLiveHarvester:
                 logger.info(f"✓ Linux inotify event listener armed on {TRIGGER_FILE.name} (sub-millisecond wakeups enabled).")
             else:
                 logger.info("Linux inotify unavailable; using responsive 10ms consumer polling fallback.")
+
+            def on_d1_inotify_file_event():
+                d1_watcher.drain_events()
+                self._d1_inotify_dirty = True
+                fast_d1_box_event.set()
+
+            if d1_watcher.is_available:
+                loop.add_reader(d1_watcher.fd, on_d1_inotify_file_event)
+                logger.info(f"✓ Linux inotify event listener armed on {D1_LIVE_CANDIDATES_FILE.name} (sub-ms D1 box wakeups enabled).")
 
             ipc_sock = None
             if os.name != "nt":
@@ -12970,7 +13692,6 @@ class PolymarketLiveHarvester:
                             except Exception:
                                 break
                         fast_d1_box_event.set()
-                        trigger_notify_event.set()
 
                     loop.add_reader(d1_ipc_sock.fileno(), on_fast_d1_ipc_datagram)
                     logger.info("✓ Fast D1 Box IPC datagram listener armed on @polymarket_d1_box_notify (~15us wakeup).")
@@ -13014,11 +13735,17 @@ class PolymarketLiveHarvester:
                     _bids = (_bk or {}).get("bids") or []
                     if _bids and float(_bids[0].get("price", 0.0) or 0.0) >= 0.52:
                         _top_b_ws = float(_bids[0].get("price", 0.0) or 0.0)
-                        if any(
-                            (p.get("is_dominance_box") or (_top_b_ws >= 0.997 and p.get("hold_to_maturity_lock")))
-                            and str(p.get("token_id") or "") == _tok
-                            for p in self.active_positions.values()
-                        ):
+                        _tok_map = getattr(self, "_active_recycle_tok_map", None)
+                        if _tok_map is not None:
+                            _flags = _tok_map.get(_tok)
+                            _recycle_hit = bool(_flags is not None and (_flags[0] or (_top_b_ws >= 0.997 and _flags[1])))
+                        else:
+                            _recycle_hit = any(
+                                (p.get("is_dominance_box") or (_top_b_ws >= 0.997 and p.get("hold_to_maturity_lock")))
+                                and str(p.get("token_id") or "") == _tok
+                                for p in self.active_positions.values()
+                            )
+                        if _recycle_hit:
                             self._ws_urgent_recycle_ts = time.time()
                             loop.call_soon_threadsafe(trigger_notify_event.set)
                     if getattr(self, "_clinched_ws_watchlist", None) and _asks:
@@ -13069,6 +13796,24 @@ class PolymarketLiveHarvester:
                 self._perps_leadlag_ws = _PolymarketPerpsLeadLagStream()
                 self._perps_leadlag_ws.start_background()
 
+            poly_logs_ws = None
+            if not self.dry_run:
+                try:
+                    from .riskless_fast_feeds import (
+                        FROZEN_KMIA_MARKET_IDS as _FROZEN_KMIA_MARKET_IDS,
+                        PolygonScopedLogsWs as _PolygonScopedLogsWs,
+                    )
+                    _funder_addr = str(getattr(self.executor, "funder_address", "") or getattr(self.executor, "funder", "") or "")
+                    poly_logs_ws = _PolygonScopedLogsWs(
+                        funder_address=_funder_addr,
+                        quarantined_market_ids=_FROZEN_KMIA_MARKET_IDS,
+                    )
+                    poly_logs_ws.start_background()
+                    self._poly_logs_ws = poly_logs_ws
+                except Exception:
+                    poly_logs_ws = None
+
+            self._rebuild_active_recycle_tok_map()
             # Proactively pre-warm active hourly market tokens on startup to eliminate hot-path GETs
             self._prewarm_active_market_tokens()
             _evt_driven = bool(ipc_sock is not None and watcher.is_available)
@@ -13155,7 +13900,7 @@ class PolymarketLiveHarvester:
                     self.risk_controller.halt_reason = ""
                     self._halt_logged_active = False
                     logger.info("[HEARTBEAT RECOVERED] CLOB heartbeat healthy again; clearing temporary heartbeat halt.")
-                    self.save_state()
+                    await asyncio.to_thread(self.save_state)
 
                 if self.risk_controller.is_halted():
                     if (
@@ -13171,7 +13916,7 @@ class PolymarketLiveHarvester:
                                 f"[CIRCUIT BREAKER] {self.risk_controller.halt_reason}. "
                                 "Halting new entries (supervisor staying alive for recovery / UTC rollover)."
                             )
-                            self.save_state()
+                            await asyncio.to_thread(self.save_state)
                             self._halt_logged_active = True
                         if not self.active_positions:
                             if not self.dry_run and not getattr(self, "_halt_orders_cancelled", False):
@@ -13193,7 +13938,7 @@ class PolymarketLiveHarvester:
                     self.risk_controller.halt_reason = f"Heartbeat degraded ({self.executor.heartbeat_failures} drops) - new entries halted; existing positions remain supervised."
                     if not getattr(self, "_halt_logged_active", False):
                         logger.critical(f"[HEARTBEAT UNHEALTHY] CLOB heartbeat dropped {self.executor.heartbeat_failures} times. Halting new entries.")
-                        self.save_state()
+                        await asyncio.to_thread(self.save_state)
                         self._halt_logged_active = True
                     if not self.active_positions:
                         if not getattr(self, "_halt_orders_cancelled", False):
@@ -13288,17 +14033,16 @@ class PolymarketLiveHarvester:
                 # 2. Hot shock triggers are drained concurrently by `fast_consumer_task` (_fast_trigger_consumer_loop)
                 #    so slow supervision / D1 box REST & RPC awaits never head-of-line block @polymarket_shock_notify.
 
-                # 2b. Ingest verified D1 Same-Oracle Dominance Box live candidates (<0.2ms RAM IPC or 0.50s disk fallback)
-                if (
-                    not self._is_d1_box_halted()
-                    and (bool(getattr(self, "_fast_d1_cand_lines", None)) or (now_ts - getattr(self, "_last_d1_cand_poll", 0.0) >= 0.50))
-                ):
-                    self._last_d1_cand_poll = now_ts
-                    await self._poll_d1_live_box_candidates(now_ts)
+                # 2b. D1/SLL/WS_SNIPE candidates are drained concurrently by `fast_d1_consumer_task`
+                #     (_fast_d1_consumer_loop) so D1 execution never contends on _d1_poll_async_lock
+                #     or head-of-line blocks position supervision & heartbeats in `run()`.
 
                 # 3. Monitor open positions (fast 0.20s cadence when a stop/cancel confirmation or WS >=98.5c recycle bid is armed, else 1.0s)
+                if self._drain_and_handle_lifecycle_events(poly_logs_ws):
+                    last_mgmt_check = 0.0
                 urgent_supervision = (
                     (now_ts - float(getattr(self, "_ws_urgent_recycle_ts", 0.0) or 0.0)) <= 1.5
+                    or (now_ts - float(getattr(self, "_lifecycle_urgent_ts", 0.0) or 0.0)) <= 1.5
                     or any(
                         p.get("_zero_bal_gamma_urgent")
                         or p.get("strike_retrace_detected_ts")
@@ -13315,6 +14059,7 @@ class PolymarketLiveHarvester:
                     last_mgmt_check = now_ts
                     try:
                         await self.check_resolutions_and_manage_positions()
+                        self._rebuild_active_recycle_tok_map()
                         if not self.dry_run and not self._is_riskless_only_mode():
                             self._step_shadow_phase3_4_tracker(now_ts)
                     except StatePersistenceError:
@@ -13342,7 +14087,7 @@ class PolymarketLiveHarvester:
                     if self.active_positions or self.pending_entry_intents or getattr(self, "_clinched_ws_watchlist", None):
                         _gc.collect(0)
                     else:
-                        _gc.collect()
+                        await asyncio.to_thread(_gc.collect)
                     active_exp = sum(p.get("notional_usd", 0.0) for p in self.active_positions.values())
                     logger.info(
                         f"[HEARTBEAT] Harvester active | Triggers scanned: {self._triggers_scanned_count} | "
@@ -13388,6 +14133,11 @@ class PolymarketLiveHarvester:
                     self._perps_leadlag_ws.stop()
                 except Exception:
                     pass
+            if 'poly_logs_ws' in locals() and poly_logs_ws is not None:
+                try:
+                    poly_logs_ws.stop()
+                except Exception:
+                    pass
             if 'd1_ipc_sock' in locals() and d1_ipc_sock is not None:
                 try:
                     if 'loop' in locals() and loop is not None:
@@ -13413,16 +14163,20 @@ class PolymarketLiveHarvester:
                     trigger_fp.close()
                 except Exception:
                     pass
-            if 'watcher' in locals() and watcher is not None and getattr(watcher, "is_available", False):
-                try:
-                    if 'loop' in locals() and loop is not None:
-                        loop.remove_reader(watcher.fd)
-                except Exception:
-                    pass
-                try:
-                    watcher.close()
-                except Exception:
-                    pass
+            for _w in (
+                watcher if 'watcher' in locals() else None,
+                d1_watcher if 'd1_watcher' in locals() else None,
+            ):
+                if _w is not None and getattr(_w, "is_available", False):
+                    try:
+                        if 'loop' in locals() and loop is not None:
+                            loop.remove_reader(_w.fd)
+                    except Exception:
+                        pass
+                    try:
+                        _w.close()
+                    except Exception:
+                        pass
             try:
                 flush_operational_alerts(3.0)
             except Exception:
@@ -13570,7 +14324,7 @@ if __name__ == "__main__":
 
 
 # ======================================================================================
-# [13/67] MODULE: src/polymarket_research/polymarket_live_executor.py
+# [13/68] MODULE: src/polymarket_research/polymarket_live_executor.py
 # PURPOSE: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
 # ======================================================================================
 
@@ -13630,6 +14384,7 @@ except ImportError:
         Response=object,
         Limits=lambda **kw: kw,
         HTTPTransport=lambda **kw: kw,
+        AsyncHTTPTransport=lambda **kw: kw,
         HTTPError=Exception,
         ConnectError=ConnectionError,
         ConnectTimeout=TimeoutError,
@@ -13699,7 +14454,10 @@ class _ThreadLocalClobHttpClient:
             transport = httpx.HTTPTransport(
                 http2=False,
                 limits=limits,
-                socket_options=[(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)],
+                socket_options=[
+                    (socket.IPPROTO_TCP, socket.TCP_NODELAY, 1),
+                    (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1),
+                ],
             )
             return httpx.Client(http2=False, timeout=self._timeout, transport=transport)
         except Exception:
@@ -14497,6 +15255,9 @@ class FastV2OrderSigner:
     Gated at startup by a deterministic byte-for-byte parity self-test against `ExchangeOrderBuilderV2`.
     """
 
+    _SIDE_WORDS: Tuple[bytes, bytes] = ((0).to_bytes(32, "big"), (1).to_bytes(32, "big"))
+    _REC_ID_HEX: Tuple[str, str, str, str] = ("1b", "1c", "1d", "1e")
+
     def __init__(self, clob_client: Any) -> None:
         import dataclasses as _dc
         import coincurve
@@ -14587,7 +15348,25 @@ class FastV2OrderSigner:
             ORDER_TYPE_STRING.encode("utf-8").hex()
             + len(ORDER_TYPE_STRING).to_bytes(2, "big").hex()
         )
+        self._default_builder_word: bytes = self._hex_to_word32(self._default_builder_hex)
+        self._tok_word_cache: Dict[str, bytes] = {}
+        self._amt_cache: Dict[Tuple[Any, float, float, str], Tuple[Any, int, int]] = {}
+        self._amt_cache_lock = threading.Lock()
+        self._salt_lock = threading.Lock()
+        self._salt_pool: List[int] = []
         self._verify_parity_against_sdk()
+
+    def _next_buffered_salt(self) -> int:
+        pool = getattr(self, "_salt_pool", None)
+        lock = getattr(self, "_salt_lock", None)
+        if pool is None or lock is None:
+            return self._generate_salt()
+        with lock:
+            if not pool:
+                raw = os.urandom(2048)
+                mask = (1 << 53) - 1
+                pool.extend(((int.from_bytes(raw[i:i + 8], "little") & mask) or 1) for i in range(0, 2048, 8))
+            return pool.pop()
 
     @staticmethod
     def _generate_salt() -> int:
@@ -14634,40 +15413,54 @@ class FastV2OrderSigner:
         meta_hex = metadata if metadata else self._bytes32_zero_hex
         builder_hex = builder if builder else self._bytes32_zero_hex
         tok_str = str(token_id)
-        tok_int = int(tok_str, 16) if tok_str.startswith(("0x", "0X")) else int(tok_str)
+        tok_w = self._tok_word_cache.get(tok_str)
+        if tok_w is None:
+            tok_int = int(tok_str, 16) if tok_str.startswith(("0x", "0X")) else int(tok_str)
+            tok_w = tok_int.to_bytes(32, "big")
+            if len(self._tok_word_cache) < 2048:
+                self._tok_word_cache[tok_str] = tok_w
         side_int = int(side)
+        side_w = self._SIDE_WORDS[side_int] if side_int in (0, 1) else side_int.to_bytes(32, "big")
 
         meta_w = self._bytes32_zero if meta_hex == self._bytes32_zero_hex else self._hex_to_word32(meta_hex)
-        builder_w = self._bytes32_zero if builder_hex == self._bytes32_zero_hex else self._hex_to_word32(builder_hex)
+        if builder_hex == self._bytes32_zero_hex:
+            builder_w = self._bytes32_zero
+        elif builder_hex == self._default_builder_hex:
+            builder_w = self._default_builder_word
+        else:
+            builder_w = self._hex_to_word32(builder_hex)
 
         contents_hash = self._keccak(
-            primitive=(
-                self._order_type_hash
-                + salt_int.to_bytes(32, "big")
-                + self._maker_word
-                + self._signer_word
-                + tok_int.to_bytes(32, "big")
-                + int(maker_amount).to_bytes(32, "big")
-                + int(taker_amount).to_bytes(32, "big")
-                + side_int.to_bytes(32, "big")
-                + self._sig_type_word
-                + int(ts_str).to_bytes(32, "big")
-                + meta_w
-                + builder_w
-            )
+            primitive=b"".join((
+                self._order_type_hash,
+                salt_int.to_bytes(32, "big"),
+                self._maker_word,
+                self._signer_word,
+                tok_w,
+                int(maker_amount).to_bytes(32, "big"),
+                int(taker_amount).to_bytes(32, "big"),
+                side_w,
+                self._sig_type_word,
+                int(ts_str).to_bytes(32, "big"),
+                meta_w,
+                builder_w,
+            ))
         )
         dom_sep = self._dom_sep_neg if neg_risk else self._dom_sep_std
         if self._is_poly_1271:
-            td_hash = self._keccak(primitive=self._solady_prefix + contents_hash + self._solady_suffix)
-            digest = self._keccak(primitive=b"\x19\x01" + dom_sep + td_hash)
+            td_hash = self._keccak(primitive=b"".join((self._solady_prefix, contents_hash, self._solady_suffix)))
+            digest = self._keccak(primitive=b"".join((b"\x19\x01", dom_sep, td_hash)))
             sig65 = self._cc_priv.sign_recoverable(digest, hasher=None)
-            inner_hex = sig65[:64].hex() + f"{sig65[64] + 27:02x}"
+            rec_id = sig65[64]
+            rec_hex = self._REC_ID_HEX[rec_id] if rec_id < 4 else f"{rec_id + 27:02x}"
             dom_hex = self._dom_sep_neg_hex if neg_risk else self._dom_sep_std_hex
-            signature = "0x" + inner_hex + dom_hex + contents_hash.hex() + self._poly_1271_type_tail_hex
+            signature = "0x" + sig65[:64].hex() + rec_hex + dom_hex + contents_hash.hex() + self._poly_1271_type_tail_hex
         else:
-            digest = self._keccak(primitive=b"\x19\x01" + dom_sep + contents_hash)
+            digest = self._keccak(primitive=b"".join((b"\x19\x01", dom_sep, contents_hash)))
             sig65 = self._cc_priv.sign_recoverable(digest, hasher=None)
-            signature = "0x" + sig65[:64].hex() + f"{sig65[64] + 27:02x}"
+            rec_id = sig65[64]
+            rec_hex = self._REC_ID_HEX[rec_id] if rec_id < 4 else f"{rec_id + 27:02x}"
+            signature = "0x" + sig65[:64].hex() + rec_hex
 
         return self._SignedOrderV2(
             salt=salt_int,
@@ -14762,9 +15555,18 @@ class FastV2OrderSigner:
             return self._orig_create_order(order_args, options)
         rcfg = self._rounding_config[tick_size]
         price = self._round_normal(raw_px, rcfg.price)
-        side_enum, maker_amt, taker_amt = self._order_builder.get_order_amounts(
-            order_args.side, order_args.size, price, rcfg
-        )
+        amt_key = (str(order_args.side), float(order_args.size), price, tick_size)
+        cached_amts = self._amt_cache.get(amt_key)
+        if cached_amts is not None:
+            side_enum, maker_amt, taker_amt = cached_amts
+        else:
+            side_enum, maker_amt, taker_amt = self._order_builder.get_order_amounts(
+                order_args.side, order_args.size, price, rcfg
+            )
+            with self._amt_cache_lock:
+                if len(self._amt_cache) >= 4096:
+                    self._amt_cache.clear()
+                self._amt_cache[amt_key] = (side_enum, maker_amt, taker_amt)
         arg_bcode = getattr(order_args, "builder_code", None)
         if arg_bcode not in (None, "", self._bytes32_zero_hex):
             eff_builder_hex = encode_builder_code_bytes32_hex(str(arg_bcode))
@@ -14776,6 +15578,7 @@ class FastV2OrderSigner:
             taker_amount=str(taker_amt),
             side=side_enum,
             neg_risk=bool(neg_risk),
+            salt=self._next_buffered_salt(),
             expiration=str(getattr(order_args, "expiration", 0) or 0),
             metadata=getattr(order_args, "metadata", None) or self._bytes32_zero_hex,
             builder=eff_builder_hex,
@@ -14853,11 +15656,12 @@ class PreSignedOrderLadderCache:
     ) -> Optional[Any]:
         """Takes (pops) a fresh pre-signed order for an exact (token, price, shares, tick, neg_risk) match."""
         key = self._make_key(token_id, price, shares, price_cents, tick_size=tick_size, neg_risk=neg_risk)
+        if key is None:
+            with self._lock:
+                self.misses += 1
+            return None
         now = time.time()
         with self._lock:
-            if key is None:
-                self.misses += 1
-                return None
             entry = self._cache.pop(key, None)
             if entry:
                 created_ts, signed_order = entry
@@ -15816,15 +16620,13 @@ class PolymarketLiveExecutor:
             or self._async_client.is_closed
             or (cur_loop is not None and getattr(self, "_async_client_loop", None) is not cur_loop)
         ):
-            limits = httpx.Limits(max_keepalive_connections=10, max_connections=20)
+            limits = httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=45.0)
             try:
-                transport = httpx.AsyncHTTPTransport(
-                    limits=limits,
-                    socket_options=[(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)],
-                )
-                self._async_client = httpx.AsyncClient(timeout=3.0, transport=transport)
+                sock_opts = [(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1), (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)]
+                transport = httpx.AsyncHTTPTransport(http2=False, limits=limits, socket_options=sock_opts)
+                self._async_client = httpx.AsyncClient(http2=False, timeout=3.0, transport=transport)
             except Exception:
-                self._async_client = httpx.AsyncClient(timeout=3.0, limits=limits)
+                self._async_client = httpx.AsyncClient(http2=False, timeout=3.0, limits=limits)
             self._async_client_loop = cur_loop
         return self._async_client
 
@@ -15861,6 +16663,16 @@ class PolymarketLiveExecutor:
             self._fast_l2_signer_addr = s_addr
             self._fast_l2_api_key = ak
             self._fast_l2_passphrase = apass
+            self._fast_l2_static_headers = {
+                "POLY_ADDRESS": s_addr,
+                "POLY_API_KEY": ak,
+                "POLY_PASSPHRASE": apass,
+                "User-Agent": "py_clob_client_v2",
+                "Accept": "*/*",
+                "Connection": "keep-alive",
+                "Content-Type": "application/json",
+            }
+            self._cached_builder_hmac_creds = self._resolve_valid_builder_hmac_creds()
             try:
                 from py_clob_client_v2.headers.headers import create_level_2_headers
                 from py_clob_client_v2.clob_types import RequestArgs
@@ -15903,11 +16715,18 @@ class PolymarketLiveExecutor:
                 if b_creds is not None:
                     try:
                         ts_val = int(hdrs.get("POLY_TIMESTAMP") or time.time())
-                        b_str = (
-                            serialized_body
-                            if serialized_body is not None
-                            else (json.dumps(body, separators=(",", ":"), ensure_ascii=False) if body is not None else None)
-                        )
+                        if serialized_body is not None:
+                            b_str = serialized_body
+                        elif body is not None:
+                            if _orjson is not None:
+                                try:
+                                    b_str = _orjson.dumps(body).decode("utf-8")
+                                except TypeError:
+                                    b_str = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
+                            else:
+                                b_str = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
+                        else:
+                            b_str = None
                         hdrs.update(
                             self.build_relayer_builder_headers(
                                 api_key=b_creds[0],
@@ -15949,25 +16768,47 @@ class PolymarketLiveExecutor:
         return (b_key, padded_sec, b_pass)
 
     def _build_fast_l2_headers(
-        self, method: str, endpoint: str, serialized_body: str = "", ts_override: Optional[int] = None
+        self,
+        method: str,
+        endpoint: str,
+        serialized_body: str = "",
+        ts_override: Optional[int] = None,
+        *,
+        body_bytes: Optional[bytes] = None,
     ) -> Dict[str, str]:
         ts = int(ts_override) if ts_override is not None else int(time.time())
-        msg = f"{ts}{method}{endpoint}{serialized_body}".encode("utf-8")
+        ts_str = str(ts)
+        if body_bytes is not None:
+            msg = f"{ts_str}{method}{endpoint}".encode("ascii") + body_bytes
+        else:
+            msg = f"{ts_str}{method}{endpoint}{serialized_body}".encode("utf-8")
         sig = base64.urlsafe_b64encode(hmac.new(self._fast_l2_secret_bytes, msg, hashlib.sha256).digest()).decode("ascii")
-        hdrs: Dict[str, str] = {
-            "POLY_ADDRESS": self._fast_l2_signer_addr,
-            "POLY_SIGNATURE": sig,
-            "POLY_TIMESTAMP": str(ts),
-            "POLY_API_KEY": self._fast_l2_api_key,
-            "POLY_PASSPHRASE": self._fast_l2_passphrase,
-            "User-Agent": "py_clob_client_v2",
-            "Accept": "*/*",
-            "Connection": "keep-alive",
-            "Content-Type": "application/json",
-        }
-        b_creds = self._resolve_valid_builder_hmac_creds()
+        static_hdrs = getattr(self, "_fast_l2_static_headers", None)
+        if static_hdrs is not None:
+            hdrs = static_hdrs.copy()
+            hdrs["POLY_SIGNATURE"] = sig
+            hdrs["POLY_TIMESTAMP"] = ts_str
+        else:
+            hdrs = {
+                "POLY_ADDRESS": self._fast_l2_signer_addr,
+                "POLY_SIGNATURE": sig,
+                "POLY_TIMESTAMP": ts_str,
+                "POLY_API_KEY": self._fast_l2_api_key,
+                "POLY_PASSPHRASE": self._fast_l2_passphrase,
+                "User-Agent": "py_clob_client_v2",
+                "Accept": "*/*",
+                "Connection": "keep-alive",
+                "Content-Type": "application/json",
+            }
+        b_creds = (
+            self._cached_builder_hmac_creds
+            if hasattr(self, "_cached_builder_hmac_creds")
+            else self._resolve_valid_builder_hmac_creds()
+        )
         if b_creds is not None:
             try:
+                if body_bytes is not None and not serialized_body:
+                    serialized_body = body_bytes.decode("utf-8")
                 hdrs.update(
                     self.build_relayer_builder_headers(
                         api_key=b_creds[0],
@@ -16129,16 +16970,37 @@ class PolymarketLiveExecutor:
             cli = self.get_hot_order_async_client()
             host = str(getattr(self.client, "host", None) or self.CLOB_HOST).rstrip("/")
             hdrs = {"User-Agent": "py_clob_client_v2", "Accept": "*/*", "Connection": "keep-alive"}
+            cur_lp = getattr(self, "_hot_order_async_loop", None)
+            cli_gen = getattr(self, "_async_client", None)
+            gen_ok = (
+                cli_gen is not None
+                and not getattr(cli_gen, "is_closed", True)
+                and (cur_lp is None or getattr(self, "_async_client_loop", None) is cur_lp)
+            )
             if (
                 int(getattr(self, "_hot_async_inflight", 0) or 0) <= 0
                 and (now_m - float(getattr(self, "_hot_order_last_dual_touch_mono", 0.0) or 0.0)) >= 12.0
             ):
-                r1, r2 = await asyncio.gather(cli.get(f"{host}/time", headers=hdrs), cli.get(f"{host}/time", headers=hdrs))
+                reqs = [cli.get(f"{host}/time", headers=hdrs), cli.get(f"{host}/time", headers=hdrs)]
+                if gen_ok:
+                    reqs.append(cli_gen.get(f"{host}/time", headers=hdrs))
+                resps = await asyncio.gather(*reqs, return_exceptions=True)
+                r1, r2 = resps[0], resps[1]
                 resp = r1 if getattr(r1, "status_code", 0) == 200 else r2
                 if getattr(resp, "status_code", 0) == 200:
                     self._hot_order_last_dual_touch_mono = time.monotonic()
             else:
-                resp = await cli.get(f"{host}/time", headers=hdrs)
+                if gen_ok:
+                    resps = await asyncio.gather(
+                        cli.get(f"{host}/time", headers=hdrs),
+                        cli_gen.get(f"{host}/time", headers=hdrs),
+                        return_exceptions=True,
+                    )
+                    resp = resps[0]
+                    if isinstance(resp, Exception):
+                        raise resp
+                else:
+                    resp = await cli.get(f"{host}/time", headers=hdrs)
             if resp.status_code == 200:
                 self._hot_order_last_touch_mono = time.monotonic()
                 return True
@@ -16260,18 +17122,17 @@ class PolymarketLiveExecutor:
         return post_resp, cf_ray, t2
 
     def _encode_fast_l2_request(self, endpoint: str, payload: Any) -> Tuple[Dict[str, str], bytes]:
-        if _orjson is not None:
-            body_bytes = _orjson.dumps(payload)
-            serialized = body_bytes.decode("utf-8")
-        else:
-            serialized = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
-            body_bytes = serialized.encode("utf-8")
         ts_val = (
             int(self.client._get_timestamp())
             if getattr(self.client, "use_server_time", False) and hasattr(self.client, "_get_timestamp")
             else int(time.time())
         )
-        return self._build_fast_l2_headers("POST", endpoint, serialized, ts_override=ts_val), body_bytes
+        if _orjson is not None:
+            body_bytes = _orjson.dumps(payload)
+            return self._build_fast_l2_headers("POST", endpoint, ts_override=ts_val, body_bytes=body_bytes), body_bytes
+        serialized = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+        body_bytes = serialized.encode("utf-8")
+        return self._build_fast_l2_headers("POST", endpoint, serialized, ts_override=ts_val, body_bytes=body_bytes), body_bytes
 
     def _post_json_hot_async_bridge(self, endpoint: str, payload: Any) -> Any:
         """Routes worker-thread FOK box / hedge POSTs onto the <3.5s warm uvloop `_hot_order_async_client`."""
@@ -16556,7 +17417,12 @@ class PolymarketLiveExecutor:
         if not condition_id.startswith("0x"):
             try:
                 get_fn = requests.get if hasattr(requests.get, "mock_calls") else getattr(self, "_sync_session", requests).get
-                r = get_fn(f"https://gamma-api.polymarket.com/markets/{condition_id}", timeout=2.0).json()
+                resp_g = get_fn(f"https://gamma-api.polymarket.com/markets/{condition_id}", timeout=2.0)
+                r = (
+                    _orjson.loads(resp_g.content)
+                    if (_orjson is not None and isinstance(getattr(resp_g, "content", None), (bytes, bytearray)))
+                    else resp_g.json()
+                )
                 if r.get("conditionId"):
                     real_cid = str(r["conditionId"])
                     logger.info(f"Resolved condition_id {real_cid} for numeric market {condition_id}")
@@ -16615,7 +17481,11 @@ class PolymarketLiveExecutor:
             client = self.get_async_client()
             resp = await client.get(url)
             if resp.status_code == 200:
-                return resp.json()
+                return (
+                    _orjson.loads(resp.content)
+                    if (_orjson is not None and isinstance(getattr(resp, "content", None), (bytes, bytearray)))
+                    else resp.json()
+                )
             if resp.status_code == 404:
                 return {"bids": [], "asks": [], "closed": True}
         except Exception:
@@ -16625,6 +17495,126 @@ class PolymarketLiveExecutor:
         if self.dry_run:
             return {"bids": [], "asks": []}
         raise RuntimeError(f"HTTP {resp.status_code} querying orderbook for {token_id}: {resp.text[:100]}")
+
+    async def get_market_books_batch_async(self, token_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Async single-RTT `POST /books` over persistent keep-alive `get_async_client()`."""
+        uniq = list(dict.fromkeys(str(t) for t in token_ids if t))
+        if not uniq:
+            return {}
+        if "get_market_book" in self.__dict__ or "get_market_books_batch" in self.__dict__:
+            return await asyncio.to_thread(self.get_market_books_batch, uniq)
+        out: Dict[str, Dict[str, Any]] = {}
+        host = str(getattr(self.client, "host", None) or self.CLOB_HOST).rstrip("/")
+        url = f"{host}/books"
+        try:
+            cli = self.get_async_client()
+            for idx in range(0, len(uniq), 50):
+                body_list = [{"token_id": t} for t in uniq[idx : idx + 50]]
+                payload_bytes = _orjson.dumps(body_list) if _orjson is not None else json.dumps(body_list).encode("utf-8")
+                resp = await cli.post(
+                    url,
+                    content=payload_bytes,
+                    headers={"Content-Type": "application/json", "Accept": "application/json"},
+                )
+                if resp.status_code == 200:
+                    rows = (
+                        _orjson.loads(resp.content)
+                        if (_orjson is not None and isinstance(getattr(resp, "content", None), (bytes, bytearray)))
+                        else resp.json()
+                    )
+                    if isinstance(rows, list):
+                        for r in rows:
+                            if isinstance(r, dict):
+                                aid = str(r.get("asset_id") or r.get("token_id") or "")
+                                if aid:
+                                    out[aid] = r
+        except Exception as e:
+            logger.debug(f"[BOOKS BATCH ASYNC] Fallback to individual fetch ({e})")
+        missing = [t for t in uniq if t not in out]
+        if missing:
+            res_m = await asyncio.gather(*(self.get_market_book_async(t) for t in missing), return_exceptions=True)
+            for t, b in zip(missing, res_m):
+                out[t] = b if isinstance(b, dict) else {}
+        return out
+
+    async def get_token_metadata_async(
+        self, token_id: str, price_hint: Optional[float] = None, explicit_neg_risk: Optional[bool] = None
+    ) -> Tuple[float, bool]:
+        """Concurrently resolves tick_size (respecting 2.5s >=0.96/<=0.04 recheck) and neg_risk without thread hops."""
+        ov = getattr(self, "_enforced_tick_override_until", None)
+        has_ov = isinstance(ov, dict) and token_id in ov and time.monotonic() < float(ov[token_id][1])
+        cached_tk = self._tick_size_cache.get(token_id)
+        now_m = time.monotonic()
+        b_map = self.__dict__.setdefault("_boundary_tick_recheck_ts", {})
+        at_bnd = (
+            price_hint is not None
+            and math.isfinite(float(price_hint))
+            and (float(price_hint) >= 0.96 or float(price_hint) <= 0.04 or abs(round(float(price_hint), 2) - round(float(price_hint), 4)) > 1e-6)
+        )
+        need_tk = not has_ov and (cached_tk is None or (cached_tk == 0.01 and at_bnd and (now_m - float(b_map.get(token_id, -999.0))) >= 2.5))
+        if explicit_neg_risk is not None:
+            nr_val = self.get_token_neg_risk(token_id, explicit_neg_risk)
+            need_nr = False
+        else:
+            nr_val = self._neg_risk_cache.get(token_id)
+            need_nr = nr_val is None
+        if not need_tk and not need_nr:
+            tk_out = float(ov[token_id][0]) if has_ov else float(cached_tk)
+            return tk_out, bool(nr_val)
+        use_direct_http = (
+            not self.dry_run
+            and self.client is not None
+            and getattr(self.client, "_mock_children", None) is None
+            and "get_token_tick_size" not in self.__dict__
+            and "get_token_neg_risk" not in self.__dict__
+        )
+        if use_direct_http:
+            try:
+                cli = self.get_async_client()
+                host = str(getattr(self.client, "host", None) or self.CLOB_HOST).rstrip("/")
+                coros = []
+                if need_tk:
+                    coros.append(cli.get(f"{host}/tick-size?token_id={token_id}"))
+                if need_nr:
+                    coros.append(cli.get(f"{host}/neg-risk?token_id={token_id}"))
+                resps = await asyncio.gather(*coros)
+                idx_r = 0
+                tk_res: Optional[float] = None
+                nr_res: Optional[bool] = None if need_nr else bool(nr_val)
+                if need_tk:
+                    r_tk = resps[idx_r]; idx_r += 1
+                    if r_tk.status_code == 200:
+                        d_tk = _orjson.loads(r_tk.content) if (_orjson is not None and isinstance(getattr(r_tk, "content", None), (bytes, bytearray))) else r_tk.json()
+                        raw_tk = d_tk.get("minimum_tick_size") if isinstance(d_tk, dict) else None
+                        if raw_tk is not None:
+                            tv = float(raw_tk)
+                            if any(abs(tv - vt) < 1e-9 for vt in (0.1, 0.01, 0.005, 0.0025, 0.001, 0.0001)):
+                                self._tick_size_cache[token_id] = tv
+                                if at_bnd:
+                                    b_map[token_id] = now_m
+                                if hasattr(self.client, "_ClobClient__tick_sizes"):
+                                    self.client._ClobClient__tick_sizes[token_id] = str(raw_tk)
+                                tk_res = tv
+                else:
+                    tk_res = float(ov[token_id][0]) if has_ov else float(cached_tk)
+                if need_nr:
+                    r_nr = resps[idx_r]
+                    if r_nr.status_code == 200:
+                        d_nr = _orjson.loads(r_nr.content) if (_orjson is not None and isinstance(getattr(r_nr, "content", None), (bytes, bytearray))) else r_nr.json()
+                        if isinstance(d_nr, dict) and "neg_risk" in d_nr:
+                            nr_res = bool(d_nr["neg_risk"])
+                            self._neg_risk_cache[token_id] = nr_res
+                            if hasattr(self.client, "_ClobClient__neg_risk"):
+                                self.client._ClobClient__neg_risk[token_id] = nr_res
+                if tk_res is not None and nr_res is not None:
+                    return tk_res, nr_res
+            except Exception as e:
+                logger.debug(f"[META ASYNC] Fallback to thread lookup for {token_id}: {e}")
+        tk_f, nr_f = await asyncio.gather(
+            asyncio.to_thread(self.get_token_tick_size, token_id, price_hint=price_hint),
+            asyncio.to_thread(self.get_token_neg_risk, token_id, explicit_neg_risk),
+        )
+        return float(tk_f), bool(nr_f)
 
     async def get_transaction_receipt_status_async(self, tx_hash: str) -> Optional[bool]:
         """
@@ -18407,15 +19397,35 @@ class PolymarketLiveExecutor:
         Returns: (fillable, vwap, total_shares, worst_price, effective_fee_usd[, fill_legs])
         """
         levels = orderbook.get("asks" if side == "BUY" else "bids", [])
-        if not levels or not self._book_levels_valid(levels):
+        if not levels:
             if return_legs:
                 return False, 0.0, 0.0, 0.0, 0.0, []
             return False, 0.0, 0.0, 0.0, 0.0
 
-        if side == "BUY":
-            sorted_levels = sorted(levels, key=lambda lvl: float(lvl.get("price", 1.0)))
-        else:
-            sorted_levels = sorted(levels, key=lambda lvl: float(lvl.get("price", 0.0)), reverse=True)
+        is_buy = side == "BUY"
+        isfinite = math.isfinite
+        parsed: List[Tuple[float, float]] = []
+        already_sorted = True
+        prev_px = -1.0 if is_buy else 2.0
+        try:
+            for lvl in levels:
+                px = float(lvl.get("price"))
+                sz = float(lvl.get("size"))
+                if not (isfinite(px) and isfinite(sz)) or not (0.0 < px < 1.0) or sz < 0.0:
+                    return (False, 0.0, 0.0, 0.0, 0.0, []) if return_legs else (False, 0.0, 0.0, 0.0, 0.0)
+                if is_buy:
+                    if px < prev_px:
+                        already_sorted = False
+                else:
+                    if px > prev_px:
+                        already_sorted = False
+                prev_px = px
+                parsed.append((px, sz))
+        except (TypeError, ValueError, AttributeError):
+            return (False, 0.0, 0.0, 0.0, 0.0, []) if return_legs else (False, 0.0, 0.0, 0.0, 0.0)
+
+        if not already_sorted:
+            parsed.sort(key=lambda item: item[0], reverse=not is_buy)
 
         rem_notional = target_notional_usd
         total_shares = 0.0
@@ -18423,14 +19433,13 @@ class PolymarketLiveExecutor:
         worst_price = 0.0
         fill_legs: List[Tuple[float, float]] = []
 
-        for lvl in sorted_levels:
-            px = float(lvl.get("price", 0.0))
-            sz = float(lvl.get("size", 0.0))
-            if sz <= 0 or px <= 0:
-               continue
-            if side == "BUY" and px > max_acceptable_price:
-                break
-            if side == "SELL" and px < min_acceptable_price:
+        for px, sz in parsed:
+            if sz <= 0.0:
+                continue
+            if is_buy:
+                if px > max_acceptable_price:
+                    break
+            elif px < min_acceptable_price:
                 break
 
             level_notional = px * sz
@@ -18442,12 +19451,11 @@ class PolymarketLiveExecutor:
                 fill_legs.append((px, shares_needed))
                 rem_notional = 0.0
                 break
-            else:
-                total_shares += sz
-                total_cost += level_notional
-                worst_price = px
-                fill_legs.append((px, sz))
-                rem_notional -= level_notional
+            total_shares += sz
+            total_cost += level_notional
+            worst_price = px
+            fill_legs.append((px, sz))
+            rem_notional -= level_notional
 
         if rem_notional > 1e-4:
             if return_legs:
@@ -18533,36 +19541,45 @@ class PolymarketLiveExecutor:
           If return_adjusted is True: (passed, ratio, best_price, adjusted_notional)
         """
         levels = orderbook.get("asks" if side == "BUY" else "bids", [])
-        if (
-            not levels
-            or not self._book_levels_valid(levels)
-            or not math.isfinite(float(target_notional_usd))
-            or float(target_notional_usd) <= 0.0
-        ):
+        try:
+            target_notional_f = float(target_notional_usd)
+        except (TypeError, ValueError):
+            return (False, 0.0, 0.0, 0.0) if return_adjusted else (False, 0.0, 0.0)
+        if not levels or not math.isfinite(target_notional_f) or target_notional_f <= 0.0:
             return (False, 0.0, 0.0, 0.0) if return_adjusted else (False, 0.0, 0.0)
 
-        # Polymarket CLOB book: sort so levels are best marketable prices first
-        if side == "BUY":
-            sorted_levels = sorted(levels, key=lambda lvl: float(lvl.get("price", 1.0)))
-        else:
-            sorted_levels = sorted(levels, key=lambda lvl: float(lvl.get("price", 0.0)), reverse=True)
+        is_buy = side == "BUY"
+        isfinite = math.isfinite
+        best_all_px = 2.0 if is_buy else -1.0
+        best_qual_px = 2.0 if is_buy else -1.0
+        has_qual = False
+        available_notional = 0.0
+        try:
+            for lvl in levels:
+                px = float(lvl.get("price"))
+                sz = float(lvl.get("size"))
+                if not (isfinite(px) and isfinite(sz)) or not (0.0 < px < 1.0) or sz < 0.0:
+                    return (False, 0.0, 0.0, 0.0) if return_adjusted else (False, 0.0, 0.0)
+                if is_buy:
+                    if px < best_all_px:
+                        best_all_px = px
+                elif px > best_all_px:
+                    best_all_px = px
+                if min_price_floor <= px <= max_price_ceiling:
+                    has_qual = True
+                    available_notional += px * sz
+                    if is_buy:
+                        if px < best_qual_px:
+                            best_qual_px = px
+                    elif px > best_qual_px:
+                        best_qual_px = px
+        except (TypeError, ValueError, AttributeError):
+            return (False, 0.0, 0.0, 0.0) if return_adjusted else (False, 0.0, 0.0)
 
-        # Filter within price ceiling and floor
-        qualifying_levels = [
-            lvl for lvl in sorted_levels
-            if (min_price_floor <= float(lvl.get("price", 0.0)) <= max_price_ceiling)
-        ]
-        if not qualifying_levels:
-            best_price = float(sorted_levels[0].get("price", 0.0)) if sorted_levels else 0.0
-            return (False, 0.0, best_price, 0.0) if return_adjusted else (False, 0.0, best_price)
+        if not has_qual:
+            return (False, 0.0, best_all_px, 0.0) if return_adjusted else (False, 0.0, best_all_px)
 
-        best_price = float(qualifying_levels[0].get("price", 0.0))
-
-        # Cumulative executable depth across all qualifying levels up to ceiling
-        available_notional = sum(
-            float(lvl.get("price", 0.0)) * float(lvl.get("size", 0.0))
-            for lvl in qualifying_levels
-        )
+        best_price = best_qual_px
 
         ratio = available_notional / max(target_notional_usd, 1e-6)
 
@@ -18669,7 +19686,11 @@ class PolymarketLiveExecutor:
         `[open_a, close_a] ∩ [open_b, close_b]` so sequential 15m candles (or adjacent 1h->15m windows)
         never falsely block independent future windows. Falls back to `max_expiry_window_delta` otherwise.
         """
+        if not active_positions:
+            return True, "CROSS_ASSET_DIRECTION_ALIGNED"
         cand_asset = candidate_asset.upper().strip()
+        if cand_asset not in ("BTC", "ETH", "SOL", "XRP"):
+            return True, "CROSS_ASSET_DIRECTION_ALIGNED"
         cand_dir = candidate_direction.upper().strip()
         corr_universe = ("BTC", "ETH", "SOL", "XRP")
 
@@ -21141,9 +22162,7 @@ class PolymarketLiveExecutor:
             or (neg_risk is None and token_id not in self._neg_risk_cache)
         )
         if _needs_sync_meta:
-            await asyncio.to_thread(
-                lambda: (self.get_token_tick_size(token_id, price_hint=price_f), self.get_token_neg_risk(token_id, neg_risk))
-            )
+            await self.get_token_metadata_async(token_id, price_hint=price_f, explicit_neg_risk=neg_risk)
         quantized_price = self.quantize_order_price(price_f, token_id, rounding=ROUND_FLOOR)
         if quantized_price < min_price_floor or quantized_price > max_price_ceiling:
             return {"success": False, "orderID": None, "error": f"MAKER_ENTRY_PRICE_OUT_OF_BOUNDS ({quantized_price:.4f})", "retryable": False}
@@ -21206,7 +22225,11 @@ class PolymarketLiveExecutor:
                 k in str(has_err).lower() for k in ("crosses book", "post only", "post-only")
             ):
                 try:
-                    bk_a = await asyncio.to_thread(self.get_market_book, token_id)
+                    bk_a = await (
+                        self.get_market_book_async(token_id)
+                        if "get_market_book" not in self.__dict__
+                        else asyncio.to_thread(self.get_market_book, token_id)
+                    )
                     asks_a = bk_a.get("asks", []) if isinstance(bk_a, dict) else []
                     best_aa = min((float(a.get("price", 0.0)) for a in asks_a if float(a.get("size", 0.0)) > 0 and float(a.get("price", 0.0)) > 0), default=0.0)
                     if best_aa > tick_sz:
@@ -21286,19 +22309,52 @@ class PolymarketLiveExecutor:
             return None
         return default_shares
 
+    @staticmethod
+    def _extract_ws_deferred_gross(ws_snap: Any) -> Optional[float]:
+        if not isinstance(ws_snap, dict):
+            return None
+        st = str(ws_snap.get("status") or "").strip().upper()
+        try:
+            m = float(ws_snap.get("size_matched") or 0.0)
+            orig = float(ws_snap.get("original_size") or 0.0)
+        except (TypeError, ValueError):
+            return None
+        if m > 0.0 and (st in {"MATCHED", "FILLED"} or (orig > 0.0 and m >= orig - 1e-4)):
+            return m
+        if st in {"CANCELED", "CANCELLED", "EXPIRED", "REJECTED"} or (st == "INVALID" and m <= 1e-6):
+            return m if m > 0.0 else 0.0
+        return None
+
     def _resolve_deferred_fok_gross(self, oid_v: Any, tok_v: str, resp_v: Any) -> Optional[float]:
         if not oid_v or not isinstance(resp_v, dict) or str(resp_v.get("status", "")).upper() not in {"DELAYED", "LIVE", "UNMATCHED"}:
             return None
+        uws = getattr(self, "_user_ws_cache", None)
+        uws_ok = bool(uws is not None and hasattr(uws, "is_healthy") and uws.is_healthy())
+        if uws_ok and hasattr(uws, "wait_for_order_terminal"):
+            try:
+                ws_hit = self._extract_ws_deferred_gross(uws.wait_for_order_terminal(str(oid_v), timeout_sec=0.08))
+                if ws_hit is not None:
+                    return ws_hit
+            except Exception:
+                pass
         can_poll = (
             hasattr(self.client, "get_order")
             or "get_order_fill_summary" in self.__dict__
-            or getattr(self, "_user_ws_cache", None) is not None
+            or uws is not None
         )
         if not can_poll or not hasattr(self, "get_order_fill_summary"):
             return None
         for attempt_i in range(5):
             if attempt_i > 0:
-                time.sleep(0.12)
+                if uws_ok and hasattr(uws, "wait_for_order_terminal"):
+                    try:
+                        ws_hit = self._extract_ws_deferred_gross(uws.wait_for_order_terminal(str(oid_v), timeout_sec=0.12))
+                        if ws_hit is not None:
+                            return ws_hit
+                    except Exception:
+                        time.sleep(0.12)
+                else:
+                    time.sleep(0.12)
             try:
                 s_f = self.get_order_fill_summary(str(oid_v), tok_v)
             except Exception:
@@ -21311,7 +22367,57 @@ class PolymarketLiveExecutor:
                     return 0.0
         return None
 
-    def execute_atomic_dominance_box(
+    async def _resolve_deferred_fok_gross_async(self, oid_v: Any, tok_v: str, resp_v: Any) -> Optional[float]:
+        if not oid_v or not isinstance(resp_v, dict) or str(resp_v.get("status", "")).upper() not in {"DELAYED", "LIVE", "UNMATCHED"}:
+            return None
+        uws = getattr(self, "_user_ws_cache", None)
+        uws_ok = bool(uws is not None and hasattr(uws, "is_healthy") and uws.is_healthy())
+        if uws_ok and hasattr(uws, "get_order_snapshot"):
+            ws_hit = self._extract_ws_deferred_gross(uws.get_order_snapshot(str(oid_v), max_age_sec=8.0))
+            if ws_hit is not None:
+                return ws_hit
+            if hasattr(uws, "wait_for_fill_or_timeout"):
+                try:
+                    await uws.wait_for_fill_or_timeout(0.08, prev_seq=uws.fill_sequence)
+                    ws_hit = self._extract_ws_deferred_gross(uws.get_order_snapshot(str(oid_v), max_age_sec=8.0))
+                    if ws_hit is not None:
+                        return ws_hit
+                except Exception:
+                    pass
+        can_poll = hasattr(self.client, "get_order") or "get_order_fill_summary" in self.__dict__ or uws is not None
+        if not can_poll or not hasattr(self, "get_order_fill_summary"):
+            return None
+        for attempt_i in range(5):
+            if attempt_i > 0:
+                if uws_ok and hasattr(uws, "wait_for_fill_or_timeout"):
+                    try:
+                        await uws.wait_for_fill_or_timeout(0.12, prev_seq=uws.fill_sequence)
+                        ws_hit = self._extract_ws_deferred_gross(uws.get_order_snapshot(str(oid_v), max_age_sec=8.0))
+                        if ws_hit is not None:
+                            return ws_hit
+                    except Exception:
+                        await asyncio.sleep(0.12)
+                else:
+                    await asyncio.sleep(0.12)
+            try:
+                s_f = await asyncio.to_thread(self.get_order_fill_summary, str(oid_v), tok_v)
+            except Exception:
+                s_f = None
+            if isinstance(s_f, dict):
+                m_v = float(s_f.get("matched") or 0.0)
+                if m_v > 0.0:
+                    return m_v
+                if s_f.get("terminal"):
+                    return 0.0
+        return None
+
+    @staticmethod
+    def _net_delivered_box_shares(gross_m: float, h_leg: float, explicit_gross: bool) -> float:
+        if not explicit_gross or h_leg <= 0.0:
+            return float(gross_m)
+        return math.floor(float(gross_m) * (1.0 - h_leg) * 100.0 + 1e-9) / 100.0
+
+    def _prepare_atomic_dominance_box_ctx(
         self,
         box_id: str,
         leg_a_token_id: str,
@@ -21321,34 +22427,34 @@ class PolymarketLiveExecutor:
         leg_b_label: str,
         leg_b_limit_price: float,
         shares: float,
-        max_box_cost_net: float = 0.995,
-        fee_rate: float = 0.07,
-        fee_exponent: float = 1.0,
-        leg_a_avail_shares: Optional[float] = None,
-        leg_b_avail_shares: Optional[float] = None,
-        neg_risk: bool = False,
-        fee_rate_a: Optional[float] = None,
-        fee_rate_b: Optional[float] = None,
-        fee_exponent_a: Optional[float] = None,
-        fee_exponent_b: Optional[float] = None,
-        parallel_dispatch: Optional[bool] = None,
-        leg_a_pre_balance: Optional[float] = None,
-        leg_b_pre_balance: Optional[float] = None,
-        min_box_cost_floor: float = 0.900,
-        leg_a_shares: Optional[float] = None,
-        leg_b_shares: Optional[float] = None,
-    ) -> Dict[str, Any]:
-        """Executes a 2-leg Same-Oracle Dominance Box with per-leg fees (F-09), optional <5ms parallel 2-leg FOK dispatch (Gemini #2), and partial-fill unwind."""
+        max_box_cost_net: float,
+        fee_rate: float,
+        fee_exponent: float,
+        leg_a_avail_shares: Optional[float],
+        leg_b_avail_shares: Optional[float],
+        neg_risk: bool,
+        fee_rate_a: Optional[float],
+        fee_rate_b: Optional[float],
+        fee_exponent_a: Optional[float],
+        fee_exponent_b: Optional[float],
+        parallel_dispatch: Optional[bool],
+        leg_a_pre_balance: Optional[float],
+        leg_b_pre_balance: Optional[float],
+        min_box_cost_floor: float,
+        leg_a_shares: Optional[float],
+        leg_b_shares: Optional[float],
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        """Validates, quantizes, orders legs, and handles dry-run for dominance boxes."""
         try:
             px_a_in, px_b_in, shares_in, cap_in = float(leg_a_limit_price), float(leg_b_limit_price), float(shares), float(max_box_cost_net)
             fr_a = float(fee_rate if fee_rate_a is None else fee_rate_a)
-            fe_a = float(fee_rate if fee_exponent_a is None else fee_exponent_a) if False else float(fee_exponent if fee_exponent_a is None else fee_exponent_a)
+            fe_a = float(fee_exponent if fee_exponent_a is None else fee_exponent_a)
             fr_b = float(fee_rate if fee_rate_b is None else fee_rate_b)
             fe_b = float(fee_exponent if fee_exponent_b is None else fee_exponent_b)
             sz_a_opt = float(leg_a_shares) if leg_a_shares is not None else None
             sz_b_opt = float(leg_b_shares) if leg_b_shares is not None else None
         except (TypeError, ValueError):
-            return {"success": False, "error": "INVALID_BOX_INPUTS", "legged_out": False, "outcome_unknown": False}
+            return {"success": False, "error": "INVALID_BOX_INPUTS", "legged_out": False, "outcome_unknown": False}, None
 
         if (
             not leg_a_token_id
@@ -21362,11 +22468,11 @@ class PolymarketLiveExecutor:
             or (sz_a_opt is not None and (not math.isfinite(sz_a_opt) or sz_a_opt <= 0.0))
             or (sz_b_opt is not None and (not math.isfinite(sz_b_opt) or sz_b_opt <= 0.0))
         ):
-            return {"success": False, "error": "INVALID_BOX_TOKENS_OR_PRICES", "legged_out": False, "outcome_unknown": False}
+            return {"success": False, "error": "INVALID_BOX_TOKENS_OR_PRICES", "legged_out": False, "outcome_unknown": False}, None
 
         shares_int = float(math.floor(shares_in))
         if shares_int < 5.0:
-            return {"success": False, "error": f"BOX_MIN_SHARES_REJECTED ({shares_int:.0f} < 5 shares)", "legged_out": False, "outcome_unknown": False}
+            return {"success": False, "error": f"BOX_MIN_SHARES_REJECTED ({shares_int:.0f} < 5 shares)", "legged_out": False, "outcome_unknown": False}, None
 
         px_a = self.quantize_order_price(px_a_in, leg_a_token_id, rounding=ROUND_CEILING)
         px_b = self.quantize_order_price(px_b_in, leg_b_token_id, rounding=ROUND_CEILING)
@@ -21406,7 +22512,7 @@ class PolymarketLiveExecutor:
                         "worst_box_cost_net": worst_box_cost_net,
                         "legged_out": False,
                         "outcome_unknown": False,
-                    }
+                    }, None
                 sz_a_gross = _q_box["leg_a_gross_shares"]
                 sz_b_gross = _q_box["leg_b_gross_shares"]
                 shares_int = _q_box["net_paired_shares"]
@@ -21421,7 +22527,7 @@ class PolymarketLiveExecutor:
                 "worst_box_cost_net": worst_box_cost_net,
                 "legged_out": False,
                 "outcome_unknown": False,
-            }
+            }, None
         if worst_box_cost_net > cap_in + 1e-6:
             return {
                 "success": False,
@@ -21429,9 +22535,8 @@ class PolymarketLiveExecutor:
                 "worst_box_cost_net": worst_box_cost_net,
                 "legged_out": False,
                 "outcome_unknown": False,
-            }
+            }, None
 
-        # Mixed-itode 4h D1 sequencing: 15m/5m (itode=True, ~220ms hold) MUST execute BEFORE 4h (itode=None, ~58ms)
         _a_4h = "4h" in str(leg_a_label).lower()
         _b_4h = "4h" in str(leg_b_label).lower()
         _a_sub = any(h in str(leg_a_label).lower() for h in ("15m", "5m"))
@@ -21480,160 +22585,258 @@ class PolymarketLiveExecutor:
                     "gross_shares": legs[1][5], "entry_fee_asset": ("SHARES" if (_explicit_gross and legs[1][4] > 0.0) else "USDC"),
                     "orderID": f"MOCK_BOX_L2_{ts_ms}",
                 },
-            }
+            }, None
 
         if not self.is_authenticated or self.client is None or OrderArgsV2 is None:
             raise RuntimeError(f"LIVE DOMINANCE BOX REFUSED: Executor unauthenticated ({self.auth_mode}).")
 
-        (tok_1, lbl_1, px_1, _, h_1, sz_1), (tok_2, lbl_2, px_2, _, h_2, sz_2) = legs
-        tick_1 = self.get_token_tick_size(tok_1)
-        tick_2 = self.get_token_tick_size(tok_2)
-        nr_1 = self.get_token_neg_risk(tok_1, neg_risk)
-        nr_2 = self.get_token_neg_risk(tok_2, neg_risk)
-        opts_1 = PartialCreateOrderOptions(tick_size=str(tick_1), neg_risk=nr_1, version=2) if PartialCreateOrderOptions else None
-        opts_2 = PartialCreateOrderOptions(tick_size=str(tick_2), neg_risk=nr_2, version=2) if PartialCreateOrderOptions else None
-
-        _pre_bal_map = {
-            str(leg_a_token_id): float(leg_a_pre_balance or 0.0),
-            str(leg_b_token_id): float(leg_b_pre_balance or 0.0),
+        use_parallel = (
+            bool(parallel_dispatch)
+            if parallel_dispatch is not None
+            else bool(
+                leg_a_avail_shares is not None
+                and leg_b_avail_shares is not None
+                and float(leg_a_avail_shares) >= 1.5 * max(shares_int, sz_a_gross)
+                and float(leg_b_avail_shares) >= 1.5 * max(shares_int, sz_b_gross)
+            )
+        )
+        return None, {
+            "box_id": box_id,
+            "legs": legs,
+            "shares_int": shares_int,
+            "worst_box_cost_net": worst_box_cost_net,
+            "explicit_gross": _explicit_gross,
+            "use_parallel": use_parallel,
+            "pre_bal_map": {
+                str(leg_a_token_id): float(leg_a_pre_balance or 0.0),
+                str(leg_b_token_id): float(leg_b_pre_balance or 0.0),
+            },
         }
 
-        def _unwind_legged_out(
-            tok_u: str, lbl_u: str, m_u: float, px_u: float, nr_u: bool, oid_u: Optional[str], raw_u: Any
-        ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-            # Poll up to 5.0s (every 0.15s) for Polygon ERC-1155 BUY delta settlement before firing FAK SELL unwind
-            pre_u = _pre_bal_map.get(str(tok_u), 0.0)
-            avail_u: Optional[float] = None
-            is_live_auth_u = getattr(self, "auth_mode", "") in ("LIVE", "AUTHENTICATED_L2")
-            if is_live_auth_u:
-                deadline_u = time.monotonic() + 5.0
-                while time.monotonic() < deadline_u:
-                    try:
-                        avail_u = self.get_unreserved_conditional_balance(tok_u)
-                    except Exception:
-                        avail_u = None
-                        break
-                    if avail_u is None:
-                        break
-                    settled_delta = max(0.0, float(avail_u) - pre_u) if pre_u > 0.0 else float(avail_u)
-                    if settled_delta >= float(m_u) - 0.05:
-                        break
-                    time.sleep(0.15)
-            settled_ready = float(m_u)
-            if is_live_auth_u and avail_u is not None:
-                settled_ready = max(0.0, float(avail_u) - pre_u) if pre_u > 0.0 else float(avail_u)
-                settled_ready = min(float(avail_u), settled_ready)
-            if is_live_auth_u and avail_u is not None and settled_ready < 0.05:
-                uw_res: Dict[str, Any] = {
-                    "success": False,
-                    "matched_size": 0.0,
-                    "outcome_unknown": False,
-                    "error": "DEFERRED_TO_ASYNC_SUPERVISOR_PENDING_SETTLEMENT",
-                }
-                return uw_res, {
-                    "token_id": tok_u,
-                    "label": lbl_u,
-                    "price": px_u,
-                    "matched_shares": float(m_u),
-                    "unwound_shares": 0.0,
-                    "residual_shares": round(float(m_u), 4),
-                    "orderID": oid_u,
-                    "raw": raw_u,
-                    "unwind_outcome_unknown": False,
-                    "unwind_result": uw_res,
-                }
-            req_1 = (math.floor(min(float(m_u), settled_ready) * 100.0 + 1e-9) / 100.0) if (is_live_auth_u and avail_u is not None and settled_ready < float(m_u) - 0.05) else float(m_u)
-            _gb_frac = float((getattr(self, "risk_config", None) or RISK_CONFIG).get("d1_max_giveback_frac", 0.25))
-            stage1_drop = max(0.01, min(0.03, round(_gb_frac * max(0.02, 1.0 - worst_box_cost_net), 2)))
-            uw_res = self.execute_unwind_order(
-                tok_u, size=req_1, side="SELL", min_price=max(0.01, round(px_u - stage1_drop, 2)), neg_risk=nr_u
-            )
-            uw_unk = bool(isinstance(uw_res, dict) and uw_res.get("outcome_unknown"))
-            unwound_sh = (
-                float(uw_res.get("matched_size") or 0.0)
-                if (isinstance(uw_res, dict) and (uw_res.get("success") or uw_res.get("partial")) and not uw_unk)
-                else 0.0
-            )
-            tot_taking = float((uw_res or {}).get("taking_amount") or (uw_res or {}).get("notional_usd") or 0.0) if unwound_sh > 0.0 else 0.0
-            tot_fee = float((uw_res or {}).get("fee_usd") or 0.0) if unwound_sh > 0.0 else 0.0
-            rem_u = round(max(0.0, float(m_u) - unwound_sh), 4)
-            settled_after_1 = max(0.0, settled_ready - unwound_sh)
-            if is_live_auth_u and avail_u is not None and rem_u > 0.05 and not uw_unk:
-                try:
-                    avail_u2 = self.get_unreserved_conditional_balance(tok_u)
-                except Exception:
-                    avail_u2 = None
-                if avail_u2 is not None:
-                    if float(avail_u2) > float(avail_u) + 0.05:
-                        settled_after_1 += float(avail_u2) - float(avail_u)
-                    settled_cap_2 = max(0.0, float(avail_u2) - pre_u) if pre_u > 0.0 else max(0.0, float(avail_u2))
-                    settled_after_1 = min(settled_after_1, settled_cap_2)
-            if rem_u > 0.05 and not uw_unk and (not is_live_auth_u or avail_u is None or settled_after_1 >= 0.05):
-                req_2 = (math.floor(min(rem_u, settled_after_1) * 100.0 + 1e-9) / 100.0) if (is_live_auth_u and avail_u is not None) else rem_u
-                if req_2 >= 0.05:
-                    uw_2 = self.execute_unwind_order(
-                        tok_u, size=req_2, side="SELL", min_price=max(0.01, round(px_u * 0.85, 2)), neg_risk=nr_u
-                    )
-                    if isinstance(uw_2, dict):
-                        uw_unk = bool(uw_2.get("outcome_unknown"))
-                        if (uw_2.get("success") or uw_2.get("partial")) and not uw_unk:
-                            sh_2 = float(uw_2.get("matched_size") or 0.0)
-                            unwound_sh += sh_2
-                            if sh_2 > 0.0:
-                                tot_taking += float(uw_2.get("taking_amount") or uw_2.get("notional_usd") or 0.0)
-                                tot_fee += float(uw_2.get("fee_usd") or 0.0)
-                        uw_res = dict(uw_2)
-                        if unwound_sh > 0.0:
-                            uw_res["matched_size"] = round(unwound_sh, 4)
-                            uw_res["taking_amount"] = round(tot_taking, 6)
-                            uw_res["fee_usd"] = round(tot_fee, 6)
-            resid_sh = round(max(0.0, float(m_u) - unwound_sh), 4)
-            return uw_res, {
-                "token_id": tok_u,
-                "label": lbl_u,
-                "price": px_u,
-                "matched_shares": float(m_u),
-                "unwound_shares": unwound_sh,
-                "residual_shares": resid_sh,
-                "orderID": oid_u,
-                "raw": raw_u,
-                "unwind_outcome_unknown": uw_unk,
-                "unwind_result": uw_res,
-            }
-
-        def _net_delivered_sh(gross_m: float, h_leg: float) -> float:
-            if not _explicit_gross or h_leg <= 0.0:
-                return float(gross_m)
-            return math.floor(float(gross_m) * (1.0 - h_leg) * 100.0 + 1e-9) / 100.0
-
-        # Pre-sign BOTH FOK legs in RAM before sending Leg 1 so Leg 1 -> Leg 2 gap has 0ms signing overhead
+    def _sign_atomic_dominance_box_legs(
+        self, ctx: Dict[str, Any], tick_1: str, nr_1: bool, tick_2: str, nr_2: bool
+    ) -> Tuple[Any, Any]:
+        (tok_1, _, px_1, _, _, sz_1), (tok_2, _, px_2, _, _, sz_2) = ctx["legs"]
+        opts_1 = PartialCreateOrderOptions(tick_size=str(tick_1), neg_risk=nr_1, version=2) if PartialCreateOrderOptions else None
+        opts_2 = PartialCreateOrderOptions(tick_size=str(tick_2), neg_risk=nr_2, version=2) if PartialCreateOrderOptions else None
         _has_fast_box_signer = (
             getattr(self.client, "_fast_v2_signer", None) is not None
             and "create_order" not in getattr(self.client, "__dict__", {})
         )
         if _has_fast_box_signer:
-            signed_1 = _safe_create_order(
-                self.client.create_order,
-                OrderArgsV2(price=px_1, size=sz_1, side="BUY", token_id=tok_1),
-                opts_1,
+            return (
+                _safe_create_order(self.client.create_order, OrderArgsV2(price=px_1, size=sz_1, side="BUY", token_id=tok_1), opts_1),
+                _safe_create_order(self.client.create_order, OrderArgsV2(price=px_2, size=sz_2, side="BUY", token_id=tok_2), opts_2),
             )
-            signed_2 = _safe_create_order(
-                self.client.create_order,
-                OrderArgsV2(price=px_2, size=sz_2, side="BUY", token_id=tok_2),
-                opts_2,
+        with _UrgentSignPriority():
+            return (
+                _safe_create_order(self.client.create_order, OrderArgsV2(price=px_1, size=sz_1, side="BUY", token_id=tok_1), opts_1),
+                _safe_create_order(self.client.create_order, OrderArgsV2(price=px_2, size=sz_2, side="BUY", token_id=tok_2), opts_2),
             )
-        else:
-            with _UrgentSignPriority():
-                signed_1 = _safe_create_order(
-                    self.client.create_order,
-                    OrderArgsV2(price=px_1, size=sz_1, side="BUY", token_id=tok_1),
-                    opts_1,
+
+    def _can_batch_post_dominance_box(self) -> bool:
+        _mock_children = getattr(self.client, "_mock_children", None)
+        _client_dict = getattr(self.client, "__dict__", {})
+        return bool(
+            PostOrdersV2Args is not None
+            and "post_order" not in _client_dict
+            and (_mock_children is None or "post_orders" in _mock_children or "post_orders" in _client_dict)
+            and hasattr(self.client, "post_orders")
+            and os.environ.get("PM_DISABLE_D1_BATCH_POST_ORDERS", "0") != "1"
+        )
+
+    @staticmethod
+    def _build_atomic_box_success_dict(
+        ctx: Dict[str, Any],
+        m_1: float,
+        m_1_gross: float,
+        oid_1: Optional[str],
+        resp_1: Any,
+        nr_1: bool,
+        m_2: float,
+        m_2_gross: float,
+        oid_2: Optional[str],
+        resp_2: Any,
+        nr_2: bool,
+        disp_mode: Optional[str] = None,
+        skew_ms: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        (tok_1, lbl_1, px_1, _, h_1, _), (tok_2, lbl_2, px_2, _, h_2, _) = ctx["legs"]
+        paired_shares = min(m_1, m_2)
+        excess_leg = None
+        if abs(m_1 - m_2) > 0.05:
+            excess_tok, excess_px, excess_nr = (tok_1, px_1, nr_1) if m_1 > m_2 else (tok_2, px_2, nr_2)
+            excess_leg = {"token_id": excess_tok, "shares": round(abs(m_1 - m_2), 4), "price": excess_px, "neg_risk": excess_nr}
+        out: Dict[str, Any] = {
+            "success": True,
+            "box_id": ctx["box_id"],
+            "shares": paired_shares,
+            "net_paired_shares": paired_shares,
+            "worst_box_cost_net": ctx["worst_box_cost_net"],
+            "guaranteed_min_profit_usd": round(paired_shares * (1.0 - ctx["worst_box_cost_net"]), 4),
+            "legged_out": False,
+            "outcome_unknown": False,
+            "imbalance_unwind": None,
+            "excess_leg": excess_leg,
+            "leg_1": {
+                "label": lbl_1, "token_id": tok_1, "price": px_1, "matched_shares": m_1,
+                "gross_shares": m_1_gross, "entry_fee_asset": ("SHARES" if (ctx["explicit_gross"] and h_1 > 0.0) else "USDC"),
+                "orderID": oid_1, "raw": resp_1,
+            },
+            "leg_2": {
+                "label": lbl_2, "token_id": tok_2, "price": px_2, "matched_shares": m_2,
+                "gross_shares": m_2_gross, "entry_fee_asset": ("SHARES" if (ctx["explicit_gross"] and h_2 > 0.0) else "USDC"),
+                "orderID": oid_2, "raw": resp_2,
+            },
+        }
+        if disp_mode is not None:
+            out["dispatch_mode"] = disp_mode
+        if skew_ms is not None:
+            out["inter_leg_skew_ms"] = skew_ms
+        return out
+
+    def _unwind_atomic_box_leg_sync(
+        self, ctx: Dict[str, Any], tok_u: str, lbl_u: str, m_u: float, px_u: float, nr_u: bool, oid_u: Optional[str], raw_u: Any
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        pre_u = ctx["pre_bal_map"].get(str(tok_u), 0.0)
+        avail_u: Optional[float] = None
+        is_live_auth_u = getattr(self, "auth_mode", "") in ("LIVE", "AUTHENTICATED_L2")
+        if is_live_auth_u:
+            deadline_u = time.monotonic() + 5.0
+            while time.monotonic() < deadline_u:
+                try:
+                    avail_u = self.get_unreserved_conditional_balance(tok_u)
+                except Exception:
+                    avail_u = None
+                    break
+                if avail_u is None:
+                    break
+                settled_delta = max(0.0, float(avail_u) - pre_u) if pre_u > 0.0 else float(avail_u)
+                if settled_delta >= float(m_u) - 0.05:
+                    break
+                time.sleep(0.15)
+        settled_ready = float(m_u)
+        if is_live_auth_u and avail_u is not None:
+            settled_ready = max(0.0, float(avail_u) - pre_u) if pre_u > 0.0 else float(avail_u)
+            settled_ready = min(float(avail_u), settled_ready)
+        if is_live_auth_u and avail_u is not None and settled_ready < 0.05:
+            uw_res: Dict[str, Any] = {
+                "success": False,
+                "matched_size": 0.0,
+                "outcome_unknown": False,
+                "error": "DEFERRED_TO_ASYNC_SUPERVISOR_PENDING_SETTLEMENT",
+            }
+            return uw_res, {
+                "token_id": tok_u, "label": lbl_u, "price": px_u,
+                "matched_shares": float(m_u), "unwound_shares": 0.0,
+                "residual_shares": round(float(m_u), 4), "orderID": oid_u,
+                "raw": raw_u, "unwind_outcome_unknown": False, "unwind_result": uw_res,
+            }
+        req_1 = (math.floor(min(float(m_u), settled_ready) * 100.0 + 1e-9) / 100.0) if (is_live_auth_u and avail_u is not None and settled_ready < float(m_u) - 0.05) else float(m_u)
+        _gb_frac = float((getattr(self, "risk_config", None) or RISK_CONFIG).get("d1_max_giveback_frac", 0.25))
+        stage1_drop = max(0.01, min(0.03, round(_gb_frac * max(0.02, 1.0 - ctx["worst_box_cost_net"]), 2)))
+        uw_res = self.execute_unwind_order(
+            tok_u, size=req_1, side="SELL", min_price=max(0.01, round(px_u - stage1_drop, 2)), neg_risk=nr_u
+        )
+        uw_unk = bool(isinstance(uw_res, dict) and uw_res.get("outcome_unknown"))
+        unwound_sh = (
+            float(uw_res.get("matched_size") or 0.0)
+            if (isinstance(uw_res, dict) and (uw_res.get("success") or uw_res.get("partial")) and not uw_unk)
+            else 0.0
+        )
+        tot_taking = float((uw_res or {}).get("taking_amount") or (uw_res or {}).get("notional_usd") or 0.0) if unwound_sh > 0.0 else 0.0
+        tot_fee = float((uw_res or {}).get("fee_usd") or 0.0) if unwound_sh > 0.0 else 0.0
+        rem_u = round(max(0.0, float(m_u) - unwound_sh), 4)
+        settled_after_1 = max(0.0, settled_ready - unwound_sh)
+        if is_live_auth_u and avail_u is not None and rem_u > 0.05 and not uw_unk:
+            try:
+                avail_u2 = self.get_unreserved_conditional_balance(tok_u)
+            except Exception:
+                avail_u2 = None
+            if avail_u2 is not None:
+                if float(avail_u2) > float(avail_u) + 0.05:
+                    settled_after_1 += float(avail_u2) - float(avail_u)
+                settled_cap_2 = max(0.0, float(avail_u2) - pre_u) if pre_u > 0.0 else max(0.0, float(avail_u2))
+                settled_after_1 = min(settled_after_1, settled_cap_2)
+        if rem_u > 0.05 and not uw_unk and (not is_live_auth_u or avail_u is None or settled_after_1 >= 0.05):
+            req_2 = (math.floor(min(rem_u, settled_after_1) * 100.0 + 1e-9) / 100.0) if (is_live_auth_u and avail_u is not None) else rem_u
+            if req_2 >= 0.05:
+                uw_2 = self.execute_unwind_order(
+                    tok_u, size=req_2, side="SELL", min_price=max(0.01, round(px_u * 0.85, 2)), neg_risk=nr_u
                 )
-                signed_2 = _safe_create_order(
-                    self.client.create_order,
-                    OrderArgsV2(price=px_2, size=sz_2, side="BUY", token_id=tok_2),
-                    opts_2,
-                )
+                if isinstance(uw_2, dict):
+                    uw_unk = bool(uw_2.get("outcome_unknown"))
+                    if (uw_2.get("success") or uw_2.get("partial")) and not uw_unk:
+                        sh_2 = float(uw_2.get("matched_size") or 0.0)
+                        unwound_sh += sh_2
+                        if sh_2 > 0.0:
+                            tot_taking += float(uw_2.get("taking_amount") or uw_2.get("notional_usd") or 0.0)
+                            tot_fee += float(uw_2.get("fee_usd") or 0.0)
+                    uw_res = dict(uw_2)
+                    if unwound_sh > 0.0:
+                        uw_res["matched_size"] = round(unwound_sh, 4)
+                        uw_res["taking_amount"] = round(tot_taking, 6)
+                        uw_res["fee_usd"] = round(tot_fee, 6)
+        resid_sh = round(max(0.0, float(m_u) - unwound_sh), 4)
+        return uw_res, {
+            "token_id": tok_u, "label": lbl_u, "price": px_u,
+            "matched_shares": float(m_u), "unwound_shares": unwound_sh,
+            "residual_shares": resid_sh, "orderID": oid_u,
+            "raw": raw_u, "unwind_outcome_unknown": uw_unk, "unwind_result": uw_res,
+        }
+
+    def execute_atomic_dominance_box(
+        self,
+        box_id: str,
+        leg_a_token_id: str,
+        leg_a_label: str,
+        leg_a_limit_price: float,
+        leg_b_token_id: str,
+        leg_b_label: str,
+        leg_b_limit_price: float,
+        shares: float,
+        max_box_cost_net: float = 0.995,
+        fee_rate: float = 0.07,
+        fee_exponent: float = 1.0,
+        leg_a_avail_shares: Optional[float] = None,
+        leg_b_avail_shares: Optional[float] = None,
+        neg_risk: bool = False,
+        fee_rate_a: Optional[float] = None,
+        fee_rate_b: Optional[float] = None,
+        fee_exponent_a: Optional[float] = None,
+        fee_exponent_b: Optional[float] = None,
+        parallel_dispatch: Optional[bool] = None,
+        leg_a_pre_balance: Optional[float] = None,
+        leg_b_pre_balance: Optional[float] = None,
+        min_box_cost_floor: float = 0.900,
+        leg_a_shares: Optional[float] = None,
+        leg_b_shares: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Executes a 2-leg Same-Oracle Dominance Box with per-leg fees (F-09), optional <5ms parallel 2-leg FOK dispatch (Gemini #2), and partial-fill unwind."""
+        early_res, ctx = self._prepare_atomic_dominance_box_ctx(
+            box_id, leg_a_token_id, leg_a_label, leg_a_limit_price,
+            leg_b_token_id, leg_b_label, leg_b_limit_price, shares, max_box_cost_net,
+            fee_rate, fee_exponent, leg_a_avail_shares, leg_b_avail_shares, neg_risk,
+            fee_rate_a, fee_rate_b, fee_exponent_a, fee_exponent_b, parallel_dispatch,
+            leg_a_pre_balance, leg_b_pre_balance, min_box_cost_floor, leg_a_shares, leg_b_shares,
+        )
+        if early_res is not None or ctx is None:
+            return early_res or {"success": False, "error": "INVALID_BOX_CTX"}
+
+        (tok_1, lbl_1, px_1, _, h_1, sz_1), (tok_2, lbl_2, px_2, _, h_2, sz_2) = ctx["legs"]
+        shares_int = ctx["shares_int"]
+        worst_box_cost_net = ctx["worst_box_cost_net"]
+        _explicit_gross = ctx["explicit_gross"]
+        tick_1 = self.get_token_tick_size(tok_1)
+        tick_2 = self.get_token_tick_size(tok_2)
+        nr_1 = self.get_token_neg_risk(tok_1, neg_risk)
+        nr_2 = self.get_token_neg_risk(tok_2, neg_risk)
+        signed_1, signed_2 = self._sign_atomic_dominance_box_legs(ctx, tick_1, nr_1, tick_2, nr_2)
+
+        def _unwind_legged_out(
+            tok_u: str, lbl_u: str, m_u: float, px_u: float, nr_u: bool, oid_u: Optional[str], raw_u: Any
+        ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+            return self._unwind_atomic_box_leg_sync(ctx, tok_u, lbl_u, m_u, px_u, nr_u, oid_u, raw_u)
 
         import inspect as _inspect
         _po_fn = self.client.post_order
@@ -21655,16 +22858,6 @@ class PolymarketLiveExecutor:
                 return _po_fn(signed_ord, OrderType.FOK, False, True)  # post_only=False, defer_exec=True
             return _po_fn(signed_ord, OrderType.FOK)
 
-        use_parallel = (
-            bool(parallel_dispatch)
-            if parallel_dispatch is not None
-            else bool(
-                leg_a_avail_shares is not None
-                and leg_b_avail_shares is not None
-                and float(leg_a_avail_shares) >= 1.5 * max(shares_int, sz_a_gross)
-                and float(leg_b_avail_shares) >= 1.5 * max(shares_int, sz_b_gross)
-            )
-        )
         _hot_d1_held = True
         _HOT_DISPATCH_ACTIVE.enter()
 
@@ -21675,21 +22868,8 @@ class PolymarketLiveExecutor:
                 _HOT_DISPATCH_ACTIVE.leave()
 
         try:
-            if use_parallel:
-                _mock_children = getattr(self.client, "_mock_children", None)
-                _client_dict = getattr(self.client, "__dict__", {})
-                can_batch_post_orders = (
-                    PostOrdersV2Args is not None
-                    and "post_order" not in _client_dict
-                    and (
-                        _mock_children is None
-                        or "post_orders" in _mock_children
-                        or "post_orders" in _client_dict
-                    )
-                    and hasattr(self.client, "post_orders")
-                    and os.environ.get("PM_DISABLE_D1_BATCH_POST_ORDERS", "0") != "1"
-                )
-                if can_batch_post_orders:
+            if ctx["use_parallel"]:
+                if self._can_batch_post_dominance_box():
                     disp_mode = "BATCH_POST_ORDERS_FOK"
                     skew_ms = 0.0
                     try:
@@ -21763,30 +22943,12 @@ class PolymarketLiveExecutor:
 
                 st_1, m_1_gross, oid_1, err_s1 = _eval_leg(resp_1, exc_1, sz_1, tok_1)
                 st_2, m_2_gross, oid_2, err_s2 = _eval_leg(resp_2, exc_2, sz_2, tok_2)
-                m_1 = _net_delivered_sh(m_1_gross, h_1)
-                m_2 = _net_delivered_sh(m_2_gross, h_2)
+                m_1 = self._net_delivered_box_shares(m_1_gross, h_1, _explicit_gross)
+                m_2 = self._net_delivered_box_shares(m_2_gross, h_2, _explicit_gross)
                 if st_1 == "FILLED" and st_2 == "FILLED":
-                    paired_shares = min(m_1, m_2)
-                    excess_leg = None
-                    if abs(m_1 - m_2) > 0.05:
-                        excess_tok, excess_px, excess_nr = (tok_1, px_1, nr_1) if m_1 > m_2 else (tok_2, px_2, nr_2)
-                        excess_leg = {"token_id": excess_tok, "shares": round(abs(m_1 - m_2), 4), "price": excess_px, "neg_risk": excess_nr}
-                    return {
-                        "success": True, "box_id": box_id, "dispatch_mode": disp_mode, "inter_leg_skew_ms": skew_ms,
-                        "shares": paired_shares, "net_paired_shares": paired_shares, "worst_box_cost_net": worst_box_cost_net,
-                        "guaranteed_min_profit_usd": round(paired_shares * (1.0 - worst_box_cost_net), 4),
-                        "legged_out": False, "outcome_unknown": False, "imbalance_unwind": None, "excess_leg": excess_leg,
-                        "leg_1": {
-                            "label": lbl_1, "token_id": tok_1, "price": px_1, "matched_shares": m_1,
-                            "gross_shares": m_1_gross, "entry_fee_asset": ("SHARES" if (_explicit_gross and h_1 > 0.0) else "USDC"),
-                            "orderID": oid_1, "raw": resp_1,
-                        },
-                        "leg_2": {
-                            "label": lbl_2, "token_id": tok_2, "price": px_2, "matched_shares": m_2,
-                            "gross_shares": m_2_gross, "entry_fee_asset": ("SHARES" if (_explicit_gross and h_2 > 0.0) else "USDC"),
-                            "orderID": oid_2, "raw": resp_2,
-                        },
-                    }
+                    return self._build_atomic_box_success_dict(
+                        ctx, m_1, m_1_gross, oid_1, resp_1, nr_1, m_2, m_2_gross, oid_2, resp_2, nr_2, disp_mode, skew_ms
+                    )
                 if st_1 == "REJECTED" and st_2 == "REJECTED":
                     return {
                         "success": False, "stage": "PARALLEL_BOTH_REJECTED", "dispatch_mode": disp_mode,
@@ -21828,25 +22990,15 @@ class PolymarketLiveExecutor:
                     k in err_1.lower() for k in ("fok", "couldn't be fully filled", "fully filled", "not enough balance")
                 )
                 return {
-                    "success": False,
-                    "stage": "LEG_1_EXCEPTION",
-                    "legged_out": False,
+                    "success": False, "stage": "LEG_1_EXCEPTION", "legged_out": False,
                     "outcome_unknown": bool(leg1_submitted and not is_clean_400),
-                    "leg_1_token_id": tok_1,
-                    "error": err_1,
+                    "leg_1_token_id": tok_1, "error": err_1,
                 }
 
             err_1 = resp_1.get("errorMsg") or resp_1.get("error")
             oid_1 = resp_1.get("orderID") or resp_1.get("id")
             if err_1 and not oid_1:
-                return {
-                    "success": False,
-                    "stage": "LEG_1_REJECTED",
-                    "legged_out": False,
-                    "outcome_unknown": False,
-                    "error": str(err_1),
-                    "raw_leg_1": resp_1,
-                }
+                return {"success": False, "stage": "LEG_1_REJECTED", "legged_out": False, "outcome_unknown": False, "error": str(err_1), "raw_leg_1": resp_1}
             if err_1 or not oid_1:
                 return {"success": False, "stage": "LEG_1_UNKNOWN", "legged_out": False, "outcome_unknown": True, "leg_1_order_id": oid_1, "leg_1_token_id": tok_1, "error": f"AMBIGUOUS_LEG_1_RESPONSE: {err_1 or 'missing orderID'}", "raw_leg_1": resp_1}
 
@@ -21857,15 +23009,13 @@ class PolymarketLiveExecutor:
                 return {"success": False, "stage": "LEG_1_UNKNOWN", "legged_out": False, "outcome_unknown": True, "leg_1_order_id": oid_1, "leg_1_token_id": tok_1, "error": f"LEG_1_NON_IMMEDIATE_STATUS ({resp_1.get('status')})", "raw_leg_1": resp_1}
             if matched_1_gross <= 0.0:
                 return {"success": False, "stage": "LEG_1_REJECTED", "legged_out": False, "outcome_unknown": False, "error": "LEG_1_MATCHED_ZERO_SHARES", "raw_leg_1": resp_1}
-            matched_1 = _net_delivered_sh(matched_1_gross, h_1)
+            matched_1 = self._net_delivered_box_shares(matched_1_gross, h_1, _explicit_gross)
             if matched_1 < shares_int - 0.05:
                 _release_hot_d1()
                 unwind_res, resid_info = _unwind_legged_out(tok_1, lbl_1, matched_1, px_1, nr_1, oid_1, resp_1)
                 return {"success": False, "stage": "LEG_1_PARTIAL_FILL_UNWOUND", "legged_out": True, "outcome_unknown": False, "leg_1_order_id": oid_1, "unwind_result": unwind_res, "residual_unhedged_leg": resid_info, "error": f"LEG_1_UNDERFILLED ({matched_1:.2f} < {shares_int:.2f})", "raw_leg_1": resp_1}
 
-            leg2_submitted = False
             try:
-                leg2_submitted = True
                 resp_2 = _post_fok_fast(signed_2)
             except Exception as e2:
                 _release_hot_d1()
@@ -21890,55 +23040,219 @@ class PolymarketLiveExecutor:
                 if matched_2_gross <= 0.0:
                     unwind_res, resid_info = _unwind_legged_out(tok_1, lbl_1, matched_1, px_1, nr_1, oid_1, resp_1)
                     return {"success": False, "stage": "LEG_2_REJECTED_UNWOUND", "legged_out": True, "outcome_unknown": False, "leg_1_order_id": oid_1, "unwind_result": unwind_res, "residual_unhedged_leg": resid_info, "error": "LEG_2_MATCHED_ZERO_SHARES", "raw_leg_2": resp_2}
-                matched_2 = _net_delivered_sh(matched_2_gross, h_2)
+                matched_2 = self._net_delivered_box_shares(matched_2_gross, h_2, _explicit_gross)
                 paired_shares = min(matched_1, matched_2)
-                excess_leg = None
-                if abs(matched_1 - matched_2) > 0.05:
-                    excess_tok, excess_px, excess_nr = (tok_1, px_1, nr_1) if matched_1 > matched_2 else (tok_2, px_2, nr_2)
-                    excess_leg = {"token_id": excess_tok, "shares": round(abs(matched_1 - matched_2), 4), "price": excess_px, "neg_risk": excess_nr}
                 logger.info(f"[LIVE DOMINANCE BOX FILLED] {box_id} | {paired_shares:.2f} pairs @ worst_net=${worst_box_cost_net:.4f} ({lbl_1}={oid_1}, {lbl_2}={oid_2})")
-                return {
-                    "success": True, "box_id": box_id, "shares": paired_shares, "net_paired_shares": paired_shares, "worst_box_cost_net": worst_box_cost_net,
-                    "guaranteed_min_profit_usd": round(paired_shares * (1.0 - worst_box_cost_net), 4),
-                    "legged_out": False, "outcome_unknown": False, "imbalance_unwind": None, "excess_leg": excess_leg,
-                    "leg_1": {
-                        "label": lbl_1, "token_id": tok_1, "price": px_1, "matched_shares": matched_1,
-                        "gross_shares": matched_1_gross, "entry_fee_asset": ("SHARES" if (_explicit_gross and h_1 > 0.0) else "USDC"),
-                        "orderID": oid_1, "raw": resp_1,
-                    },
-                    "leg_2": {
-                        "label": lbl_2, "token_id": tok_2, "price": px_2, "matched_shares": matched_2,
-                        "gross_shares": matched_2_gross, "entry_fee_asset": ("SHARES" if (_explicit_gross and h_2 > 0.0) else "USDC"),
-                        "orderID": oid_2, "raw": resp_2,
-                    },
-                }
+                return self._build_atomic_box_success_dict(
+                    ctx, matched_1, matched_1_gross, oid_1, resp_1, nr_1, matched_2, matched_2_gross, oid_2, resp_2, nr_2
+                )
 
             if err_2 and not oid_2:
                 unwind_res, resid_info = _unwind_legged_out(tok_1, lbl_1, matched_1, px_1, nr_1, oid_1, resp_1)
-                return {
-                    "success": False,
-                    "stage": "LEG_2_REJECTED_UNWOUND",
-                    "legged_out": True,
-                    "outcome_unknown": False,
-                    "leg_1_order_id": oid_1,
-                    "unwind_result": unwind_res,
-                    "residual_unhedged_leg": resid_info,
-                    "error": str(err_2),
-                    "raw_leg_2": resp_2,
-                }
+                return {"success": False, "stage": "LEG_2_REJECTED_UNWOUND", "legged_out": True, "outcome_unknown": False, "leg_1_order_id": oid_1, "unwind_result": unwind_res, "residual_unhedged_leg": resid_info, "error": str(err_2), "raw_leg_2": resp_2}
 
-            return {
-                "success": False,
-                "stage": "LEG_2_UNKNOWN",
-                "legged_out": True,
-                "outcome_unknown": True,
-                "leg_1_order_id": oid_1,
-                "leg_2_order_id": oid_2,
-                "leg_1_token_id": tok_1,
-                "leg_2_token_id": tok_2,
-                "error": f"AMBIGUOUS_LEG_2_RESPONSE: {err_2 or 'missing orderID'}",
-                "raw_leg_2": resp_2,
-            }
+            return {"success": False, "stage": "LEG_2_UNKNOWN", "legged_out": True, "outcome_unknown": True, "leg_1_order_id": oid_1, "leg_2_order_id": oid_2, "leg_1_token_id": tok_1, "leg_2_token_id": tok_2, "error": f"AMBIGUOUS_LEG_2_RESPONSE: {err_2 or 'missing orderID'}", "raw_leg_2": resp_2}
+        finally:
+            _release_hot_d1()
+
+    async def execute_atomic_dominance_box_async(
+        self,
+        box_id: str,
+        leg_a_token_id: str,
+        leg_a_label: str,
+        leg_a_limit_price: float,
+        leg_b_token_id: str,
+        leg_b_label: str,
+        leg_b_limit_price: float,
+        shares: float,
+        max_box_cost_net: float = 0.995,
+        fee_rate: float = 0.07,
+        fee_exponent: float = 1.0,
+        leg_a_avail_shares: Optional[float] = None,
+        leg_b_avail_shares: Optional[float] = None,
+        neg_risk: bool = False,
+        fee_rate_a: Optional[float] = None,
+        fee_rate_b: Optional[float] = None,
+        fee_exponent_a: Optional[float] = None,
+        fee_exponent_b: Optional[float] = None,
+        parallel_dispatch: Optional[bool] = None,
+        leg_a_pre_balance: Optional[float] = None,
+        leg_b_pre_balance: Optional[float] = None,
+        min_box_cost_floor: float = 0.900,
+        leg_a_shares: Optional[float] = None,
+        leg_b_shares: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Native uvloop async D1 dominance box execution via direct `_exec_hot_async_post` (zero thread hops)."""
+        if (
+            "execute_atomic_dominance_box" in getattr(self, "__dict__", {})
+            or (not self.dry_run and not self._can_use_native_async_post_order())
+        ):
+            return await asyncio.to_thread(
+                self.execute_atomic_dominance_box,
+                box_id, leg_a_token_id, leg_a_label, leg_a_limit_price,
+                leg_b_token_id, leg_b_label, leg_b_limit_price, shares,
+                max_box_cost_net, fee_rate, fee_exponent, leg_a_avail_shares, leg_b_avail_shares,
+                neg_risk, fee_rate_a, fee_rate_b, fee_exponent_a, fee_exponent_b,
+                parallel_dispatch, leg_a_pre_balance, leg_b_pre_balance,
+                min_box_cost_floor, leg_a_shares, leg_b_shares,
+            )
+
+        early_res, ctx = self._prepare_atomic_dominance_box_ctx(
+            box_id, leg_a_token_id, leg_a_label, leg_a_limit_price,
+            leg_b_token_id, leg_b_label, leg_b_limit_price, shares, max_box_cost_net,
+            fee_rate, fee_exponent, leg_a_avail_shares, leg_b_avail_shares, neg_risk,
+            fee_rate_a, fee_rate_b, fee_exponent_a, fee_exponent_b, parallel_dispatch,
+            leg_a_pre_balance, leg_b_pre_balance, min_box_cost_floor, leg_a_shares, leg_b_shares,
+        )
+        if early_res is not None or ctx is None:
+            return early_res or {"success": False, "error": "INVALID_BOX_CTX"}
+
+        (tok_1, lbl_1, px_1, _, h_1, sz_1), (tok_2, lbl_2, px_2, _, h_2, sz_2) = ctx["legs"]
+        shares_int = ctx["shares_int"]
+        _explicit_gross = ctx["explicit_gross"]
+        if "get_token_tick_size" in getattr(self, "__dict__", {}) or "get_token_neg_risk" in getattr(self, "__dict__", {}):
+            tick_1, tick_2 = self.get_token_tick_size(tok_1), self.get_token_tick_size(tok_2)
+            nr_1, nr_2 = self.get_token_neg_risk(tok_1, neg_risk), self.get_token_neg_risk(tok_2, neg_risk)
+        else:
+            (tick_1, nr_1), (tick_2, nr_2) = await asyncio.gather(
+                self.get_token_metadata_async(tok_1, neg_risk),
+                self.get_token_metadata_async(tok_2, neg_risk),
+            )
+        signed_1, signed_2 = self._sign_atomic_dominance_box_legs(ctx, tick_1, nr_1, tick_2, nr_2)
+
+        async def _post_json_native(endpoint: str, payload: Any) -> Any:
+            headers, body_bytes = self._encode_fast_l2_request(endpoint, payload)
+            out, _, _ = await self._exec_hot_async_post(endpoint, headers, body_bytes)
+            return out
+
+        async def _post_fok_native(signed_ord: Any) -> Tuple[Optional[Dict[str, Any]], Optional[Exception], float]:
+            t_s = time.perf_counter()
+            try:
+                out = await _post_json_native("/order", self._serialize_signed_order_payload(signed_ord, OrderType.FOK, False, True))
+                return out, None, t_s
+            except Exception as exc_p:
+                return None, exc_p, t_s
+
+        async def _eval_leg_async(resp_x: Optional[Dict[str, Any]], exc_x: Optional[Exception], exp_sz: float, tok_x: str) -> Tuple[str, float, Optional[str], str]:
+            if exc_x is not None:
+                em = str(getattr(exc_x, "error_message", "") or str(exc_x))
+                clean = is_clob_400_rejection(exc_x) or any(
+                    k in em.lower() for k in ("fok", "couldn't be fully filled", "fully filled", "not enough balance")
+                )
+                return ("REJECTED" if clean else "UNKNOWN"), 0.0, None, em
+            if not isinstance(resp_x, dict):
+                return "UNKNOWN", 0.0, None, "MISSING_RESPONSE"
+            err_x = resp_x.get("errorMsg") or resp_x.get("error")
+            oid_x = resp_x.get("orderID") or resp_x.get("id")
+            if err_x and not oid_x:
+                return "REJECTED", 0.0, None, str(err_x)
+            if err_x or not oid_x:
+                return "UNKNOWN", 0.0, oid_x, str(err_x or "missing orderID")
+            m_sh = self._extract_fok_matched_shares(resp_x, exp_sz)
+            if m_sh is None:
+                m_sh = await self._resolve_deferred_fok_gross_async(oid_x, tok_x, resp_x)
+            if m_sh is None:
+                return "UNKNOWN", 0.0, oid_x, f"NON_IMMEDIATE_STATUS ({resp_x.get('status')})"
+            if m_sh <= 0.0:
+                return "REJECTED", 0.0, oid_x, "MATCHED_ZERO_SHARES"
+            return "FILLED", float(m_sh), str(oid_x), ""
+
+        _hot_d1_held = True
+        _HOT_DISPATCH_ACTIVE.enter()
+
+        def _release_hot_d1() -> None:
+            nonlocal _hot_d1_held
+            if _hot_d1_held:
+                _hot_d1_held = False
+                _HOT_DISPATCH_ACTIVE.leave()
+
+        try:
+            if ctx["use_parallel"]:
+                if self._can_batch_post_dominance_box():
+                    disp_mode = "BATCH_POST_ORDERS_FOK"
+                    skew_ms = 0.0
+                    try:
+                        batch_resp = await _post_json_native(
+                            "/orders",
+                            [
+                                self._serialize_signed_order_payload(signed_1, OrderType.FOK, False, True),
+                                self._serialize_signed_order_payload(signed_2, OrderType.FOK, False, True),
+                            ],
+                        )
+                        if isinstance(batch_resp, list) and len(batch_resp) == 2:
+                            resp_1, exc_1 = batch_resp[0], None
+                            resp_2, exc_2 = batch_resp[1], None
+                        else:
+                            m_exc = RuntimeError(f"UNEXPECTED_BATCH_POST_ORDERS_RESPONSE:{type(batch_resp).__name__}")
+                            resp_1, exc_1, resp_2, exc_2 = None, m_exc, None, m_exc
+                    except Exception as exc_b:
+                        resp_1, exc_1, resp_2, exc_2 = None, exc_b, None, exc_b
+                else:
+                    disp_mode = "PARALLEL_2LEG_FOK"
+                    (resp_1, exc_1, ts_1), (resp_2, exc_2, ts_2) = await asyncio.gather(
+                        _post_fok_native(signed_1), _post_fok_native(signed_2)
+                    )
+                    skew_ms = round(abs(ts_2 - ts_1) * 1000.0, 3)
+
+                (st_1, m_1_gross, oid_1, err_s1), (st_2, m_2_gross, oid_2, err_s2) = await asyncio.gather(
+                    _eval_leg_async(resp_1, exc_1, sz_1, tok_1),
+                    _eval_leg_async(resp_2, exc_2, sz_2, tok_2),
+                )
+                m_1 = self._net_delivered_box_shares(m_1_gross, h_1, _explicit_gross)
+                m_2 = self._net_delivered_box_shares(m_2_gross, h_2, _explicit_gross)
+                if st_1 == "FILLED" and st_2 == "FILLED":
+                    return self._build_atomic_box_success_dict(
+                        ctx, m_1, m_1_gross, oid_1, resp_1, nr_1, m_2, m_2_gross, oid_2, resp_2, nr_2, disp_mode, skew_ms
+                    )
+                if st_1 == "REJECTED" and st_2 == "REJECTED":
+                    return {"success": False, "stage": "PARALLEL_BOTH_REJECTED", "dispatch_mode": disp_mode, "inter_leg_skew_ms": skew_ms, "legged_out": False, "outcome_unknown": False, "error": f"L1={err_s1}; L2={err_s2}"}
+                if st_1 == "FILLED" and st_2 == "REJECTED":
+                    _release_hot_d1()
+                    uw, resid_info = await asyncio.to_thread(self._unwind_atomic_box_leg_sync, ctx, tok_1, lbl_1, m_1, px_1, nr_1, oid_1, resp_1)
+                    return {"success": False, "stage": "LEG_2_REJECTED_UNWOUND", "dispatch_mode": disp_mode, "inter_leg_skew_ms": skew_ms, "legged_out": True, "outcome_unknown": False, "leg_1_order_id": oid_1, "unwind_result": uw, "residual_unhedged_leg": resid_info, "error": err_s2}
+                if st_2 == "FILLED" and st_1 == "REJECTED":
+                    _release_hot_d1()
+                    uw, resid_info = await asyncio.to_thread(self._unwind_atomic_box_leg_sync, ctx, tok_2, lbl_2, m_2, px_2, nr_2, oid_2, resp_2)
+                    return {"success": False, "stage": "LEG_1_REJECTED_LEG_2_UNWOUND", "dispatch_mode": disp_mode, "inter_leg_skew_ms": skew_ms, "legged_out": True, "outcome_unknown": False, "leg_2_order_id": oid_2, "unwind_result": uw, "residual_unhedged_leg": resid_info, "error": err_s1}
+                return {"success": False, "stage": "PARALLEL_OUTCOME_UNKNOWN", "dispatch_mode": disp_mode, "inter_leg_skew_ms": skew_ms, "legged_out": bool(st_1 == "FILLED" or st_2 == "FILLED"), "outcome_unknown": True, "leg_1_order_id": oid_1, "leg_2_order_id": oid_2, "leg_1_token_id": tok_1, "leg_2_token_id": tok_2, "error": f"L1={st_1}:{err_s1}; L2={st_2}:{err_s2}"}
+
+            resp_1, e1, _ = await _post_fok_native(signed_1)
+            if e1 is not None:
+                err_1 = str(getattr(e1, "error_message", "") or str(e1))
+                is_clean_400 = is_clob_400_rejection(e1) or any(k in err_1.lower() for k in ("fok", "couldn't be fully filled", "fully filled", "not enough balance"))
+                return {"success": False, "stage": "LEG_1_EXCEPTION", "legged_out": False, "outcome_unknown": bool(not is_clean_400), "leg_1_token_id": tok_1, "error": err_1}
+            st_1, matched_1_gross, oid_1, err_s1 = await _eval_leg_async(resp_1, None, sz_1, tok_1)
+            if st_1 == "REJECTED":
+                return {"success": False, "stage": "LEG_1_REJECTED", "legged_out": False, "outcome_unknown": False, "error": err_s1, "raw_leg_1": resp_1}
+            if st_1 != "FILLED":
+                return {"success": False, "stage": "LEG_1_UNKNOWN", "legged_out": False, "outcome_unknown": True, "leg_1_order_id": oid_1, "leg_1_token_id": tok_1, "error": err_s1, "raw_leg_1": resp_1}
+            matched_1 = self._net_delivered_box_shares(matched_1_gross, h_1, _explicit_gross)
+            if matched_1 < shares_int - 0.05:
+                _release_hot_d1()
+                uw, resid_info = await asyncio.to_thread(self._unwind_atomic_box_leg_sync, ctx, tok_1, lbl_1, matched_1, px_1, nr_1, oid_1, resp_1)
+                return {"success": False, "stage": "LEG_1_PARTIAL_FILL_UNWOUND", "legged_out": True, "outcome_unknown": False, "leg_1_order_id": oid_1, "unwind_result": uw, "residual_unhedged_leg": resid_info, "error": f"LEG_1_UNDERFILLED ({matched_1:.2f} < {shares_int:.2f})", "raw_leg_1": resp_1}
+
+            resp_2, e2, _ = await _post_fok_native(signed_2)
+            _release_hot_d1()
+            if e2 is not None:
+                err_2 = str(getattr(e2, "error_message", "") or str(e2))
+                is_clean_400 = is_clob_400_rejection(e2) or any(k in err_2.lower() for k in ("fok", "couldn't be fully filled", "fully filled", "not enough balance"))
+                if not is_clean_400:
+                    return {"success": False, "stage": "LEG_2_UNKNOWN", "legged_out": True, "outcome_unknown": True, "leg_1_order_id": oid_1, "leg_1_token_id": tok_1, "leg_2_token_id": tok_2, "error": err_2}
+                uw, resid_info = await asyncio.to_thread(self._unwind_atomic_box_leg_sync, ctx, tok_1, lbl_1, matched_1, px_1, nr_1, oid_1, resp_1)
+                return {"success": False, "stage": "LEG_2_REJECTED_UNWOUND", "legged_out": True, "outcome_unknown": False, "leg_1_order_id": oid_1, "unwind_result": uw, "residual_unhedged_leg": resid_info, "error": err_2}
+
+            st_2, matched_2_gross, oid_2, err_s2 = await _eval_leg_async(resp_2, None, sz_2 if _explicit_gross else matched_1, tok_2)
+            if st_2 == "FILLED":
+                matched_2 = self._net_delivered_box_shares(matched_2_gross, h_2, _explicit_gross)
+                logger.info(f"[LIVE DOMINANCE BOX FILLED] {box_id} | {min(matched_1, matched_2):.2f} pairs @ worst_net=${ctx['worst_box_cost_net']:.4f} ({lbl_1}={oid_1}, {lbl_2}={oid_2})")
+                return self._build_atomic_box_success_dict(
+                    ctx, matched_1, matched_1_gross, oid_1, resp_1, nr_1, matched_2, matched_2_gross, oid_2, resp_2, nr_2
+                )
+            if st_2 == "REJECTED":
+                uw, resid_info = await asyncio.to_thread(self._unwind_atomic_box_leg_sync, ctx, tok_1, lbl_1, matched_1, px_1, nr_1, oid_1, resp_1)
+                return {"success": False, "stage": "LEG_2_REJECTED_UNWOUND", "legged_out": True, "outcome_unknown": False, "leg_1_order_id": oid_1, "unwind_result": uw, "residual_unhedged_leg": resid_info, "error": err_s2, "raw_leg_2": resp_2}
+            return {"success": False, "stage": "LEG_2_UNKNOWN", "legged_out": True, "outcome_unknown": True, "leg_1_order_id": oid_1, "leg_2_order_id": oid_2, "leg_1_token_id": tok_1, "leg_2_token_id": tok_2, "error": err_s2, "raw_leg_2": resp_2}
         finally:
             _release_hot_d1()
 
@@ -23894,7 +25208,7 @@ if __name__ == "__main__":
     print(">>> POLYMARKET LIVE ADAPTER PREFLIGHT: PASS (100% OPERATIONAL) <<<")
 
 # ======================================================================================
-# [14/67] MODULE: src/polymarket_research/riskless_machine_gun_engine.py
+# [14/68] MODULE: src/polymarket_research/riskless_machine_gun_engine.py
 # PURPOSE: v5.5.0 Riskless Machine-Gun Engine (Relayer V2 Batch Merge, Verified m=1 Convert, Multi-Leg & Overround)
 # ======================================================================================
 
@@ -26884,7 +28198,7 @@ def finish_nr2_subset_convert_arb(
     return {"executed": True, "result": c_res, "leg_trade_ids": []}
 
 # ======================================================================================
-# [15/67] MODULE: src/polymarket_research/riskless_protocol_v2_expansion.py
+# [15/68] MODULE: src/polymarket_research/riskless_protocol_v2_expansion.py
 # PURPOSE: v5.5.0 Protocol V2 & Zero-Loss Frontier Expansion (NR_M1 Dead-Seed, RT_MONO1 Scalar Ladders, Velocity Scorer)
 # ======================================================================================
 
@@ -26936,6 +28250,97 @@ from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 from zoneinfo import ZoneInfo
+
+try:
+    import orjson as _orjson
+except Exception:  # pragma: no cover
+    _orjson = None
+
+try:
+    import requests
+except Exception:  # pragma: no cover
+    requests = None
+
+_OO_HTTP_LOCAL = threading.local()
+_SHARED_P2_POLYGON_LOGS_WS: Any = None
+_NUMERIC_BRACKET_RE = re.compile(r"[0-9%$]")
+_SLUG_MKT_SUFFIX_RE = re.compile(
+    r"-(?:map-handicap|handicap|spread|total|over-under|o-u|1h|first-half|game-\d+|map-\d+|set-\d+)(?:-.*)?$",
+    re.IGNORECASE,
+)
+_UNWRESID_SFX_RE = re.compile(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", re.IGNORECASE)
+_BRACKET_PAREN_RE = re.compile(r"\[[^\]]*\]|\([^)]*\)")
+_VS_Q_RE = re.compile(
+    r"([A-Za-z0-9 .'\-]{2,28}?)\s+vs\.?\s+([A-Za-z0-9 .'\-]{2,28}?)(?=\s*(?:[:\-–|?]|$|\b(?:map|game|set|total|handicap|spread|o/u|over|under|bo\d)\b))",
+    re.IGNORECASE,
+)
+_VS_T1_PFX_RE = re.compile(
+    r"^.*\b(?:(?:game|map|set)\s+\d+|handicap|spread|total|winner|moneyline)\s*[:\-–|]*\s*",
+    re.IGNORECASE,
+)
+_LBL_PFX_RE = re.compile(r"^\s*(?:exact\s+score|spread|total|over/under|o/u)\s*[:\-–|]*\s*", re.IGNORECASE)
+_LBL_GAME_RE = re.compile(r"\b(?:game|map|set)\s+\d+\s*[:\-–|]*\s*", re.IGNORECASE)
+_LBL_SFX_RE = re.compile(r"\b(?:exact\s+score|dead\s+no|reward\s+carry\s+no)\b.*$", re.IGNORECASE)
+_LBL_SCORE_RE = re.compile(r"\s+\d+\s*[-:]\s*\d+(?:\s*°?[CFcf%])?\b")
+_LBL_TAIL_NUM_RE = re.compile(r"[:\-–|]\s*(?:>=|<=|>|<)?\s*-?\d+(?:\.\d+)?\s*(?:°?[CFcf%]|pts|goals)?.*$")
+_WHITESPACE_RUN_RE = re.compile(r"\s+")
+_LBL_VS_RE = re.compile(
+    r"([A-Za-z0-9 .'\-]{2,28}?)\s+vs\.?\s+([A-Za-z0-9 .'\-]{2,28}?)(?=\s*(?:[:\-–|?]|$|\b(?:total|handicap|spread|o/u|over|under|bo\d|winner|yes|no)\b))",
+    re.IGNORECASE,
+)
+_LBL_SPORT_PFX_RE = re.compile(
+    r"^.*\b(?:esports|dota\s*2|cs2|lol|valorant|nba|nfl|nhl|mlb|soccer|tennis|sports_child_moneyline|sports_child_totals)\s+",
+    re.IGNORECASE,
+)
+_LBL_YESNO_SFX_RE = re.compile(r"\s+\b(?:yes|no)\b.*$", re.IGNORECASE)
+_DISPUTE_WALKOVER_RE = re.compile(r"\b(retire(?:s|d|ment)|walkover|disqualif|50[\s/-]*50)\b", re.IGNORECASE)
+_BOILERPLATE_PROP_RE = re.compile(
+    r"\b(corner|over|under|o/u|total|spread|handicap|card|both\s+teams\s+to\s+score|btts)\b",
+    re.IGNORECASE,
+)
+_MENTION_CNT_RE = re.compile(r"(\d+)\s*\+|at\s+least\s+(\d+)|(\d+)\s+or\s+more", re.IGNORECASE)
+_MENTION_STEM_RE = re.compile(r"\d+\s*\+|at\s+least\s+\d+|\d+\s+or\s+more")
+_P2_E6_SCALE: int = 1_000_000
+
+
+def set_shared_protocol_v2_polygon_logs_ws(ws_client: Any) -> None:
+    """Registers an optional live `PolygonScopedLogsWs` client for fast-path OO proposal/dispute checks."""
+    global _SHARED_P2_POLYGON_LOGS_WS
+    _SHARED_P2_POLYGON_LOGS_WS = ws_client
+
+
+def _get_oo_http_session() -> Any:
+    if requests is None or not hasattr(requests, "Session"):
+        return None
+    sess = getattr(_OO_HTTP_LOCAL, "session", None)
+    if sess is None:
+        sess = requests.Session()
+        if not hasattr(sess, "post") or not hasattr(sess, "headers"):
+            return None
+        sess.headers.update({"Content-Type": "application/json", "User-Agent": "Dominus/1.0", "Connection": "keep-alive"})
+        _OO_HTTP_LOCAL.session = sess
+    return sess
+
+
+def _p2_loads_json_bytes(raw: Any) -> Any:
+    if raw is None:
+        return None
+    if isinstance(raw, (dict, list)):
+        return raw
+    if _orjson is not None:
+        try:
+            return _orjson.loads(raw)
+        except Exception:
+            pass
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode("utf-8", errors="ignore")
+    return json.loads(raw)
+
+
+def _p2_dumps_json_bytes(payload: Any) -> bytes:
+    if _orjson is not None:
+        return _orjson.dumps(payload)
+    return json.dumps(payload).encode("utf-8")
 
 try:
     from src.polymarket_research.holistic_strategy_governance import (
@@ -27313,7 +28718,7 @@ def is_conditional_negrisk_missing_catchall(
         return False
     if any(_NEGRISK_NEGATION_OR_OTHER_CATCHALL_RE.search(lb) for lb in clean_labels):
         return False
-    numeric_bracket_n = sum(1 for lb in clean_labels if re.search(r"[0-9%$]", lb))
+    numeric_bracket_n = sum(1 for lb in clean_labels if _NUMERIC_BRACKET_RE.search(lb))
     return numeric_bracket_n >= 2
 
 
@@ -27529,11 +28934,27 @@ def quantize_dynamic_tick_price(
     else:
         tick = 0.001 if (p_clamped >= 0.96 or p_clamped <= 0.04) else 0.01
 
-    d_p = Decimal(str(round(p_clamped, 6)))
-    d_t = Decimal(str(tick))
     side_u = str(side or "BUY").upper()
     mode_l = str(mode or "maker").lower()
+    p_u = round(p_clamped * _P2_E6_SCALE)
+    t_f = round(tick * _P2_E6_SCALE)
+    if t_f > 0 and abs(tick * _P2_E6_SCALE - t_f) < 1e-9 and t_f >= 100 and (_P2_E6_SCALE % t_f == 0):
+        if mode_l == "nearest":
+            steps_i = (p_u // t_f) + (1 if ((p_u % t_f) * 2 >= t_f) else 0)
+        elif (side_u == "BUY" and mode_l == "maker") or (side_u == "SELL" and mode_l == "taker"):
+            steps_i = p_u // t_f
+        else:
+            steps_i = (p_u + t_f - 1) // t_f
+        q_u = steps_i * t_f
+        if q_u < t_f:
+            q_u = t_f
+        elif q_u > (_P2_E6_SCALE - t_f):
+            q_u = _P2_E6_SCALE - t_f
+        min_shares_ok = True if shares is None else (float(shares) >= 5.0 - 1e-9)
+        return q_u / float(_P2_E6_SCALE), t_f / float(_P2_E6_SCALE), bool(min_shares_ok)
 
+    d_p = Decimal(str(round(p_clamped, 6)))
+    d_t = Decimal(str(tick))
     if mode_l == "nearest":
         steps = (d_p / d_t).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     elif (side_u == "BUY" and mode_l == "maker") or (side_u == "SELL" and mode_l == "taker"):
@@ -27551,6 +28972,344 @@ def quantize_dynamic_tick_price(
 
     min_shares_ok = True if shares is None else (float(shares) >= 5.0 - 1e-9)
     return float(q_dec), float(d_t), bool(min_shares_ok)
+
+
+_RB_N5_NEGATION_RE = re.compile(r"\b(?:not|never|except|unless|only\s+if|without)\b", re.IGNORECASE)
+_RB_N5_DATE_TRIM_RE = re.compile(
+    r"\b(?:by|before|after|on|until|in)\s+(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*(?:\s+\d{1,2})?(?:,?\s*\d{4})?|\d{4}-\d{2}-\d{2}|q[1-4]\s*\d{4}|\d{4})\b",
+    re.IGNORECASE,
+)
+
+
+def _rb_n5_best_ask_sz(asks: Sequence[Mapping[str, Any]]) -> Tuple[float, float]:
+    best_p, best_s = 1.0, 0.0
+    for lv in asks or ():
+        if not isinstance(lv, Mapping):
+            continue
+        try:
+            px = float(lv.get("price") or 0.0)
+            sz = float(lv.get("size") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if 0.0 < px < 1.0 and sz > 0.0:
+            if px < best_p:
+                best_p, best_s = px, sz
+            elif abs(px - best_p) <= 1e-12:
+                best_s += sz
+    return best_p, best_s
+
+
+def extract_rb_n5_cumulative_cal1_candidates(
+    events: Sequence[Mapping[str, Any]],
+    now_ts: Optional[float] = None,
+) -> List[Dict[str, Any]]:
+    """
+    `RB-N5`: Extracts native `cumulativeMarkets=True` monotone deadline ladders for `CAL1`
+    (`P(T_early) <= P(T_late)`, invariant `YES(T_early) + NO(T_late) >= $1.00`).
+    Strictly filters closed/non-accepting/negated markets and requires ascending deadlines.
+    """
+    now_f = float(time.time() if now_ts is None else now_ts)
+    out: List[Dict[str, Any]] = []
+    for ev in events or ():
+        if not isinstance(ev, Mapping) or not bool(ev.get("cumulativeMarkets")):
+            continue
+        title = str(ev.get("title") or "").strip()
+        if _RB_N5_NEGATION_RE.search(title):
+            continue
+        legs: List[Dict[str, Any]] = []
+        stems: Set[str] = set()
+        for mk in ev.get("markets") or ():
+            if not isinstance(mk, Mapping) or mk.get("closed") or mk.get("acceptingOrders") is False:
+                continue
+            mid = str(mk.get("id") or mk.get("market_id") or "").strip()
+            if not mid or mid in {"6707502", "6707503"}:
+                continue
+            q = str(mk.get("question") or mk.get("groupItemTitle") or title).strip()
+            if not q or _RB_N5_NEGATION_RE.search(q):
+                continue
+            raw_tks = mk.get("clobTokenIds")
+            if isinstance(raw_tks, str) and raw_tks.startswith("["):
+                try:
+                    toks = _p2_loads_json_bytes(raw_tks)
+                except Exception:
+                    toks = []
+            elif isinstance(raw_tks, (list, tuple)):
+                toks = list(raw_tks)
+            else:
+                toks = []
+            if len(toks) < 2:
+                continue
+            end_s = str(mk.get("endDate") or ev.get("endDate") or "").strip()
+            if not end_s:
+                continue
+            try:
+                end_ts = datetime.fromisoformat(end_s.replace("Z", "+00:00")).timestamp()
+            except Exception:
+                continue
+            if (end_ts - now_f) <= 120.0:
+                continue
+            fs = mk.get("feeSchedule") or {}
+            fr = float(fs.get("rate", 0.0) if mk.get("feesEnabled", False) else 0.0)
+            fe = float(fs.get("exponent", 1.0) or 1.0)
+            stem = _WHITESPACE_RUN_RE.sub(" ", _RB_N5_DATE_TRIM_RE.sub("", q.lower())).strip(" ?.!")
+            if stem:
+                stems.add(stem)
+            legs.append({
+                "market_id": mid,
+                "condition_id": str(mk.get("conditionId") or "").strip(),
+                "question": q,
+                "end_ts": float(end_ts),
+                "yes_token_id": str(toks[0]).strip(),
+                "no_token_id": str(toks[1]).strip(),
+                "fee_rate": fr,
+                "fee_exponent": fe,
+            })
+        if len(legs) < 2 or len(stems) > 1:
+            continue
+        legs.sort(key=lambda x: x["end_ts"])
+        if any((legs[i + 1]["end_ts"] - legs[i]["end_ts"]) < 60.0 for i in range(len(legs) - 1)):
+            continue
+        out.append({
+            "event_id": str(ev.get("id") or ev.get("slug") or ""),
+            "title": title,
+            "stem": next(iter(stems), title.lower()),
+            "asset": str(ev.get("ticker") or ev.get("category") or "CAL1").strip().upper()[:16] or "CAL1",
+            "cumulativeMarkets": True,
+            "legs": legs,
+        })
+    return out
+
+
+def detect_rb_n5_cumulative_cal1_opportunities(
+    candidates: Sequence[Mapping[str, Any]],
+    books_by_token: Mapping[str, Any],
+    *,
+    now_ts: Optional[float] = None,
+    min_net_edge: float = 0.0080,
+) -> List[Dict[str, Any]]:
+    """Evaluates extracted `RB-N5` `cumulativeMarkets=True` ladders against live CLOB books for `YES(early)+NO(late)` <= `1 - min_net_edge`."""
+    _ = now_ts
+    hits: List[Dict[str, Any]] = []
+    for grp in candidates or ():
+        legs = list(grp.get("legs") or ())
+        if len(legs) < 2:
+            continue
+        best_hit: Optional[Dict[str, Any]] = None
+        for i in range(len(legs) - 1):
+            ea = legs[i]
+            by_e = books_by_token.get(str(ea.get("yes_token_id") or ""))
+            if not isinstance(by_e, Mapping):
+                continue
+            ya, ys = _rb_n5_best_ask_sz(by_e.get("asks") or [])
+            if ya <= 0.0 or ya >= 1.0 or ys < 5.0:
+                continue
+            for j in range(i + 1, len(legs)):
+                lb = legs[j]
+                bn_l = books_by_token.get(str(lb.get("no_token_id") or ""))
+                if not isinstance(bn_l, Mapping):
+                    continue
+                na, ns = _rb_n5_best_ask_sz(bn_l.get("asks") or [])
+                if na <= 0.0 or na >= 1.0 or ns < 5.0:
+                    continue
+                fr_e = float(ea.get("fee_rate", 0.0) or 0.0)
+                fe_e = float(ea.get("fee_exponent", 1.0) or 1.0)
+                fr_l = float(lb.get("fee_rate", 0.0) or 0.0)
+                fe_l = float(lb.get("fee_exponent", 1.0) or 1.0)
+                fee_e = (ya * fr_e * ((ya * (1.0 - ya)) ** fe_e)) if fr_e > 0.0 else 0.0
+                fee_l = (na * fr_l * ((na * (1.0 - na)) ** fe_l)) if fr_l > 0.0 else 0.0
+                all_in = ya + na + fee_e + fee_l
+                edge = 1.0 - all_in
+                if edge >= float(min_net_edge) and (best_hit is None or edge > best_hit["net_edge_per_share"]):
+                    sh = min(ys, ns)
+                    best_hit = {
+                        "sleeve": "CAL1_RB_N5_CUMULATIVE_BOX",
+                        "event_id": grp.get("event_id"),
+                        "title": grp.get("title") or ea.get("question"),
+                        "asset": grp.get("asset") or "CAL1",
+                        "early_leg": ea,
+                        "late_leg": lb,
+                        "bk_early_yes": by_e,
+                        "bk_late_no": bn_l,
+                        "cost_per_share": round(all_in, 5),
+                        "net_edge_per_share": round(edge, 5),
+                        "net_edge_bps": round((edge / max(1e-6, all_in)) * 10000.0, 2),
+                        "max_fillable_shares": round(sh, 4),
+                        "max_fillable_usd": round(sh * all_in, 2),
+                    }
+        if best_hit is not None:
+            hits.append(best_hit)
+    return hits
+
+
+def try_recycle_open_carry_for_fast_arb_v2(
+    harvester: Any,
+    *,
+    needed_cash_gap_usd: float,
+    challenger_net_cost: float,
+    challenger_rem_tte_sec: float,
+    challenger_sleeve: str,
+    exclude_market_ids: Optional[Set[str]] = None,
+    exit_spread_slippage_bps: Optional[float] = None,
+    lost_rebate_bps: float = 0.0,
+    safety_buffer_bps: float = 5.0,
+    now_ts: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Protocol V2 fast-arb carry recycler supporting BOTH `>= 200 bps` challengers (via Stage C)
+    AND `80-199 bps` fast-arb challengers strictly when `Decimal(..., ROUND_CEILING)` proves
+    `new_net_edge_bps > exit_spread_slippage_bps + lost_rebate_bps + safety_buffer_bps`.
+    """
+    from src.polymarket_research.stage_c_zero_loss_velocity import (
+        find_recyclable_zero_loss_open_carries,
+        recycle_open_zero_loss_carry_for_fast_arb,
+    )
+
+    net_cost_f = float(challenger_net_cost)
+    if net_cost_f <= 0.0 or net_cost_f >= 1.0 or needed_cash_gap_usd <= 0.0:
+        return {"recycled_count": 0, "freed_cash_usd": 0.0, "recycled_positions": [], "reason": "INVALID_INPUT"}
+
+    d_cost = Decimal(str(round(net_cost_f, 6)))
+    d_new_edge_bps = (((Decimal("1") - d_cost) / d_cost) * Decimal("10000")).quantize(
+        Decimal("0.01"), rounding=ROUND_FLOOR
+    )
+    if d_new_edge_bps >= Decimal("200"):
+        res = dict(
+            recycle_open_zero_loss_carry_for_fast_arb(
+                harvester,
+                needed_cash_gap_usd=needed_cash_gap_usd,
+                challenger_net_cost=net_cost_f,
+                challenger_rem_tte_sec=challenger_rem_tte_sec,
+                challenger_sleeve=challenger_sleeve,
+                exclude_market_ids=exclude_market_ids,
+                now_ts=now_ts,
+            )
+        )
+        res["tier"] = ">=200bps"
+        res["new_net_edge_bps"] = float(d_new_edge_bps)
+        return res
+
+    if d_new_edge_bps < Decimal("80"):
+        return {
+            "recycled_count": 0,
+            "freed_cash_usd": 0.0,
+            "recycled_positions": [],
+            "reason": "BELOW_80_BPS_MIN_EDGE",
+            "new_net_edge_bps": float(d_new_edge_bps),
+        }
+
+    cands = find_recyclable_zero_loss_open_carries(
+        harvester,
+        needed_cash_gap_usd=needed_cash_gap_usd,
+        challenger_net_cost=net_cost_f,
+        challenger_rem_tte_sec=challenger_rem_tte_sec,
+        exclude_market_ids=exclude_market_ids,
+        min_challenger_edge_bps=80.0,
+        now_ts=now_ts,
+    )
+    if not cands:
+        return {
+            "recycled_count": 0,
+            "freed_cash_usd": 0.0,
+            "recycled_positions": [],
+            "reason": "NO_RECYCLABLE_CARRY_CANDIDATES",
+            "new_net_edge_bps": float(d_new_edge_bps),
+        }
+
+    ex = getattr(harvester, "executor", None)
+    if ex is None:
+        return {
+            "recycled_count": 0,
+            "freed_cash_usd": 0.0,
+            "recycled_positions": [],
+            "reason": "NO_EXECUTOR",
+            "new_net_edge_bps": float(d_new_edge_bps),
+        }
+
+    d_lost_reb = Decimal(str(max(0.0, float(lost_rebate_bps))))
+    d_buf = Decimal(str(max(0.0, float(safety_buffer_bps))))
+    freed = 0.0
+    recycled_keys: List[str] = []
+    last_hurdle_bps = 0.0
+    active = getattr(harvester, "active_positions", None)
+    if not isinstance(active, dict):
+        active = {}
+    t_now = float(time.time() if now_ts is None else now_ts)
+
+    for c in cands:
+        if freed >= needed_cash_gap_usd:
+            break
+        pk = str(c.get("pos_key") or "")
+        pos = active.get(pk)
+        if not isinstance(pos, dict):
+            continue
+        mid = str(pos.get("market_id") or "")
+        if mid in {"6707502", "6707503"}:
+            continue
+        bid_px = float(c.get("bid_px") or 0.0)
+        min_sell_px = float(c.get("min_sell_px") or 0.0)
+        cost_ps = float(c.get("cost_per_share") or 0.0)
+        if bid_px <= 0.0 or bid_px < min_sell_px:
+            continue
+        if exit_spread_slippage_bps is not None:
+            d_slip = Decimal(str(max(0.0, float(exit_spread_slippage_bps))))
+        else:
+            raw_slip_bps = max(0.0, ((cost_ps - bid_px) / max(1e-6, cost_ps)) * 10_000.0) + max(
+                0.0, ((min_sell_px - cost_ps) / max(1e-6, cost_ps)) * 10_000.0
+            )
+            d_slip = Decimal(str(raw_slip_bps))
+        req_bps = (d_slip + d_lost_reb + d_buf).quantize(Decimal("0.01"), rounding=ROUND_CEILING)
+        last_hurdle_bps = float(req_bps)
+        if not (d_new_edge_bps > req_bps):
+            continue
+
+        tp_oid = str(pos.get("maker_tp_order_id") or "").strip()
+        if tp_oid and hasattr(ex, "cancel_order"):
+            try:
+                ex.cancel_order(tp_oid)
+            except Exception:
+                pass
+        sh = float(c.get("shares") or pos.get("shares") or 0.0)
+        if sh < 5.0:
+            continue
+        u_res = ex.execute_unwind_order(
+            token_id=str(pos.get("token_id") or ""),
+            shares=sh,
+            min_sell_price=bid_px,
+            market_id=mid,
+            tick_size=0.001 if (bid_px >= 0.96 or bid_px <= 0.04) else 0.01,
+        )
+        if isinstance(u_res, dict) and u_res.get("filled"):
+            proceeds = float(u_res.get("proceeds_usd") or (float(u_res.get("filled_shares") or sh) * float(u_res.get("avg_price") or bid_px)))
+            freed += max(0.0, proceeds)
+            recycled_keys.append(pk)
+            if hasattr(ex, "get_collateral_balance"):
+                try:
+                    c_now = ex.get_collateral_balance()
+                    if isinstance(c_now, (int, float)) and not isinstance(c_now, bool) and math.isfinite(float(c_now)):
+                        harvester._last_known_collateral = float(c_now)
+                except Exception:
+                    pass
+            if hasattr(harvester, "closed_trades") and isinstance(harvester.closed_trades, list):
+                harvester.closed_trades.append({
+                    "event": "CARRY_RECYCLE_EXIT_V2",
+                    "pos_key": pk,
+                    "challenger_sleeve": challenger_sleeve,
+                    "challenger_edge_bps": float(d_new_edge_bps),
+                    "hurdle_bps": float(req_bps),
+                    "proceeds_usd": round(proceeds, 4),
+                    "ts_unix": t_now,
+                })
+            active.pop(pk, None)
+
+    return {
+        "recycled_count": len(recycled_keys),
+        "freed_cash_usd": round(freed, 4),
+        "recycled_positions": recycled_keys,
+        "tier": "80_199bps_ceiling_gate",
+        "new_net_edge_bps": float(d_new_edge_bps),
+        "hurdle_bps": last_hurdle_bps,
+        "reason": "OK" if recycled_keys else "CEILING_HURDLE_VETO",
+    }
 
 
 class RebootPostOnlyModeGuard:
@@ -28985,12 +30744,7 @@ def extract_gamma_parent_event_id(m: Optional[Mapping[str, Any]]) -> str:
                 return v
     slug_s = str(m.get("slug") or "").strip()
     if slug_s:
-        m_sl = re.sub(
-            r"-(?:map-handicap|handicap|spread|total|over-under|o-u|1h|first-half|game-\d+|map-\d+|set-\d+)(?:-.*)?$",
-            "",
-            slug_s,
-            flags=re.IGNORECASE,
-        )
+        m_sl = _SLUG_MKT_SUFFIX_RE.sub("", slug_s)
         if m_sl and m_sl != slug_s:
             return m_sl
     return ""
@@ -29010,7 +30764,7 @@ def extract_sll_event_group_key(cand: Optional[Mapping[str, Any]]) -> str:
         if not v:
             continue
         if v.upper().startswith(_SYNTH_EVENT_ID_PREFIXES):
-            v_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", v, flags=re.IGNORECASE)
+            v_clean = _UNWRESID_SFX_RE.sub("", v)
             m_emb = _EMBEDDED_EVT_RE.match(v_clean)
             if m_emb:
                 return f"EVT:{m_emb.group(1)}"
@@ -29019,25 +30773,17 @@ def extract_sll_event_group_key(cand: Optional[Mapping[str, Any]]) -> str:
     for dk_field in ("dedupe_key", "pair_dedupe_key", "box_id", "trade_id"):
         dk_v = str(cand.get(dk_field) or "").strip()
         if dk_v:
-            dk_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", dk_v, flags=re.IGNORECASE)
+            dk_clean = _UNWRESID_SFX_RE.sub("", dk_v)
             m_dk = _DEDUPE_EVT_RE.match(dk_clean) or _EMBEDDED_EVT_RE.match(dk_clean)
             if m_dk:
                 return f"EVT:{m_dk.group(1)}"
     q_txt = str(cand.get("question") or "").strip()
     exp_i = int(float(cand.get("expiry_ts") or cand.get("leg_a_expiry_ts") or cand.get("candle_expiry_ts") or 0.0))
     if q_txt:
-        q_clean = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", q_txt)
-        m_vs = re.search(
-            r"([A-Za-z0-9 .'\-]{2,28}?)\s+vs\.?\s+([A-Za-z0-9 .'\-]{2,28}?)(?=\s*(?:[:\-–|?]|$|\b(?:map|game|set|total|handicap|spread|o/u|over|under|bo\d)\b))",
-            q_clean,
-            flags=re.IGNORECASE,
-        )
+        q_clean = _BRACKET_PAREN_RE.sub(" ", q_txt)
+        m_vs = _VS_Q_RE.search(q_clean)
         if m_vs:
-            t1 = re.sub(
-                r"(?i)^.*\b(?:(?:game|map|set)\s+\d+|handicap|spread|total|winner|moneyline)\s*[:\-–|]*\s*",
-                "",
-                m_vs.group(1),
-            ).strip(" :-_|")
+            t1 = _VS_T1_PFX_RE.sub("", m_vs.group(1)).strip(" :-_|")
             t2 = m_vs.group(2).strip(" :-_|")
             if len(t1) >= 2 and len(t2) >= 2:
                 pair_k = " VS ".join(sorted((t1.upper(), t2.upper())))
@@ -29049,21 +30795,17 @@ def extract_sll_event_group_key(cand: Optional[Mapping[str, Any]]) -> str:
     lbl = str(cand.get("leg_a_label") or cand.get("title") or "").strip()
     ast_s = str(cand.get("asset") or "").strip().upper()
     if lbl and lbl.lower() not in {"lock", "bundle", "resid", "clinch_ws_snipe"}:
-        base_lbl = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", lbl)
-        base_lbl = re.sub(r"(?i)^\s*(?:exact\s+score|spread|total|over/under|o/u)\s*[:\-–|]*\s*", "", base_lbl)
-        base_lbl = re.sub(r"(?i)\b(?:game|map|set)\s+\d+\s*[:\-–|]*\s*", " ", base_lbl)
-        base_lbl = re.sub(r"(?i)\b(?:exact\s+score|dead\s+no|reward\s+carry\s+no)\b.*$", "", base_lbl)
-        base_lbl = re.sub(r"\s+\d+\s*[-:]\s*\d+(?:\s*°?[CFcf%])?\b", " vs ", base_lbl)
-        base_lbl = re.sub(r"[:\-–|]\s*(?:>=|<=|>|<)?\s*-?\d+(?:\.\d+)?\s*(?:°?[CFcf%]|pts|goals)?.*$", "", base_lbl)
-        base_lbl = re.sub(r"\s+", " ", base_lbl).strip(" :-_|")
-        m_lbl_vs = re.search(
-            r"([A-Za-z0-9 .'\-]{2,28}?)\s+vs\.?\s+([A-Za-z0-9 .'\-]{2,28}?)(?=\s*(?:[:\-–|?]|$|\b(?:total|handicap|spread|o/u|over|under|bo\d|winner|yes|no)\b))",
-            base_lbl,
-            flags=re.IGNORECASE,
-        )
+        base_lbl = _BRACKET_PAREN_RE.sub(" ", lbl)
+        base_lbl = _LBL_PFX_RE.sub("", base_lbl)
+        base_lbl = _LBL_GAME_RE.sub(" ", base_lbl)
+        base_lbl = _LBL_SFX_RE.sub("", base_lbl)
+        base_lbl = _LBL_SCORE_RE.sub(" vs ", base_lbl)
+        base_lbl = _LBL_TAIL_NUM_RE.sub("", base_lbl)
+        base_lbl = _WHITESPACE_RUN_RE.sub(" ", base_lbl).strip(" :-_|")
+        m_lbl_vs = _LBL_VS_RE.search(base_lbl)
         if m_lbl_vs:
-            lt1 = re.sub(r"(?i)^.*\b(?:esports|dota\s*2|cs2|lol|valorant|nba|nfl|nhl|mlb|soccer|tennis|sports_child_moneyline|sports_child_totals)\s+", "", m_lbl_vs.group(1)).strip(" :-_|")
-            lt2 = re.sub(r"(?i)\s+\b(?:yes|no)\b.*$", "", m_lbl_vs.group(2)).strip(" :-_|")
+            lt1 = _LBL_SPORT_PFX_RE.sub("", m_lbl_vs.group(1)).strip(" :-_|")
+            lt2 = _LBL_YESNO_SFX_RE.sub("", m_lbl_vs.group(2)).strip(" :-_|")
             if len(lt1) >= 2 and len(lt2) >= 2:
                 pair_lk = " VS ".join(sorted((lt1.upper(), lt2.upper())))
                 return f"EVTMATCH:{pair_lk}:{exp_i // 7200}"
@@ -29098,7 +30840,7 @@ def extract_canonical_event_keys(
         if not egk_body.upper().startswith(_SYNTH_EVENT_ID_PREFIXES):
             out.add(egk if ":" in egk else f"EVT:{egk}")
         else:
-            egk_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", egk_body, flags=re.IGNORECASE)
+            egk_clean = _UNWRESID_SFX_RE.sub("", egk_body)
             m_egk = _EMBEDDED_EVT_RE.match(egk_clean)
             if m_egk:
                 out.add(f"EVT:{m_egk.group(1)}")
@@ -29108,7 +30850,7 @@ def extract_canonical_event_keys(
         if not v:
             continue
         if v.upper().startswith(_SYNTH_EVENT_ID_PREFIXES):
-            v_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", v, flags=re.IGNORECASE)
+            v_clean = _UNWRESID_SFX_RE.sub("", v)
             m_emb = _EMBEDDED_EVT_RE.match(v_clean)
             if m_emb:
                 out.add(f"EVT:{m_emb.group(1)}")
@@ -29118,7 +30860,7 @@ def extract_canonical_event_keys(
     for dk_field in ("dedupe_key", "pair_dedupe_key", "box_id", "trade_id"):
         dk_v = str(cand.get(dk_field) or "").strip()
         if dk_v:
-            dk_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", dk_v, flags=re.IGNORECASE)
+            dk_clean = _UNWRESID_SFX_RE.sub("", dk_v)
             m_dk = _DEDUPE_EVT_RE.match(dk_clean) or _EMBEDDED_EVT_RE.match(dk_clean)
             if m_dk:
                 out.add(f"EVT:{m_dk.group(1)}")
@@ -29156,18 +30898,10 @@ def extract_canonical_event_keys(
     exp_i = int(float(cand.get("expiry_ts") or cand.get("leg_a_expiry_ts") or cand.get("candle_expiry_ts") or 0.0))
     q_txt = str(cand.get("question") or "").strip()
     if q_txt:
-        q_clean = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", q_txt)
-        m_vs = re.search(
-            r"([A-Za-z0-9 .'\-]{2,28}?)\s+vs\.?\s+([A-Za-z0-9 .'\-]{2,28}?)(?=\s*(?:[:\-–|?]|$|\b(?:map|game|set|total|handicap|spread|o/u|over|under|bo\d)\b))",
-            q_clean,
-            flags=re.IGNORECASE,
-        )
+        q_clean = _BRACKET_PAREN_RE.sub(" ", q_txt)
+        m_vs = _VS_Q_RE.search(q_clean)
         if m_vs:
-            t1 = re.sub(
-                r"(?i)^.*\b(?:(?:game|map|set)\s+\d+|handicap|spread|total|winner|moneyline)\s*[:\-–|]*\s*",
-                "",
-                m_vs.group(1),
-            ).strip(" :-_|")
+            t1 = _VS_T1_PFX_RE.sub("", m_vs.group(1)).strip(" :-_|")
             t2 = m_vs.group(2).strip(" :-_|")
             if len(t1) >= 2 and len(t2) >= 2:
                 pair_k = " VS ".join(sorted((t1.upper(), t2.upper())))
@@ -29176,25 +30910,17 @@ def extract_canonical_event_keys(
     lbl = str(cand.get("leg_a_label") or cand.get("title") or "").strip()
     ast_s = str(cand.get("asset") or "").strip().upper()
     if lbl and lbl.lower() not in {"lock", "bundle", "resid", "clinch_ws_snipe"}:
-        base_lbl = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", lbl)
-        base_lbl = re.sub(r"(?i)^\s*(?:exact\s+score|spread|total|over/under|o/u)\s*[:\-–|]*\s*", "", base_lbl)
-        base_lbl = re.sub(r"(?i)\b(?:game|map|set)\s+\d+\s*[:\-–|]*\s*", " ", base_lbl)
-        base_lbl = re.sub(r"(?i)\b(?:exact\s+score|dead\s+no|reward\s+carry\s+no)\b.*$", "", base_lbl)
-        base_lbl = re.sub(r"\s+\d+\s*[-:]\s*\d+(?:\s*°?[CFcf%])?\b", " vs ", base_lbl)
-        base_lbl = re.sub(r"[:\-–|]\s*(?:>=|<=|>|<)?\s*-?\d+(?:\.\d+)?\s*(?:°?[CFcf%]|pts|goals)?.*$", "", base_lbl)
-        base_lbl = re.sub(r"\s+", " ", base_lbl).strip(" :-_|")
-        m_lbl_vs = re.search(
-            r"([A-Za-z0-9 .'\-]{2,28}?)\s+vs\.?\s+([A-Za-z0-9 .'\-]{2,28}?)(?=\s*(?:[:\-–|?]|$|\b(?:total|handicap|spread|o/u|over|under|bo\d|winner|yes|no)\b))",
-            base_lbl,
-            flags=re.IGNORECASE,
-        )
+        base_lbl = _BRACKET_PAREN_RE.sub(" ", lbl)
+        base_lbl = _LBL_PFX_RE.sub("", base_lbl)
+        base_lbl = _LBL_GAME_RE.sub(" ", base_lbl)
+        base_lbl = _LBL_SFX_RE.sub("", base_lbl)
+        base_lbl = _LBL_SCORE_RE.sub(" vs ", base_lbl)
+        base_lbl = _LBL_TAIL_NUM_RE.sub("", base_lbl)
+        base_lbl = _WHITESPACE_RUN_RE.sub(" ", base_lbl).strip(" :-_|")
+        m_lbl_vs = _LBL_VS_RE.search(base_lbl)
         if m_lbl_vs:
-            lt1 = re.sub(
-                r"(?i)^.*\b(?:esports|dota\s*2|cs2|lol|valorant|nba|nfl|nhl|mlb|soccer|tennis|sports_child_moneyline|sports_child_totals)\s+",
-                "",
-                m_lbl_vs.group(1),
-            ).strip(" :-_|")
-            lt2 = re.sub(r"(?i)\s+\b(?:yes|no)\b.*$", "", m_lbl_vs.group(2)).strip(" :-_|")
+            lt1 = _LBL_SPORT_PFX_RE.sub("", m_lbl_vs.group(1)).strip(" :-_|")
+            lt2 = _LBL_YESNO_SFX_RE.sub("", m_lbl_vs.group(2)).strip(" :-_|")
             if len(lt1) >= 2 and len(lt2) >= 2:
                 pair_lk = " VS ".join(sorted((lt1.upper(), lt2.upper())))
                 out.add(f"EVTMATCH:{pair_lk}:{exp_i // 7200}")
@@ -32007,14 +33733,10 @@ def _bond1_boilerplate_fast_season_eligible(market_or_cand: Any, risk: Mapping[s
         full_txt = q_txt
     if _INDIV_OR_3WAY_ML_DISPUTE_RE.search(q_txt):
         return False
-    if re.search(r"\b(retire(?:s|d|ment)|walkover|disqualif|50[\s/-]*50)\b", full_txt, re.IGNORECASE):
+    if _DISPUTE_WALKOVER_RE.search(full_txt):
         return False
     reasons = set(risk.get("reasons") or ())
-    if reasons and not re.search(
-        r"\b(corner|over|under|o/u|total|spread|handicap|card|both\s+teams\s+to\s+score|btts)\b",
-        q_txt,
-        re.IGNORECASE,
-    ):
+    if reasons and not _BOILERPLATE_PROP_RE.search(q_txt):
         return False
     return True
 
@@ -34700,11 +36422,11 @@ async def run_protocol_v2_daemon_scan(
                         if not isinstance(mk_m, dict) or mk_m.get("closed") or mk_m.get("acceptingOrders") is False:
                             continue
                         q_m = str(mk_m.get("question") or mk_m.get("groupItemTitle") or "")
-                        m_cnt = re.search(r"(\d+)\s*\+|at\s+least\s+(\d+)|(\d+)\s+or\s+more", q_m, flags=re.I)
+                        m_cnt = _MENTION_CNT_RE.search(q_m)
                         if not m_cnt:
                             continue
                         thr = int(next(g for g in m_cnt.groups() if g is not None))
-                        stem = re.sub(r"\d+\s*\+|at\s+least\s+\d+|\d+\s+or\s+more", "", q_m.lower()).strip()
+                        stem = _MENTION_STEM_RE.sub("", q_m.lower()).strip()
                         raw_tks = mk_m.get("clobTokenIds")
                         toks_m = json.loads(raw_tks) if isinstance(raw_tks, str) and raw_tks.startswith("[") else (raw_tks if isinstance(raw_tks, list) else [])
                         end_s = str(mk_m.get("endDate") or ev_m.get("endDate") or "")
@@ -34775,6 +36497,79 @@ async def run_protocol_v2_daemon_scan(
                         )
     except Exception as exc_m1:
         logger.debug(f"Protocol V2 MENTION1 scan notice: {exc_m1}")
+
+    # Pillar 4b: RB-N5 Native `cumulativeMarkets=True` `CAL1` Deadline Monotonicity Ladders
+    try:
+        is_mocked_n5 = bool(getattr(daemon, "single_scan", False) or ("fetch_json" in getattr(daemon, "__dict__", {})))
+        rb_n5_evts = getattr(daemon, "_rb_n5_cumulative_events", None) or getattr(daemon, "_gamma_events_cache", None)
+        if not isinstance(rb_n5_evts, list) and (now - float(daemon.__dict__.get("_last_rb_n5_disc_ts", 0.0))) >= 180.0 and not is_mocked_n5:
+            daemon.__dict__["_last_rb_n5_disc_ts"] = now
+            gamma_u_n5 = getattr(daemon, "GAMMA_URL", "https://gamma-api.polymarket.com")
+            fetched_n5 = await daemon.fetch_json(f"{gamma_u_n5}/events?active=true&closed=false&limit=100", timeout=4.0)
+            if isinstance(fetched_n5, list):
+                rb_n5_evts = [ev for ev in fetched_n5 if isinstance(ev, Mapping) and bool(ev.get("cumulativeMarkets"))]
+                daemon.__dict__["_rb_n5_cumulative_events_cache"] = rb_n5_evts
+        elif not isinstance(rb_n5_evts, list):
+            rb_n5_evts = daemon.__dict__.get("_rb_n5_cumulative_events_cache")
+        if isinstance(rb_n5_evts, list) and rb_n5_evts:
+            n5_cands = extract_rb_n5_cumulative_cal1_candidates(rb_n5_evts, now_ts=now)
+            if n5_cands:
+                n5_toks = [
+                    tk
+                    for grp in n5_cands[:20]
+                    for lg in grp.get("legs", ())
+                    for tk in (str(lg.get("yes_token_id") or ""), str(lg.get("no_token_id") or ""))
+                    if tk
+                ]
+                n5_bks: Dict[str, Any] = {}
+                if hasattr(daemon, "fetch_books_batch") and n5_toks:
+                    n5_bks = await daemon.fetch_books_batch(list(dict.fromkeys(n5_toks))[:80], timeout=2.5)
+                for n5_hit in detect_rb_n5_cumulative_cal1_opportunities(n5_cands, n5_bks or {}, now_ts=now):
+                    opps_out.append({
+                        "sleeve": "CAL1_RB_N5_CUMULATIVE_BOX",
+                        "market": f"RB-N5 CAL1 {str(n5_hit.get('title') or '')[:38]}",
+                        "ask_vwap": float(n5_hit["cost_per_share"]),
+                        "p_model": 1.0,
+                        "net_edge": float(n5_hit["net_edge_per_share"]),
+                        "l1_usd": round(float(n5_hit.get("max_fillable_usd") or 20.0), 2),
+                    })
+                    if hasattr(daemon, "emit_live_two_leg_box_candidate"):
+                        ea_n5, lb_n5 = n5_hit["early_leg"], n5_hit["late_leg"]
+                        daemon.emit_live_two_leg_box_candidate(
+                            box_type="CALENDAR_DOMINANCE",
+                            sleeve_source="CAL1_RB_N5_CUMULATIVE_BOX",
+                            asset=str(n5_hit.get("asset") or "CAL1"),
+                            dedupe_key=f"RBN5_CAL1_{ea_n5['market_id']}_{lb_n5['market_id']}",
+                            leg_a={
+                                "token_id": ea_n5["yes_token_id"],
+                                "opp_token_id": ea_n5["no_token_id"],
+                                "label": f"CUM_EARLY_{int(ea_n5['end_ts'])}",
+                                "side": "YES",
+                                "market_id": ea_n5["market_id"],
+                                "condition_id": ea_n5["condition_id"],
+                                "fee_rate": ea_n5["fee_rate"],
+                                "fee_exponent": ea_n5["fee_exponent"],
+                                "end_ts": ea_n5["end_ts"],
+                            },
+                            leg_b={
+                                "token_id": lb_n5["no_token_id"],
+                                "opp_token_id": lb_n5["yes_token_id"],
+                                "label": f"CUM_LATE_{int(lb_n5['end_ts'])}",
+                                "side": "NO",
+                                "market_id": lb_n5["market_id"],
+                                "condition_id": lb_n5["condition_id"],
+                                "fee_rate": lb_n5["fee_rate"],
+                                "fee_exponent": lb_n5["fee_exponent"],
+                                "end_ts": lb_n5["end_ts"],
+                            },
+                            bk_a=n5_hit["bk_early_yes"],
+                            bk_b=n5_hit["bk_late_no"],
+                            close_ts=float(ea_n5["end_ts"]),
+                            now_ts=now,
+                            max_box_cost_override=0.992,
+                        )
+    except Exception as exc_n5:
+        logger.debug(f"Protocol V2 RB-N5 cumulative CAL1 notice: {exc_n5}")
 
     # Pillar 5: Strictly Pre-Match Dead-Ball Soccer (`DC1` 3-Way Parity & `LP_COMP1` Triangles, `now <= kickoff_ts - 300s`)
     try:
@@ -38571,17 +40366,85 @@ _TOPIC_OO_DISPUTE_PRICE: str = "0x5165909c3d1c01c5d1e121ac6f6d01dda1ba24bc9e1f97
 _ANC_MARKET_ID_RE = re.compile(r"market_id:\s*(\d{5,9})")
 
 
+def _p2_extract_mids_from_ws_events(
+    ws_events: Sequence[Mapping[str, Any]],
+) -> Tuple[List[str], List[str], int]:
+    proposed_ids: List[str] = []
+    disputed_ids: List[str] = []
+    seen_p: Set[str] = set()
+    seen_d: Set[str] = set()
+    max_bn = 0
+    for evt in ws_events or ():
+        if not isinstance(evt, Mapping) or bool(evt.get("quarantined_d001")):
+            continue
+        kind = str(evt.get("event_kind") or "").upper()
+        bn_v = int(evt.get("block_number") or 0)
+        if bn_v > max_bn:
+            max_bn = bn_v
+        mids_ev = list(evt.get("market_ids") or ())
+        single_mid = str(evt.get("market_id") or "").strip()
+        if single_mid:
+            mids_ev.append(single_mid)
+        for m_raw in mids_ev:
+            m_id = str(m_raw or "").strip()
+            if not m_id or m_id in {"6707502", "6707503"}:
+                continue
+            if kind in {"DISPUTED", "DISPUTE_PRICE", "DISPUTEPRICE"}:
+                if m_id not in seen_d:
+                    seen_d.add(m_id)
+                    disputed_ids.append(m_id)
+            elif kind in {"PROPOSED", "PROPOSE_PRICE", "PROPOSEPRICE"}:
+                if m_id not in seen_p:
+                    seen_p.add(m_id)
+                    proposed_ids.append(m_id)
+    return proposed_ids, disputed_ids, max_bn
+
+
+def _p2_rpc_post_json_sync(rpc: str, payload: Mapping[str, Any], *, timeout: float) -> Any:
+    body_bytes = _p2_dumps_json_bytes(payload)
+    # Preserve monkeypatched urllib tests while using persistent keep-alive requests.Session in live runs.
+    urlopen_is_patched = getattr(urllib.request.urlopen, "__module__", "urllib.request") != "urllib.request"
+    if not urlopen_is_patched:
+        sess = _get_oo_http_session()
+        if sess is not None:
+            resp = sess.post(rpc, data=body_bytes, timeout=timeout)
+            return _p2_loads_json_bytes(resp.content)
+    req = urllib.request.Request(
+        rpc,
+        body_bytes,
+        {"Content-Type": "application/json", "User-Agent": "Dominus/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r_obj:
+        return _p2_loads_json_bytes(r_obj.read())
+
+
 def _poll_polygon_oo_proposal_and_dispute_mids_sync(
     last_bn: int,
     rpc_url: Optional[str] = None,
     timeout: float = 4.0,
+    *,
+    scoped_logs_ws: Any = None,
 ) -> Tuple[int, List[str], List[str]]:
     """
     Polls Polygon `OptimisticOracleV2` (`MOOV2` + `OOV2`) `ProposePrice` and `DisputePrice` logs:
-      - Extracts every newly proposed `market_id` from UTF-8 `ancillaryData` (including low-volume
-        Challenger tennis, Europa League props, NCAA, and esports derivatives invisible to Gamma top-1500).
-      - Extracts any disputed `market_id` within seconds of block inclusion for instant cache eviction.
+      - Consumes low-latency `PolygonScopedLogsWs` drained events first when connected/cached.
+      - Uses persistent `requests.Session` + `_orjson.loads` on JSON-RPC catch-up (`eth_blockNumber` + `eth_getLogs`).
+      - Quarantines `D-001` `KMIA` (`6707502`/`6707503`) cleanly.
     """
+    ws_client = scoped_logs_ws if scoped_logs_ws is not None else _SHARED_P2_POLYGON_LOGS_WS
+    ws_proposed: List[str] = []
+    ws_disputed: List[str] = []
+    ws_max_bn = 0
+    if ws_client is not None and hasattr(ws_client, "drain_events"):
+        try:
+            ws_evts = ws_client.drain_events(max_items=128)
+            ws_proposed, ws_disputed, ws_max_bn = _p2_extract_mids_from_ws_events(ws_evts)
+            ws_healthy = bool(hasattr(ws_client, "is_healthy") and ws_client.is_healthy(max_silence_sec=12.0))
+            if ws_healthy and (ws_proposed or ws_disputed) and rpc_url is None:
+                return max(last_bn, ws_max_bn), ws_proposed, ws_disputed
+        except Exception:
+            pass
+
     rpcs = [
         r
         for r in (
@@ -38594,13 +40457,12 @@ def _poll_polygon_oo_proposal_and_dispute_mids_sync(
     ]
     for rpc in rpcs:
         try:
-            req_bn = urllib.request.Request(
+            bn_res = _p2_rpc_post_json_sync(
                 rpc,
-                json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_blockNumber", "params": []}).encode("utf-8"),
-                {"Content-Type": "application/json", "User-Agent": "Dominus/1.0"},
+                {"jsonrpc": "2.0", "id": 1, "method": "eth_blockNumber", "params": []},
+                timeout=timeout,
             )
-            with urllib.request.urlopen(req_bn, timeout=timeout) as r_b:
-                bn_hex = (json.loads(r_b.read()) or {}).get("result")
+            bn_hex = (bn_res or {}).get("result")
             if not bn_hex:
                 continue
             bn = int(str(bn_hex), 16)
@@ -38610,16 +40472,16 @@ def _poll_polygon_oo_proposal_and_dispute_mids_sync(
             else:
                 from_bn = max(last_bn - 2, bn - 240)
                 if from_bn > bn:
-                    return bn, [], []
+                    return max(bn, ws_max_bn), ws_proposed, ws_disputed
                 windows = [(from_bn, bn)]
             logs: List[Any] = []
             any_ok = False
             for w_from, w_to in windows:
                 if w_from > w_to:
                     continue
-                req_lg = urllib.request.Request(
-                    rpc,
-                    json.dumps(
+                try:
+                    lg_res = _p2_rpc_post_json_sync(
+                        rpc,
                         {
                             "jsonrpc": "2.0",
                             "id": 2,
@@ -38632,13 +40494,10 @@ def _poll_polygon_oo_proposal_and_dispute_mids_sync(
                                     "toBlock": hex(w_to),
                                 }
                             ],
-                        }
-                    ).encode("utf-8"),
-                    {"Content-Type": "application/json", "User-Agent": "Dominus/1.0"},
-                )
-                try:
-                    with urllib.request.urlopen(req_lg, timeout=timeout) as r_l:
-                        part = (json.loads(r_l.read()) or {}).get("result")
+                        },
+                        timeout=timeout,
+                    )
+                    part = (lg_res or {}).get("result")
                     if isinstance(part, list):
                         logs.extend(part)
                         any_ok = True
@@ -38646,10 +40505,10 @@ def _poll_polygon_oo_proposal_and_dispute_mids_sync(
                     continue
             if not any_ok:
                 continue
-            proposed_ids: List[str] = []
-            disputed_ids: List[str] = []
-            seen_p: Set[str] = set()
-            seen_d: Set[str] = set()
+            proposed_ids: List[str] = list(ws_proposed)
+            disputed_ids: List[str] = list(ws_disputed)
+            seen_p: Set[str] = set(proposed_ids)
+            seen_d: Set[str] = set(disputed_ids)
             for lg in logs:
                 if not isinstance(lg, Mapping):
                     continue
@@ -38660,6 +40519,8 @@ def _poll_polygon_oo_proposal_and_dispute_mids_sync(
                     continue
                 raw_txt = bytes.fromhex(data_hex[2:]).decode("utf-8", errors="ignore")
                 for m_id in _ANC_MARKET_ID_RE.findall(raw_txt):
+                    if m_id in {"6707502", "6707503"}:
+                        continue
                     if t0 == _TOPIC_OO_DISPUTE_PRICE:
                         if m_id not in seen_d:
                             seen_d.add(m_id)
@@ -38668,10 +40529,10 @@ def _poll_polygon_oo_proposal_and_dispute_mids_sync(
                         if m_id not in seen_p:
                             seen_p.add(m_id)
                             proposed_ids.append(m_id)
-            return bn, proposed_ids, disputed_ids
+            return max(bn, ws_max_bn), proposed_ids, disputed_ids
         except Exception:
             continue
-    return last_bn, [], []
+    return max(last_bn, ws_max_bn), ws_proposed, ws_disputed
 
 
 async def augment_uma_proposed_from_universe_and_polygon(
@@ -39411,6 +41272,17 @@ def desired_market_ws_tokens_impl(harvester: Any, now_ts: Optional[float] = None
             _trk_ws = getattr(harvester, "_stage_b_decay_tracker", None) or GLOBAL_DECAY_TRACKER
             for tk_d in _trk_ws.watched_token_ids(limit=64):
                 toks.append(tk_d)
+        except Exception:
+            pass
+    if bool(rb_gov.get("enable_dormant_fast_rescan_ws", True)):
+        try:
+            from src.polymarket_research.full_throttle_pipeline import load_dormant_fast_rescan_tokens
+
+            _rescan_path = getattr(harvester, "dormant_fast_rescan_path", None)
+            _rescan_age = float(rb_gov.get("dormant_fast_rescan_max_age_sec", 1800.0) or 1800.0)
+            for _tk_rs in load_dormant_fast_rescan_tokens(max_age_sec=_rescan_age, path=_rescan_path, now_ts=now_f):
+                if _tk_rs:
+                    toks.append(_tk_rs)
         except Exception:
             pass
     return list(dict.fromkeys(toks))[:total_cap]
@@ -41185,14 +43057,13 @@ def _hv__finish_single_leg_lock(
     if (
         not self.dry_run
         and collat_f < _core_clip_1l - 0.50
-        and _cand_net_1l <= 0.98005
+        and _cand_net_1l <= 0.99205
         and getattr(self.executor, "client", None) is not None
         and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
         and "execute_snipe_order" not in getattr(self.executor, "__dict__", {})
         and bool(_gov_rb_1l.get("enable_zero_loss_open_carry_velocity_recycle", True))
     ):
-        from src.polymarket_research.stage_c_zero_loss_velocity import recycle_open_zero_loss_carry_for_fast_arb
-        _rec_1l = recycle_open_zero_loss_carry_for_fast_arb(
+        _rec_1l = try_recycle_open_carry_for_fast_arb_v2(
             self,
             needed_cash_gap_usd=max(0.0, _core_clip_1l - collat_f),
             challenger_net_cost=_cand_net_1l,
@@ -41582,14 +43453,13 @@ def _hv__finish_negrisk_convert_arb(
     if (
         not self.dry_run
         and collat_f < _core_clip_nr - 0.50
-        and _cand_net_nr <= 0.98005
+        and _cand_net_nr <= 0.99205
         and getattr(self.executor, "client", None) is not None
         and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
         and "execute_snipe_order" not in getattr(self.executor, "__dict__", {})
         and bool(_gov_rb_nr.get("enable_zero_loss_open_carry_velocity_recycle", True))
     ):
-        from src.polymarket_research.stage_c_zero_loss_velocity import recycle_open_zero_loss_carry_for_fast_arb
-        _rec_nr = recycle_open_zero_loss_carry_for_fast_arb(
+        _rec_nr = try_recycle_open_carry_for_fast_arb_v2(
             self,
             needed_cash_gap_usd=max(0.0, _core_clip_nr - collat_f),
             challenger_net_cost=_cand_net_nr,
@@ -45406,7 +47276,7 @@ def maybe_emit_recorder_fast_riskless_ipc(
     return emitted
 
 # ======================================================================================
-# [16/67] MODULE: src/polymarket_research/polymarket_ws_streams.py
+# [16/68] MODULE: src/polymarket_research/polymarket_ws_streams.py
 # PURPOSE: Sub-ms CLOB Market, Perps Lead-Lag & Authenticated User L2 WebSocket Trackers
 # ======================================================================================
 
@@ -45483,6 +47353,7 @@ POLYBOLT_CRYPTO_SYMBOLS: Tuple[str, ...] = (
     "zecusd",
     "hypeusd",
     "xauusd",
+    "xagusd",
 )
 
 POLYBOLT_EQUITY_SYMBOLS: Tuple[str, ...] = (
@@ -46327,6 +48198,8 @@ class PolymarketChainlinkLiveStream:
         if d.get("topic") not in (
             "crypto_prices_chainlink",
             "crypto_prices_twap_sixty",
+            "crypto_prices",
+            "equity_prices",
             "forex_prices_chainlink",
             "metals_prices_chainlink",
         ):
@@ -46336,7 +48209,9 @@ class PolymarketChainlinkLiveStream:
         if not isinstance(pl, dict):
             return False
         raw_sym = str(pl.get("symbol") or "").strip().lower()
-        asset = CHAINLINK_SYMBOL_MAP.get(raw_sym)
+        asset = CHAINLINK_SYMBOL_MAP.get(raw_sym) or (
+            raw_sym.upper() if (topic == "equity_prices" and raw_sym.upper() in POLYBOLT_EQUITY_SYMBOLS) else None
+        )
         if not asset:
             return False
         ts_raw = pl.get("timestamp")
@@ -46573,6 +48448,8 @@ class PolymarketChainlinkLiveStream:
                 "subscriptions": [
                     {"topic": "crypto_prices_chainlink", "type": "*", "filters": ""},
                     {"topic": "crypto_prices_twap_sixty", "type": "*", "filters": ""},
+                    {"topic": "crypto_prices", "type": "*", "filters": ""},
+                    {"topic": "equity_prices", "type": "*", "filters": ""},
                 ],
             }
         )
@@ -46714,10 +48591,23 @@ class PolymarketClobMarketWsTracker:
         self._desired_tokens_ordered: List[str] = []
         self._books: Dict[str, Tuple[float, Dict[str, Any]]] = {}
         self._raw_levels: Dict[str, Tuple[Dict[float, float], Dict[float, float]]] = {}
+        self._numeric_books: Dict[str, Tuple[float, List[Tuple[float, float]], List[Tuple[float, float]]]] = {}
+        self._dirty_tokens: Set[str] = set()
+        self._last_rx_by_aid: Dict[str, float] = {}
+        self._lifecycle_events: Deque[Dict[str, Any]] = deque(maxlen=256)
         self._snapshot_tokens: Set[str] = set()
         self._tick_sizes: Dict[str, float] = {}
         self._sub_wakeup: Optional[asyncio.Event] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+    _FROZEN_KMIA_IDS = frozenset({"6707503", "6707502"})
+
+    def drain_lifecycle_events(self, max_items: int = 64) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        with self._lock:
+            while self._lifecycle_events and len(out) < max_items:
+                out.append(self._lifecycle_events.popleft())
+        return out
 
     def get_tick_size(self, token_id: str) -> Optional[float]:
         tok = str(token_id or "").strip()
@@ -46743,10 +48633,13 @@ class PolymarketClobMarketWsTracker:
                 added = True
             self._desired_tokens_ordered = ordered
             self._desired_tokens = clean
-            for stale in list(self._books.keys()):
+            for stale in list(set(self._books.keys()) | set(self._last_rx_by_aid.keys())):
                 if stale not in clean:
                     self._books.pop(stale, None)
                     self._raw_levels.pop(stale, None)
+                    self._numeric_books.pop(stale, None)
+                    self._dirty_tokens.discard(stale)
+                    self._last_rx_by_aid.pop(stale, None)
                     self._snapshot_tokens.discard(stale)
         if added:
             self._signal_sub_wakeup()
@@ -46775,15 +48668,68 @@ class PolymarketClobMarketWsTracker:
             except Exception:
                 pass
 
+    def _materialize_book_locked(self, aid: str, build_dict: bool = True) -> Optional[Dict[str, Any]]:
+        lvls = self._raw_levels.get(aid)
+        now_m = self._last_rx_by_aid.get(aid, time.monotonic())
+        if lvls is None:
+            entry = self._books.get(aid)
+            return entry[1] if entry is not None else None
+        b_map, a_map = lvls
+        num_entry = self._numeric_books.get(aid)
+        if aid in self._dirty_tokens or num_entry is None:
+            b_tups = sorted(
+                ((px, sz) for px, sz in b_map.items() if px > 0.0 and sz > 0.0),
+                key=lambda kv: -kv[0],
+            )[:15]
+            a_tups = sorted(
+                ((px, sz) for px, sz in a_map.items() if px > 0.0 and sz > 0.0),
+                key=lambda kv: kv[0],
+            )[:15]
+            self._numeric_books[aid] = (now_m, b_tups, a_tups)
+            self._dirty_tokens.discard(aid)
+        else:
+            _, b_tups, a_tups = num_entry
+        if not build_dict:
+            return None
+        bk_dict: Dict[str, Any] = {
+            "asset_id": aid,
+            "bids": [{"price": f"{px:.4f}", "size": f"{sz:.4f}"} for px, sz in b_tups],
+            "asks": [{"price": f"{px:.4f}", "size": f"{sz:.4f}"} for px, sz in a_tups],
+            "is_partial_delta": (aid not in self._snapshot_tokens),
+        }
+        if aid in self._tick_sizes:
+            bk_dict["minimum_tick_size"] = self._tick_sizes[aid]
+        self._books[aid] = (now_m, bk_dict)
+        return bk_dict
+
+    def get_numeric_book(self, token_id: str, max_age_sec: float = 2.0) -> Optional[Dict[str, Any]]:
+        tok = str(token_id or "").strip()
+        if not tok:
+            return None
+        now_m = time.monotonic()
+        with self._lock:
+            ts_rx = self._last_rx_by_aid.get(tok)
+            if ts_rx is None or (now_m - ts_rx) > max_age_sec:
+                return None
+            self._materialize_book_locked(tok, build_dict=False)
+            num_e = self._numeric_books.get(tok)
+            if num_e is None:
+                return None
+            return {"asset_id": tok, "bids": num_e[1], "asks": num_e[2], "is_partial_delta": (tok not in self._snapshot_tokens)}
+
     def get_book(self, token_id: str, max_age_sec: float = 2.0) -> Optional[Dict[str, Any]]:
         tok = str(token_id or "").strip()
         if not tok:
             return None
         now_m = time.monotonic()
         with self._lock:
+            ts_rx = self._last_rx_by_aid.get(tok)
             entry = self._books.get(tok)
-            if entry is None or (now_m - entry[0]) > max_age_sec:
+            eff_ts = ts_rx if ts_rx is not None else (entry[0] if entry is not None else None)
+            if eff_ts is None or (now_m - eff_ts) > max_age_sec:
                 return None
+            if tok in self._dirty_tokens or entry is None:
+                return self._materialize_book_locked(tok, build_dict=True)
             return entry[1]
 
     def seed_book(self, token_id: str, book: Any, *, max_existing_age_sec: float = 2.0) -> bool:
@@ -46817,6 +48763,7 @@ class PolymarketClobMarketWsTracker:
         items = data if isinstance(data, list) else ([data] if isinstance(data, dict) else [])
 
         changed_books: List[Tuple[str, Dict[str, Any]]] = []
+        changed_aids: List[str] = []
         tick_changes: List[Tuple[str, float]] = []
         matched_any = False
         with self._lock:
@@ -46824,6 +48771,33 @@ class PolymarketClobMarketWsTracker:
                 if not isinstance(item, dict):
                     continue
                 ev = str(item.get("event_type") or "")
+                if ev in ("market_resolved", "new_market"):
+                    m_id = str(item.get("market") or item.get("market_id") or "").strip()
+                    if m_id in self._FROZEN_KMIA_IDS:
+                        continue
+                    self._lifecycle_events.append(
+                        {
+                            "event_type": ev,
+                            "market": m_id,
+                            "condition_id": str(item.get("condition_id") or item.get("market") or "").strip(),
+                            "asset_id": str(item.get("asset_id") or "").strip(),
+                            "winning_outcome": item.get("winning_outcome"),
+                            "winning_asset_id": item.get("winning_asset_id"),
+                            "assets_ids": item.get("assets_ids") or [],
+                            "rx_ts": time.time(),
+                        }
+                    )
+                    matched_any = True
+                    continue
+                if ev == "best_bid_ask":
+                    aid_b = str(item.get("asset_id") or "").strip()
+                    if aid_b and aid_b in self._desired_tokens:
+                        bb_f = _safe_float(item.get("best_bid"), 0.0)
+                        self._last_rx_by_aid[aid_b] = now_m
+                        matched_any = True
+                        if bb_f >= self._recycle_bid_trigger:
+                            urgent_hits.append((aid_b, bb_f))
+                    continue
                 if ev == "tick_size_change" or "new_tick_size" in item:
                     aid = str(item.get("asset_id") or "").strip()
                     tk_f = _safe_float(
@@ -46846,14 +48820,10 @@ class PolymarketClobMarketWsTracker:
                         if 0.0001 <= snap_tk <= 0.1:
                             prev_tk = self._tick_sizes.get(aid)
                             self._tick_sizes[aid] = snap_tk
-                            if aid in self._books:
-                                self._books[aid][1]["minimum_tick_size"] = snap_tk
                             if prev_tk is None or abs(prev_tk - snap_tk) > 1e-7:
                                 tick_changes.append((aid, snap_tk))
-                        elif aid in self._tick_sizes and aid in self._books:
-                            self._books[aid][1]["minimum_tick_size"] = self._tick_sizes[aid]
-                        if self._on_book_change is not None and aid in self._books:
-                            changed_books.append((aid, self._books[aid][1]))
+                        if self._on_book_change is not None:
+                            changed_aids.append(aid)
                         if bb >= self._recycle_bid_trigger:
                             urgent_hits.append((aid, bb))
                 elif ev == "price_change" or "price_changes" in item:
@@ -46866,12 +48836,15 @@ class PolymarketClobMarketWsTracker:
                     for aid, pcs in by_aid.items():
                         matched_any = True
                         bb = self._apply_changes_locked(aid, pcs, now_m)
-                        if aid in self._tick_sizes and aid in self._books:
-                            self._books[aid][1]["minimum_tick_size"] = self._tick_sizes[aid]
-                        if self._on_book_change is not None and aid in self._books:
-                            changed_books.append((aid, self._books[aid][1]))
+                        if self._on_book_change is not None and aid in self._last_rx_by_aid:
+                            changed_aids.append(aid)
                         if bb >= self._recycle_bid_trigger:
                             urgent_hits.append((aid, bb))
+            if self._on_book_change is not None and changed_aids:
+                for aid in dict.fromkeys(changed_aids):
+                    bk_m = self._materialize_book_locked(aid, build_dict=True)
+                    if bk_m is not None:
+                        changed_books.append((aid, bk_m))
         self._last_payload_matched = matched_any
 
         if self._on_tick_size_change is not None and tick_changes:
@@ -46906,26 +48879,11 @@ class PolymarketClobMarketWsTracker:
         return bool(urgent_hits)
 
     def _rebuild_locked(self, aid: str, b_map: Dict[float, float], a_map: Dict[float, float], now_m: float) -> float:
-        bids = [
-            {"price": f"{px:.4f}", "size": f"{sz:.4f}"}
-            for px, sz in sorted(b_map.items(), key=lambda kv: -kv[0])[:15]
-            if px > 0.0 and sz > 0.0
-        ]
-        asks = [
-            {"price": f"{px:.4f}", "size": f"{sz:.4f}"}
-            for px, sz in sorted(a_map.items(), key=lambda kv: kv[0])[:15]
-            if px > 0.0 and sz > 0.0
-        ]
-        best_b = float(bids[0]["price"]) if bids else 0.0
-        self._books[aid] = (
-            now_m,
-            {
-                "asset_id": aid,
-                "bids": bids,
-                "asks": asks,
-                "is_partial_delta": (aid not in self._snapshot_tokens),
-            },
-        )
+        # Lazy sort/materialization (`v6.2`): mark token dirty instead of sorting & allocating 30 dicts + 60 strings per delta.
+        self._dirty_tokens.add(aid)
+        self._last_rx_by_aid[aid] = now_m
+        self._books.pop(aid, None)
+        best_b = max((px for px, sz in b_map.items() if px > 0.0 and sz > 0.0), default=0.0)
         return best_b
 
     def _apply_snapshot_locked(self, aid: str, b_raw: List[Any], a_raw: List[Any], now_m: float) -> float:
@@ -46998,7 +48956,10 @@ class PolymarketClobMarketWsTracker:
                     with self._lock:
                         self._books.clear()
                         self._raw_levels.clear()
-                    await ws.send(json.dumps({"assets_ids": desired_0, "type": "market"}))
+                        self._numeric_books.clear()
+                        self._dirty_tokens.clear()
+                        self._last_rx_by_aid.clear()
+                    await ws.send(json.dumps({"assets_ids": desired_0, "type": "market", "custom_feature_enabled": True}))
                     backoff = 0.5
                     last_chk = time.monotonic()
                     last_rx = last_chk
@@ -47024,7 +48985,7 @@ class PolymarketClobMarketWsTracker:
                                 room_sub = max(0, 495 - len(subscribed))
                                 added = missing_sub[:room_sub]
                                 if added:
-                                    await ws.send(json.dumps({"assets_ids": added, "operation": "subscribe"}))
+                                    await ws.send(json.dumps({"assets_ids": added, "operation": "subscribe", "custom_feature_enabled": True}))
                                     subscribed.update(added)
                                 elif len(subscribed - cur) > 16 or bool(missing_sub):
                                     break
@@ -47209,6 +49170,41 @@ class PolymarketShardedClobMarketWsTracker:
     def shard_token_counts(self) -> List[int]:
         return [len(sh._desired_tokens) for sh in self._shards]
 
+    def drain_lifecycle_events(self, max_items: int = 64) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        seen: Set[Tuple[str, str, str, str]] = set()
+        for sh in self._shards:
+            for ev in sh.drain_lifecycle_events(max_items):
+                sig = (
+                    str(ev.get("event_type") or ""),
+                    str(ev.get("market") or ""),
+                    str(ev.get("condition_id") or ""),
+                    str(ev.get("asset_id") or ""),
+                )
+                if sig in seen:
+                    continue
+                seen.add(sig)
+                out.append(ev)
+                if len(out) >= max_items:
+                    return out
+        return out
+
+    def get_numeric_book(self, token_id: str, max_age_sec: float = 2.0) -> Optional[Dict[str, Any]]:
+        tok = str(token_id or "").strip()
+        if not tok:
+            return None
+        with self._lock:
+            sh_idx = self._token_to_shard.get(tok)
+        if sh_idx is not None and 0 <= sh_idx < self.num_shards:
+            bk = self._shards[sh_idx].get_numeric_book(tok, max_age_sec=max_age_sec)
+            if bk is not None:
+                return bk
+        for sh in self._shards:
+            bk = sh.get_numeric_book(tok, max_age_sec=max_age_sec)
+            if bk is not None:
+                return bk
+        return None
+
     async def run_forever(self, stop_check: Optional[Callable[[], bool]] = None) -> None:
         await asyncio.gather(*(sh.run_forever(stop_check) for sh in self._shards))
 
@@ -47390,7 +49386,7 @@ class PolymarketPerpsLeadLagStream:
         self._stop_flag = True
 
 # ======================================================================================
-# [17/67] MODULE: src/polymarket_research/polymarket_direct_feeds.py
+# [17/68] MODULE: src/polymarket_research/polymarket_direct_feeds.py
 # PURPOSE: Official NBA/NHL/MLB Direct LiveData Push Adapters & Dual-Source Reconcilers
 # ======================================================================================
 
@@ -47440,8 +49436,50 @@ logger = logging.getLogger("PolymarketDirectFeeds")
 
 NHL_OFFICIAL_SCORE_URL = "https://api-web.nhle.com/v1/score/now"
 MLB_OFFICIAL_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&hydrate=linescore"
+ESPN_TENNIS_SCOREBOARD_TMPL = "https://site.api.espn.com/apis/site/v2/sports/tennis/{tour}/scoreboard"
 
 _SESSION_LOCAL = threading.local()
+_CONDITIONAL_CACHE_LOCK = threading.Lock()
+_CONDITIONAL_URL_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+def _get_conditional_json_sync(url: str, *, timeout: float = 2.5) -> Optional[Dict[str, Any]]:
+    """Persistent keep-alive GET with `If-None-Match`/`If-Modified-Since` so 0.5s endgame polls cost near-zero on 304."""
+    sess = _get_keepalive_session()
+    with _CONDITIONAL_CACHE_LOCK:
+        ent = _CONDITIONAL_URL_CACHE.get(url)
+        hdrs: Dict[str, str] = {}
+        if ent:
+            if ent.get("etag"):
+                hdrs["If-None-Match"] = ent["etag"]
+            if ent.get("last_modified"):
+                hdrs["If-Modified-Since"] = ent["last_modified"]
+    resp = sess.get(url, headers=hdrs, timeout=timeout)
+    if resp.status_code == 304 and ent is not None:
+        return ent.get("payload")
+    if resp.status_code == 200:
+        data = resp.json()
+        with _CONDITIONAL_CACHE_LOCK:
+            _CONDITIONAL_URL_CACHE[url] = {
+                "etag": resp.headers.get("ETag", ""),
+                "last_modified": resp.headers.get("Last-Modified", ""),
+                "payload": data,
+            }
+            if len(_CONDITIONAL_URL_CACHE) > 64:
+                _CONDITIONAL_URL_CACHE.pop(next(iter(_CONDITIONAL_URL_CACHE)), None)
+        return data
+    return None
+
+
+def compute_adaptive_sports_poll_interval_sec(
+    *,
+    is_endgame_or_halftime: bool = False,
+    has_live_games: bool = True,
+) -> float:
+    """Adaptive cadence (`0.5s` inside final 120s / halftime freeze, `5.5s` normal live, `60s` idle)."""
+    if is_endgame_or_halftime:
+        return 0.75
+    return 5.5 if has_live_games else 60.0
 
 
 def _get_keepalive_session() -> requests.Session:
@@ -47512,9 +49550,9 @@ def parse_nba_cdn_scoreboard(payload: Dict[str, Any]) -> List[LiveNbaGameState]:
 
 def fetch_nba_cdn_scoreboard_sync(timeout: float = 2.8) -> List[LiveNbaGameState]:
     try:
-        resp = _get_keepalive_session().get(CDN_NBA_SCOREBOARD_URL, timeout=timeout)
-        if resp.status_code == 200:
-            return parse_nba_cdn_scoreboard(resp.json())
+        payload = _get_conditional_json_sync(CDN_NBA_SCOREBOARD_URL, timeout=timeout)
+        if isinstance(payload, dict):
+            return parse_nba_cdn_scoreboard(payload)
     except Exception as exc:
         logger.debug(f"NBA CDN direct feed fetch notice: {exc}")
     return []
@@ -47610,9 +49648,9 @@ def parse_nhl_official_scoreboard(payload: Dict[str, Any]) -> List[LiveMultiSpor
 
 def fetch_nhl_official_scoreboard_sync(timeout: float = 2.8) -> List[LiveMultiSportGame]:
     try:
-        resp = _get_keepalive_session().get(NHL_OFFICIAL_SCORE_URL, timeout=timeout)
-        if resp.status_code == 200:
-            return parse_nhl_official_scoreboard(resp.json())
+        payload = _get_conditional_json_sync(NHL_OFFICIAL_SCORE_URL, timeout=timeout)
+        if isinstance(payload, dict):
+            return parse_nhl_official_scoreboard(payload)
     except Exception as exc:
         logger.debug(f"NHL official feed fetch notice: {exc}")
     return []
@@ -47686,9 +49724,9 @@ def parse_mlb_statsapi_scoreboard(payload: Dict[str, Any]) -> List[LiveMultiSpor
 
 def fetch_mlb_statsapi_scoreboard_sync(timeout: float = 2.8) -> List[LiveMultiSportGame]:
     try:
-        resp = _get_keepalive_session().get(MLB_OFFICIAL_SCHEDULE_URL, timeout=timeout)
-        if resp.status_code == 200:
-            return parse_mlb_statsapi_scoreboard(resp.json())
+        payload = _get_conditional_json_sync(MLB_OFFICIAL_SCHEDULE_URL, timeout=timeout)
+        if isinstance(payload, dict):
+            return parse_mlb_statsapi_scoreboard(payload)
     except Exception as exc:
         logger.debug(f"MLB StatsAPI direct feed fetch notice: {exc}")
     return []
@@ -47904,8 +49942,69 @@ def reconcile_multisport_dual_source_boards(
             merged.append(og)
     return merged
 
+
+def parse_atp_wta_scoreboard(payload: Dict[str, Any], *, tour: str = "atp") -> List[Dict[str, Any]]:
+    """
+    Parses public ESPN ATP/WTA live scoreboard JSON into structured tennis match records
+    (`completed_sets`, `status_state`, `retired_or_walkover`, `winner_name`) for `TEN1` / `Family G`.
+    """
+    out: List[Dict[str, Any]] = []
+    for ev in (payload or {}).get("events") or []:
+        if not isinstance(ev, dict):
+            continue
+        for grp in ev.get("groupings") or [ev]:
+            for comp in grp.get("competitions") or []:
+                if not isinstance(comp, dict):
+                    continue
+                st_type = ((comp.get("status") or {}).get("type") or {})
+                state = str(st_type.get("state") or "").lower()
+                detail = str(st_type.get("detail") or st_type.get("shortDetail") or "").lower()
+                completed = bool(st_type.get("completed", state == "post"))
+                retired = any(k in detail for k in ("ret", "walkover", "w/o", "default", "abandon"))
+                competitors = comp.get("competitors") or []
+                if len(competitors) < 2:
+                    continue
+                players: List[Dict[str, Any]] = []
+                max_sets_done = 0
+                winner_name = ""
+                for c in competitors[:2]:
+                    ath = c.get("athlete") or c.get("team") or {}
+                    nm = str(ath.get("displayName") or ath.get("shortName") or "").strip()
+                    sets = c.get("linescores") or []
+                    sets_won = sum(1 for ls in sets if isinstance(ls, dict) and ls.get("winner") is True)
+                    max_sets_done = max(max_sets_done, sum(1 for ls in sets if isinstance(ls, dict) and ls.get("winner") is not None))
+                    is_win = bool(c.get("winner"))
+                    if is_win and nm:
+                        winner_name = nm
+                    players.append({"name": nm, "sets_won": sets_won, "winner": is_win})
+                out.append(
+                    {
+                        "tour": tour.upper(),
+                        "match_id": str(comp.get("id") or ev.get("id") or ""),
+                        "state": state or ("post" if completed else "in"),
+                        "completed": completed,
+                        "completed_sets": max_sets_done,
+                        "retired_or_walkover": retired,
+                        "winner_name": winner_name,
+                        "players": players,
+                    }
+                )
+    return out
+
+
+def fetch_atp_wta_live_scores_sync(tour: str = "atp", *, timeout: float = 2.5) -> List[Dict[str, Any]]:
+    """Fetches `$0/mo` public ATP or WTA live scores with conditional ETag caching."""
+    t = "wta" if str(tour or "").strip().lower() == "wta" else "atp"
+    try:
+        payload = _get_conditional_json_sync(ESPN_TENNIS_SCOREBOARD_TMPL.format(tour=t), timeout=timeout)
+        if isinstance(payload, dict):
+            return parse_atp_wta_scoreboard(payload, tour=t)
+    except Exception as exc:
+        logger.debug(f"Tennis ({t}) direct feed notice: {exc}")
+    return []
+
 # ======================================================================================
-# [18/67] MODULE: src/polymarket_research/latency_trace.py
+# [18/68] MODULE: src/polymarket_research/latency_trace.py
 # PURPOSE: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
 # ======================================================================================
 
@@ -48625,7 +50724,7 @@ def emit_shock_attempt_from_trace(trace: Optional[LatencyTrace], shock: Optional
         return None
 
 # ======================================================================================
-# [19/67] MODULE: src/polymarket_research/economic_attribution_ledger.py
+# [19/68] MODULE: src/polymarket_research/economic_attribution_ledger.py
 # PURPOSE: Stage B Opportunity Funnel, Sub-ms Competitor Decay Curve & Reconciled Attribution Engine
 # ======================================================================================
 
@@ -50189,7 +52288,7 @@ def compute_stage_b_attribution_report(
     }
 
 # ======================================================================================
-# [20/67] MODULE: src/polymarket_research/stage_c_zero_loss_velocity.py
+# [20/68] MODULE: src/polymarket_research/stage_c_zero_loss_velocity.py
 # PURPOSE: Stage C Pure-Riskless Velocity Recycler, Pre-Split Quarantine & Clinched Dead-Leg Split-to-Sell
 # ======================================================================================
 
@@ -50447,6 +52546,10 @@ def is_verified_full_throttle_2leg_box(candidate_box: Mapping[str, Any]) -> bool
     btype = str(candidate_box.get("box_type") or "").strip().upper()
     if btype in {"DOMINANCE_MAKER_ANCHOR", "ZERO_FEE_MAKER_ANCHOR", "MAKER_ANCHOR", "SYNTHETIC_MAKER"}:
         return False
+    if bool(candidate_box.get("neg_risk_augmented", False)) and not (
+        btype == "NEGRISK_2LEG" and sl_src == "XV_SUBSET_NO_2LEG_BOX"
+    ):
+        return False
     c_net = _sf(candidate_box.get("box_cost_net"), 0.0)
     if btype != "CTF_OVERROUND" and c_net >= 1.0:
         return False
@@ -50454,7 +52557,20 @@ def is_verified_full_throttle_2leg_box(candidate_box: Mapping[str, Any]) -> bool
         cid = str(candidate_box.get("condition_id") or candidate_box.get("leg_a_condition_id") or "").strip()
         yt = str(candidate_box.get("yes_token_id") or candidate_box.get("leg_a_token_id") or "").strip()
         nt = str(candidate_box.get("no_token_id") or candidate_box.get("leg_b_token_id") or "").strip()
-        return bool(sl_src == "C1_SPLIT_AND_SELL_OVERROUND" and btype == "CTF_OVERROUND" and cid and yt and nt and yt != nt)
+        is_neg_risk = bool(
+            candidate_box.get("neg_risk", False)
+            or candidate_box.get("leg_a_neg_risk", False)
+            or candidate_box.get("leg_b_neg_risk", False)
+        )
+        return bool(
+            sl_src == "C1_SPLIT_AND_SELL_OVERROUND"
+            and btype == "CTF_OVERROUND"
+            and not is_neg_risk
+            and cid
+            and yt
+            and nt
+            and yt != nt
+        )
     if sl_src == "NR2_2LEG_CONVERT_NO_SUBSET_ARB" or btype == "NEGRISK_CONVERT":
         cm = str(candidate_box.get("convert_mode") or "NR2_PURE_CASH_CONVERT").strip().upper()
         no_legs = candidate_box.get("no_legs") or ()
@@ -50498,7 +52614,9 @@ def is_verified_full_throttle_2leg_box(candidate_box: Mapping[str, Any]) -> bool
         if (cid_a and cid_b and cid_a != cid_b) or (mid_a and mid_b and mid_a != mid_b):
             return False
         return btype in {"COMPLETE_SET", "C1_BINARY_COMPLETE_SET"}
-    if bool(candidate_box.get("neg_risk_augmented", False)):
+    if bool(candidate_box.get("neg_risk_augmented", False)) and not (
+        btype == "NEGRISK_2LEG" and sl_src == "XV_SUBSET_NO_2LEG_BOX"
+    ):
         return False
     t_early_ft = _sf(candidate_box.get("t_early_ts", candidate_box.get("leg_a_deadline_ts")), 0.0)
     t_late_ft = _sf(candidate_box.get("t_late_ts", candidate_box.get("leg_b_deadline_ts")), 0.0)
@@ -50606,6 +52724,13 @@ def verify_multileg_atomicity_or_inventory_cover(harvester: Any, candidate_box: 
     if not isinstance(candidate_box, Mapping):
         return False
     ex = getattr(harvester, "executor", None)
+    has_funder_dispatch = bool(
+        ex is not None
+        and (
+            callable(getattr(ex, "_dispatch_funder_calls_locked", None))
+            or callable(getattr(ex, "_dispatch_funder_calls", None))
+        )
+    )
     safe_atomic_router_ok = bool(
         ex is not None
         and (
@@ -50615,6 +52740,23 @@ def verify_multileg_atomicity_or_inventory_cover(harvester: Any, candidate_box: 
                 and (
                     bool(getattr(ex, "safe_atomic_router_verified", False))
                     or callable(getattr(ex, "submit_relayer_safe_multisend", None))
+                    or has_funder_dispatch
+                )
+            )
+        )
+    )
+    cm_upper = str(candidate_box.get("convert_mode") or "").strip().upper()
+    nr3_atomic_ok = bool(
+        cm_upper == "NR3_SYNTHETIC_ALL_YES_OVERROUND"
+        and ex is not None
+        and (
+            callable(getattr(ex, "execute_nr3_atomic_safe_split_convert", None))
+            or (
+                callable(getattr(ex, "execute_nr3_synthetic_all_yes_overround", None))
+                and (
+                    has_funder_dispatch
+                    or callable(getattr(ex, "submit_relayer_safe_multisend", None))
+                    or bool(getattr(ex, "safe_atomic_router_verified", False))
                 )
             )
         )
@@ -50623,8 +52765,10 @@ def verify_multileg_atomicity_or_inventory_cover(harvester: Any, candidate_box: 
         candidate_box.get("atomic_onchain_execution") is True
         and candidate_box.get("atomic_router_verified") is True
         and candidate_box.get("sequential_clob_legs") is not True
-        and str(candidate_box.get("convert_mode") or "").strip().upper() == "NR3_ATOMIC_SAFE_SPLIT_CONVERT"
-        and safe_atomic_router_ok
+        and (
+            (cm_upper == "NR3_ATOMIC_SAFE_SPLIT_CONVERT" and safe_atomic_router_ok)
+            or nr3_atomic_ok
+        )
     ):
         return True
     legs = candidate_box.get("legs") or ()
@@ -50833,15 +52977,38 @@ def check_strict_pure_riskless_candidate_gate(
     )
     if sl_src in PURE_RISKLESS_BLOCKED_SLEEVES and not (nr0_closed_ok or atomic_or_inv_ok):
         return f"PURE_RISKLESS_SLEEVE_BLOCKED:{sl_src}"
-    if btype in {"MULTI_LEG_BUNDLE", "CTF_OVERROUND"} and not (btype == "MULTI_LEG_BUNDLE" and (nr0_closed_ok or atomic_or_inv_ok)):
+    ctf_overround_verified_ok = bool(
+        btype == "CTF_OVERROUND"
+        and sl_src == "C1_SPLIT_AND_SELL_OVERROUND"
+        and is_verified_full_throttle_2leg_box(candidate_box)
+        and (
+            bool(candidate_box.get("atomic_split_sell_rollback_verified"))
+            or candidate_box.get("rule_verified") is True
+        )
+    )
+    if btype in {"MULTI_LEG_BUNDLE", "CTF_OVERROUND"} and not (
+        (btype == "MULTI_LEG_BUNDLE" and (nr0_closed_ok or atomic_or_inv_ok))
+        or ctf_overround_verified_ok
+    ):
         return f"PURE_RISKLESS_SPECIAL_BOX_BLOCKED:{btype}"
 
     if btype == "NEGRISK_CONVERT":
         cm = str(candidate_box.get("convert_mode") or "").strip().upper()
         no_legs = candidate_box.get("no_legs") or ()
+        yes_sells = candidate_box.get("liquid_yes_sells") or candidate_box.get("yes_sell_legs") or ()
         if cm == "NR2_PURE_CASH_CONVERT" and sl_src in {"", "NR2_CONVERT_NO_SUBSET_ARB"} and len(no_legs) == 2:
             return None
         if cm == "NR_M1_DEAD_SEED_OVERROUND" and sl_src in {"", "NR_M1_DEAD_SEED_OVERROUND"} and len(no_legs) == 1:
+            return None
+        if (
+            cm == "NR3_SYNTHETIC_ALL_YES_OVERROUND"
+            and bool(rb_cfg.get("enable_nr3_synthetic_overround", False))
+            and sl_src in {"", "NR3_SYNTHETIC_ALL_YES_OVERROUND"}
+            and candidate_box.get("neg_risk_augmented") is False
+            and 2 <= len(yes_sells) <= 15
+            and _sf(candidate_box.get("min_state_net_payoff_usd"), 1.0) > 0.0
+            and verify_multileg_atomicity_or_inventory_cover(harvester, candidate_box)
+        ):
             return None
         return f"PURE_RISKLESS_MULTI_LEG_CONVERT_BLOCKED:{cm or sl_src or len(no_legs)}"
 
@@ -51948,7 +54115,7 @@ def execute_clinched_dead_leg_split_arb(
     }
 
 # ======================================================================================
-# [21/67] MODULE: src/polymarket_research/synthetic_maker_quoter.py
+# [21/68] MODULE: src/polymarket_research/synthetic_maker_quoter.py
 # PURPOSE: Stage D v5.9.0 Continuous #1 FIFO Synthetic Maker Quoter, Sub-50ms WS Shield & $0.50 Unwind Breaker
 # ======================================================================================
 
@@ -52505,7 +54672,7 @@ def is_maker_anchor_live_permitted(
     return True, "OK"
 
 # ======================================================================================
-# [22/67] MODULE: src/polymarket_research/polymarket_terminal_recorder.py
+# [22/68] MODULE: src/polymarket_research/polymarket_terminal_recorder.py
 # PURPOSE: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
 # ======================================================================================
 
@@ -52649,6 +54816,13 @@ try:
     import orjson as _orjson  # Fast JSON for the 25ms shared-memory tick bus
 except Exception:  # pragma: no cover - graceful fallback
     _orjson = None
+
+
+async def _fast_resp_json(resp: Any) -> Any:
+    raw = await resp.read()
+    if _orjson is not None:
+        return _orjson.loads(raw)
+    return json.loads(raw.decode("utf-8", errors="ignore"))
 
 try:
     from src.polymarket_research.polymarket_ws_streams import (
@@ -53164,6 +55338,10 @@ class L2OrderBook:
         # v3.4 sorted-level cache: deltas only mark the book dirty; sorting happens lazily, at most
         # once per book change, when get_metrics() is called (never on every WebSocket delta).
         self._dirty: bool = True
+        self._best_bid_dirty: bool = True
+        self._best_ask_dirty: bool = True
+        self._cached_best_bid: float = 0.0
+        self._cached_best_ask: float = 1.0
         self._sorted_bids: List[Tuple[float, float]] = []
         self._sorted_asks: List[Tuple[float, float]] = []
         self._bid_birth_ts: Dict[float, float] = {}
@@ -53180,10 +55358,12 @@ class L2OrderBook:
         return self._sorted_bids, self._sorted_asks
 
     def _check_top_changes(self, now_ts: float):
-        # O(n) best-level detection with per-price-level birth timestamps (immune to micro-flicker resets,
-        # while resetting birth age whenever best_ask jumps upward or best_bid drops downward on a sweep/pull)
+        # O(1) cached best-level lookup on interior deltas; falls back to max/min only when best level is popped.
         if self.bids:
-            bb = max(self.bids)
+            if self._best_bid_dirty or self._cached_best_bid not in self.bids:
+                self._cached_best_bid = max(self.bids)
+                self._best_bid_dirty = False
+            bb = self._cached_best_bid
             curr_best_bid = (bb, self.bids[bb])
             prev_bb = self.prev_best_bid[0]
             if prev_bb > 0.0 and bb < prev_bb - 1e-9:
@@ -53192,10 +55372,15 @@ class L2OrderBook:
             else:
                 self.last_best_bid_change_ts = self._bid_birth_ts.get(bb, now_ts)
         else:
+            self._cached_best_bid = 0.0
+            self._best_bid_dirty = False
             curr_best_bid = (0.0, 0.0)
             self.last_best_bid_change_ts = 0.0
         if self.asks:
-            ba = min(self.asks)
+            if self._best_ask_dirty or self._cached_best_ask not in self.asks:
+                self._cached_best_ask = min(self.asks)
+                self._best_ask_dirty = False
+            ba = self._cached_best_ask
             curr_best_ask = (ba, self.asks[ba])
             prev_ba = self.prev_best_ask[0]
             if 0.0 < prev_ba < 1.0 and ba > prev_ba + 1e-9:
@@ -53205,6 +55390,8 @@ class L2OrderBook:
                 self.last_best_ask_change_ts = self._ask_birth_ts.get(ba, now_ts)
             self._empty_ask_since_ts = 0.0
         else:
+            self._cached_best_ask = 1.0
+            self._best_ask_dirty = False
             curr_best_ask = (1.0, 0.0)
             if self._empty_ask_since_ts <= 0.0:
                 self._empty_ask_since_ts = now_ts
@@ -53245,6 +55432,8 @@ class L2OrderBook:
         self.last_book_update_ts = now_ts
         self.book_sequence_id += 1
         self._dirty = True
+        self._best_bid_dirty = True
+        self._best_ask_dirty = True
         self._check_top_changes(now_ts)
 
     def apply_price_changes(self, changes: List[Dict[str, str]]):
@@ -53257,20 +55446,30 @@ class L2OrderBook:
                 if sz <= 0:
                     self.bids.pop(px, None)
                     self._bid_birth_ts.pop(px, None)
+                    if abs(px - self._cached_best_bid) < 1e-9:
+                        self._best_bid_dirty = True
                 else:
                     old_b = self.bids.get(px, 0.0)
                     if old_b <= 0.0 or sz >= old_b * 1.25:
                         self._bid_birth_ts[px] = now_ts
                     self.bids[px] = sz
+                    if px > self._cached_best_bid:
+                        self._cached_best_bid = px
+                        self._best_bid_dirty = False
             elif side == "SELL":
                 if sz <= 0:
                     self.asks.pop(px, None)
                     self._ask_birth_ts.pop(px, None)
+                    if abs(px - self._cached_best_ask) < 1e-9:
+                        self._best_ask_dirty = True
                 else:
                     old_a = self.asks.get(px, 0.0)
                     if old_a <= 0.0 or sz >= old_a * 1.25:
                         self._ask_birth_ts[px] = now_ts
                     self.asks[px] = sz
+                    if px < self._cached_best_ask:
+                        self._cached_best_ask = px
+                        self._best_ask_dirty = False
         self._prune_deep_levels()
         self.last_book_update_ts = now_ts
         self.book_sequence_id += 1
@@ -53743,7 +55942,7 @@ class PolymarketDualFeed1HRecorder:
             }
             async with session.post(rpc_url, json=payload, timeout=1.5) as resp:
                 if resp.status == 200:
-                    res = await resp.json()
+                    res = await _fast_resp_json(resp)
                     hex_str = str(res.get("result") or "")
                     if hex_str.startswith("0x") and len(hex_str) >= 2 + 64 * 4:
                         ans = int(hex_str[2 + 64 : 2 + 128], 16)
@@ -54117,7 +56316,7 @@ class PolymarketDualFeed1HRecorder:
             t0 = time.time() * 1000.0
             async with session.get(f"{BINANCE_REST_URL}/api/v3/time") as resp:
                 if resp.status == 200:
-                    data = await resp.json()
+                    data = await _fast_resp_json(resp)
                     server_time_ms = float(data["serverTime"])
                     t1 = time.time() * 1000.0
                     rtt = t1 - t0
@@ -54142,7 +56341,7 @@ class PolymarketDualFeed1HRecorder:
             )
             async with session.get(url) as resp:
                 if resp.status == 200:
-                    events = await resp.json()
+                    events = await _fast_resp_json(resp)
                     now = datetime.now(timezone.utc)
                     candidates = []
                     for event in events:
@@ -54200,13 +56399,13 @@ class PolymarketDualFeed1HRecorder:
                         if not self.futures_only_ref:
                             async with session.get(url_spot) as resp_spot:
                                 if resp_spot.status == 200:
-                                    data_spot = await resp_spot.json()
+                                    data_spot = await _fast_resp_json(resp_spot)
                                     self.spot_price = float(data_spot["price"])
                                     if self.spot_price > 0:
                                         self.spot_price_ts = time.time()
                         async with session.get(url_fut) as resp_fut:
                             if resp_fut.status == 200:
-                                data_fut = await resp_fut.json()
+                                data_fut = await _fast_resp_json(resp_fut)
                                 self.futures_price = float(data_fut["price"])
                                 if self.futures_only_ref and self.futures_price > 0:
                                     self.spot_price = self.futures_price
@@ -54274,7 +56473,7 @@ class PolymarketDualFeed1HRecorder:
                 async with session.get(url) as resp:
                     if resp.status != 200:
                         continue
-                    events = await resp.json()
+                    events = await _fast_resp_json(resp)
                     candidates = []
                     for event in events:
                         markets = event.get("markets", [])
@@ -54387,7 +56586,7 @@ class PolymarketDualFeed1HRecorder:
                     kl_url = f"{base_rest}{ep_path}?symbol={self.binance_symbol}&interval=1m&startTime={t0_c * 1000}&limit=1"
                     async with session.get(kl_url, timeout=aiohttp.ClientTimeout(total=2.5)) as resp:
                         if resp.status == 200:
-                            rows = await resp.json() or ()
+                            rows = await _fast_resp_json(resp) or ()
                             if isinstance(rows, list) and rows and isinstance(rows[0], list) and len(rows[0]) >= 5:
                                 peg_px = self.coinbase_spot if (0.98 <= self.coinbase_spot <= 1.02) else 1.0
                                 raw_twap = 0.25 * (
@@ -54398,7 +56597,7 @@ class PolymarketDualFeed1HRecorder:
                     cb_url = f"https://api.exchange.coinbase.com/products/{self.coinbase_product}/candles?granularity=60&start={fmt(t0_c)}&end={fmt(open_i)}"
                     async with session.get(cb_url, timeout=aiohttp.ClientTimeout(total=2.5)) as resp:
                         if resp.status == 200:
-                            for row in (await resp.json() or ()):
+                            for row in (await _fast_resp_json(resp) or ()):
                                 if isinstance(row, list) and len(row) >= 5 and int(row[0]) == t0_c:
                                     raw_twap = 0.25 * (float(row[1]) + float(row[2]) + float(row[3]) + float(row[4]))
                                     break
@@ -54438,7 +56637,7 @@ class PolymarketDualFeed1HRecorder:
         try:
             async with session.get(twap_url, timeout=aiohttp.ClientTimeout(total=3.5)) as resp:
                 if resp.status == 200:
-                    payload = await resp.json()
+                    payload = await _fast_resp_json(resp)
                     if isinstance(payload, dict) and (payload.get("cached") is True or payload.get("completed") is True):
                         if payload.get("openPrice") is not None:
                             val = float(payload["openPrice"])
@@ -54452,7 +56651,7 @@ class PolymarketDualFeed1HRecorder:
                 g_url = f"{GAMMA_API_URL}/events?slug={self.asset.lower()}-updown-5m-{int(candle_open_ts) - 300}"
                 async with session.get(g_url, timeout=aiohttp.ClientTimeout(total=3.5)) as resp:
                     if resp.status == 200:
-                        payload = await resp.json()
+                        payload = await _fast_resp_json(resp)
                         ev = payload[0] if isinstance(payload, list) and payload else payload
                         if isinstance(ev, dict) and ev.get("closed") is True:
                             meta = ev.get("eventMetadata")
@@ -54485,7 +56684,7 @@ class PolymarketDualFeed1HRecorder:
                 )
                 async with session.get(url_1s) as resp_1s:
                     if resp_1s.status == 200:
-                        data_1s = await resp_1s.json()
+                        data_1s = await _fast_resp_json(resp_1s)
                         if isinstance(data_1s, list) and len(data_1s) >= 30:
                             twap = sum((float(k[1]) + float(k[4])) / 2.0 for k in data_1s) / len(data_1s)
                             return round(twap, 4)
@@ -54499,7 +56698,7 @@ class PolymarketDualFeed1HRecorder:
             )
             async with session.get(url) as resp:
                 if resp.status == 200:
-                    data = await resp.json()
+                    data = await _fast_resp_json(resp)
                     if data:
                         o_px = float(data[0][1])
                         h_px = float(data[0][2])
@@ -54533,7 +56732,7 @@ class PolymarketDualFeed1HRecorder:
             )
             async with session.get(url) as resp:
                 if resp.status == 200:
-                    data = await resp.json()
+                    data = await _fast_resp_json(resp)
                     if data:
                         open_px = float(data[0][1])
                         close_px = float(data[0][4])
@@ -54579,7 +56778,7 @@ class PolymarketDualFeed1HRecorder:
                 session = await self.get_session()
                 async with session.get(f"{GAMMA_API_URL}/markets/{m_id_str}") as g_resp:
                     if g_resp.status == 200:
-                        g_data = await g_resp.json()
+                        g_data = await _fast_resp_json(g_resp)
                         if isinstance(g_data, dict):
                             if not res_source and g_data.get("resolutionSource"):
                                 res_source = str(g_data.get("resolutionSource"))
@@ -55408,7 +57607,7 @@ class PolymarketDualFeed1HRecorder:
             payload = [{"token_id": str(t)} for t in dict.fromkeys(token_ids) if t]
             async with session.post(f"{CLOB_API_URL}/books", json=payload, timeout=1.5) as resp:
                 if resp.status == 200:
-                    items = await resp.json()
+                    items = await _fast_resp_json(resp)
                     if isinstance(items, list):
                         for item in items:
                             if not isinstance(item, dict):
@@ -55500,7 +57699,7 @@ class PolymarketDualFeed1HRecorder:
 
                 async with websockets.connect(CLOB_WS_URL, ping_interval=20, ping_timeout=10, max_queue=512, compression=None) as ws:
                     _enable_ws_nodelay(ws)
-                    sub_msg = {"assets_ids": sub_assets, "type": "market"}
+                    sub_msg = {"assets_ids": sub_assets, "type": "market", "custom_feature_enabled": True}
                     await ws.send(json.dumps(sub_msg))
                     logger.info(f"[+] Subscribed to Polymarket L2 orderbooks for market {sub_lbl}.")
                     self._reconnect_clob = False
@@ -55541,7 +57740,7 @@ class PolymarketDualFeed1HRecorder:
                                 subscribed_market = cur_1h
                                 subscribed_market_id = cur_1h_id
                                 subscribed_end_dt = cur_1h["end_dt"]
-                                await ws.send(json.dumps({"assets_ids": [up_1h, dn_1h], "operation": "subscribe"}))
+                                await ws.send(json.dumps({"assets_ids": [up_1h, dn_1h], "operation": "subscribe", "custom_feature_enabled": True}))
                                 now_sub_1h = time.time()
                                 pending_sub_toks[up_1h] = now_sub_1h
                                 pending_sub_toks[dn_1h] = now_sub_1h
@@ -55599,7 +57798,7 @@ class PolymarketDualFeed1HRecorder:
                                         subscribed_tokens[tok_n] = role_n
                                         added_toks.append(tok_n)
                             if added_toks:
-                                await ws.send(json.dumps({"assets_ids": added_toks, "operation": "subscribe"}))
+                                await ws.send(json.dumps({"assets_ids": added_toks, "operation": "subscribe", "custom_feature_enabled": True}))
                                 now_sub = time.time()
                                 for tok_n in added_toks:
                                     pending_sub_toks[tok_n] = now_sub
@@ -56259,7 +58458,7 @@ if __name__ == "__main__":
         logger.info("Stopped by user.")
 
 # ======================================================================================
-# [23/67] MODULE: src/polymarket_research/deribit_svi_surface.py
+# [23/68] MODULE: src/polymarket_research/deribit_svi_surface.py
 # PURPOSE: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
 # ======================================================================================
 
@@ -56838,7 +59037,7 @@ if __name__ == "__main__":
         print(f"{sym} Spot={spot_test} Strike={k_test} (1h TTE): {res}")
 
 # ======================================================================================
-# [24/67] MODULE: src/polymarket_research/polymarket_paper_trader.py
+# [24/68] MODULE: src/polymarket_research/polymarket_paper_trader.py
 # PURPOSE: Forward Paper Trader & Production-Parity Simulation Engine
 # ======================================================================================
 
@@ -59245,7 +61444,7 @@ if __name__ == "__main__":
     asyncio.run(trader.live_loop())
 
 # ======================================================================================
-# [25/67] MODULE: src/polymarket_research/check_polymarket_balance.py
+# [25/68] MODULE: src/polymarket_research/check_polymarket_balance.py
 # PURPOSE: Polygon pUSD + USDC.e Collateral Balance Checker
 # ======================================================================================
 
@@ -59358,7 +61557,7 @@ if __name__ == "__main__":
     check_balance()
 
 # ======================================================================================
-# [26/67] MODULE: src/polymarket_research/verify_onchain_allowances.py
+# [26/68] MODULE: src/polymarket_research/verify_onchain_allowances.py
 # PURPOSE: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
 # ======================================================================================
 
@@ -59475,7 +61674,7 @@ print("VERIFICATION COMPLETE: READY FOR ZERO-REVERT EXECUTION")
 print("=" * 65)
 
 # ======================================================================================
-# [27/67] MODULE: src/polymarket_research/redeem_settled_positions.py
+# [27/68] MODULE: src/polymarket_research/redeem_settled_positions.py
 # PURPOSE: CTF Settled Position Redemption CLI
 # ======================================================================================
 
@@ -59829,7 +62028,7 @@ if __name__ == "__main__":
     audit_positions_and_redemptions(execute="--execute" in sys.argv, force="--force" in sys.argv)
 
 # ======================================================================================
-# [28/67] MODULE: src/polymarket_research/setup_polymarket_account.py
+# [28/68] MODULE: src/polymarket_research/setup_polymarket_account.py
 # PURPOSE: CLOB L2 API Key & Proxy Credential Generator
 # ======================================================================================
 
@@ -60095,7 +62294,7 @@ if __name__ == "__main__":
     main()
 
 # ======================================================================================
-# [29/67] MODULE: audit_losing_trades.py
+# [29/68] MODULE: audit_losing_trades.py
 # PURPOSE: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
 # ======================================================================================
 
@@ -60668,7 +62867,7 @@ if __name__ == "__main__":
     main()
 
 # ======================================================================================
-# [30/67] MODULE: scripts/honest_purged_wfo_optimizer.py
+# [30/68] MODULE: scripts/honest_purged_wfo_optimizer.py
 # PURPOSE: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 # ======================================================================================
 
@@ -62146,7 +64345,7 @@ if __name__ == "__main__":
     main()
 
 # ======================================================================================
-# [31/67] MODULE: src/polymarket_research/directional_wfo_shadow_sleeves.py
+# [31/68] MODULE: src/polymarket_research/directional_wfo_shadow_sleeves.py
 # PURPOSE: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
 # ======================================================================================
 
@@ -63714,7 +65913,7 @@ class DirectionalWfoShadowManager:
                         pass
 
 # ======================================================================================
-# [32/67] MODULE: src/polymarket_research/orderflow_wfo_simulators.py
+# [32/68] MODULE: src/polymarket_research/orderflow_wfo_simulators.py
 # PURPOSE: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
 # ======================================================================================
 
@@ -65121,7 +67320,7 @@ def run_subhourly_v395_wfo_ablation_suite(
     }
 
 # ======================================================================================
-# [33/67] MODULE: src/polymarket_research/net_alpha_opportunity_engine.py
+# [33/68] MODULE: src/polymarket_research/net_alpha_opportunity_engine.py
 # PURPOSE: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
 # ======================================================================================
 
@@ -65753,6 +67952,11 @@ def evaluate_cross_oracle_basis_box_ev(
 # 7. CROSS-DAEMON SHM POSITION BUS & CAPITAL-EFFICIENCY AUCTION (Gemini #15 + ChatGPT #10)
 # ==============================================================================
 
+_SHM_CACHE_LOCK = threading.Lock()
+_SHM_READ_CACHE: Dict[str, Tuple[int, int, Dict[str, Any]]] = {}
+_SHM_CREATED_DIRS: set[str] = set()
+
+
 def _global_positions_shm_path() -> Path:
     shm_dir = os.environ.get("PM_FAST_TICK_DIR")
     if shm_dir:
@@ -65765,18 +67969,36 @@ def _global_positions_shm_path() -> Path:
 
 def read_global_positions_shm(max_age_sec: float = 120.0) -> Dict[str, Any]:
     path = _global_positions_shm_path()
-    if not path.exists():
-        return {"daemons": {}}
+    path_key = str(path)
     try:
-        raw_bytes = path.read_bytes()
-        data = (
-            _orjson.loads(raw_bytes)
-            if _orjson is not None
-            else json.loads(raw_bytes.decode("utf-8"))
-        )
-        if not isinstance(data, dict):
+        st = os.stat(path_key)
+    except OSError:
+        return {"daemons": {}}
+    mtime_ns = st.st_mtime_ns
+    size = st.st_size
+    daemons: Optional[Dict[str, Any]] = None
+    with _SHM_CACHE_LOCK:
+        cached = _SHM_READ_CACHE.get(path_key)
+        if cached is not None and cached[0] == mtime_ns and cached[1] == size:
+            daemons = cached[2]
+    try:
+        if daemons is None:
+            raw_bytes = path.read_bytes()
+            data = (
+                _orjson.loads(raw_bytes)
+                if _orjson is not None
+                else json.loads(raw_bytes.decode("utf-8"))
+            )
+            if not isinstance(data, dict):
+                return {"daemons": {}}
+            raw_daemons = data.get("daemons")
+            if not isinstance(raw_daemons, dict):
+                return {"daemons": {}}
+            daemons = raw_daemons
+            with _SHM_CACHE_LOCK:
+                _SHM_READ_CACHE[path_key] = (mtime_ns, size, daemons)
+        if not daemons:
             return {"daemons": {}}
-        daemons = data.get("daemons") or {}
         now = time.time()
         fresh_daemons = {
             k: v
@@ -65794,9 +68016,13 @@ def publish_global_positions_shm(daemon_name: str, positions: Iterable[Dict[str,
     so live & shadow sleeves coordinate correlation and synthetic corridor completions.
     """
     path = _global_positions_shm_path()
+    path_key = str(path)
     tmp: Optional[Path] = None
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        parent_str = str(path.parent)
+        if parent_str not in _SHM_CREATED_DIRS:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            _SHM_CREATED_DIRS.add(parent_str)
         cur = read_global_positions_shm(max_age_sec=600.0)
         daemons = dict(cur.get("daemons") or {})
         compact: List[Dict[str, Any]] = []
@@ -65812,14 +68038,21 @@ def publish_global_positions_shm(daemon_name: str, positions: Iterable[Dict[str,
                 "expiry_ts": float(p.get("candle_expiry_ts") or p.get("close_ts") or 0.0),
                 "notional_usd": float(p.get("notional_usd") or p.get("entry_eff_px_t1000") or 0.0),
             })
-        daemons[str(daemon_name)] = {"updated_ts": round(time.time(), 3), "positions": compact}
-        payload = {"updated_at_ts": round(time.time(), 3), "daemons": daemons}
+        now_r = round(time.time(), 3)
+        daemons[str(daemon_name)] = {"updated_ts": now_r, "positions": compact}
+        payload = {"updated_at_ts": now_r, "daemons": daemons}
         tmp = path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
         if _orjson is not None:
             tmp.write_bytes(_orjson.dumps(payload))
         else:
             tmp.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
-        os.replace(tmp, path)
+        os.replace(tmp, path_key)
+        try:
+            st = os.stat(path_key)
+            with _SHM_CACHE_LOCK:
+                _SHM_READ_CACHE[path_key] = (st.st_mtime_ns, st.st_size, daemons)
+        except OSError:
+            pass
         return True
     except Exception:
         if tmp is not None:
@@ -65828,6 +68061,73 @@ def publish_global_positions_shm(daemon_name: str, positions: Iterable[Dict[str,
             except Exception:
                 pass
         return False
+
+
+_CORRIDOR_SIDES = frozenset(("UP", "DOWN", "YES", "NO"))
+
+
+def _precompute_pos_tuples(
+    active_global_positions: Optional[Iterable[Dict[str, Any]]],
+) -> List[Tuple[str, float, str, float]]:
+    if not active_global_positions:
+        return []
+    out: List[Tuple[str, float, str, float]] = []
+    for pos in active_global_positions:
+        out.append((
+            str(pos.get("asset") or "").upper(),
+            float(pos.get("expiry_ts") or 0.0),
+            str(pos.get("side") or "").upper(),
+            float(pos.get("strike") or 0.0),
+        ))
+    return out
+
+
+def _compute_capital_efficiency_utility_fast(
+    candidate: Dict[str, Any],
+    pos_tuples: List[Tuple[str, float, str, float]],
+) -> Tuple[float, float, float, float, float]:
+    net_edge = float(candidate.get("net_edge") or 0.0)
+    ask_px = max(0.05, float(candidate.get("ask_vwap") or 0.50))
+    p_model = float(candidate.get("p_model") or (ask_px + net_edge))
+    tte_sec = max(15.0, float(candidate.get("tte_sec") or 3600.0))
+    lock_hours = max(0.08, min(24.0, tte_sec / 3600.0))
+    ev_per_dollar_hr = (net_edge / ask_px) / lock_hours
+
+    tail_loss_prob = max(0.0, 1.0 - p_model)
+    tail_penalty = 0.08 * (tail_loss_prob * tail_loss_prob)
+
+    corr_penalty = 0.0
+    corridor_bonus = 0.0
+    if pos_tuples:
+        cand_asset = str(candidate.get("asset") or "").upper()
+        if cand_asset:
+            cand_side = str(candidate.get("side") or "").upper()
+            cand_exp = float(candidate.get("expiry_ts") or 0.0)
+            cand_strike = float(candidate.get("strike") or 0.0)
+            cand_valid_side = cand_side in _CORRIDOR_SIDES
+            for p_asset, p_exp, p_side, p_strike in pos_tuples:
+                if p_asset != cand_asset:
+                    continue
+                if cand_exp > 0.0 and p_exp > 0.0 and abs(cand_exp - p_exp) <= 900.0:
+                    if p_side == cand_side and cand_valid_side:
+                        corr_penalty += 0.12
+                    elif (
+                        cand_strike > 0.0
+                        and p_strike > 0.0
+                        and ((p_side == "UP" and cand_side == "DOWN" and p_strike < cand_strike)
+                             or (p_side == "DOWN" and cand_side == "UP" and cand_strike < p_strike))
+                    ):
+                        # Synthetic corridor completion (`Gemini #15`): locks K_low < K_high dominance floor!
+                        corridor_bonus += 0.25
+
+    utility = ev_per_dollar_hr - tail_penalty - corr_penalty + corridor_bonus
+    return (
+        round(ev_per_dollar_hr, 4),
+        round(utility, 4),
+        round(lock_hours, 3),
+        round(corr_penalty, 4),
+        round(corridor_bonus, 4),
+    )
 
 
 def compute_capital_efficiency_utility(
@@ -65839,51 +68139,15 @@ def compute_capital_efficiency_utility(
       Utility ($EV / ($ * lock_hr)) = net_edge_frac / max(0.08, lock_hours)
                                       - tail_penalty - corr_penalty + corridor_completion_bonus
     """
-    net_edge = float(candidate.get("net_edge") or 0.0)
-    ask_px = max(0.05, float(candidate.get("ask_vwap") or 0.50))
-    p_model = float(candidate.get("p_model") or (ask_px + net_edge))
-    tte_sec = max(15.0, float(candidate.get("tte_sec") or 3600.0))
-    lock_hours = max(0.08, min(24.0, tte_sec / 3600.0))
-    roi_est = net_edge / ask_px
-    ev_per_dollar_hr = roi_est / lock_hours
-
-    tail_loss_prob = max(0.0, 1.0 - p_model)
-    tail_penalty = 0.08 * (tail_loss_prob ** 2)
-
-    cand_asset = str(candidate.get("asset") or "").upper()
-    cand_side = str(candidate.get("side") or "").upper()
-    cand_exp = float(candidate.get("expiry_ts") or 0.0)
-    cand_strike = float(candidate.get("strike") or 0.0)
-
-    corr_penalty = 0.0
-    corridor_bonus = 0.0
-    for pos in active_global_positions or []:
-        p_asset = str(pos.get("asset") or "").upper()
-        if not cand_asset or p_asset != cand_asset:
-            continue
-        p_exp = float(pos.get("expiry_ts") or 0.0)
-        same_window = cand_exp > 0.0 and p_exp > 0.0 and abs(cand_exp - p_exp) <= 900.0
-        p_side = str(pos.get("side") or "").upper()
-        p_strike = float(pos.get("strike") or 0.0)
-        if same_window:
-            if p_side == cand_side and cand_side in ("UP", "DOWN", "YES", "NO"):
-                corr_penalty += 0.12
-            elif (
-                cand_strike > 0.0
-                and p_strike > 0.0
-                and ((p_side == "UP" and cand_side == "DOWN" and p_strike < cand_strike)
-                     or (p_side == "DOWN" and cand_side == "UP" and cand_strike < p_strike))
-            ):
-                # Synthetic corridor completion (`Gemini #15`): locks K_low < K_high dominance floor!
-                corridor_bonus += 0.25
-
-    utility = ev_per_dollar_hr - tail_penalty - corr_penalty + corridor_bonus
+    ev_hr, util, lock_hr, corr_pen, corr_bon = _compute_capital_efficiency_utility_fast(
+        candidate, _precompute_pos_tuples(active_global_positions)
+    )
     return {
-        "ev_per_dollar_hour": round(ev_per_dollar_hr, 4),
-        "utility_score": round(utility, 4),
-        "lock_hours": round(lock_hours, 3),
-        "corr_penalty": round(corr_penalty, 4),
-        "corridor_completion_bonus": round(corridor_bonus, 4),
+        "ev_per_dollar_hour": ev_hr,
+        "utility_score": util,
+        "lock_hours": lock_hr,
+        "corr_penalty": corr_pen,
+        "corridor_completion_bonus": corr_bon,
     }
 
 
@@ -65894,13 +68158,14 @@ def rank_opportunities_capital_auction(
 ) -> List[Dict[str, Any]]:
     """Annotates and sorts opportunities descending by `utility_score` (`EV / ($ * lock_hr)`)."""
     eff_positions = active_global_positions if active_global_positions is not None else active_positions
+    pos_tuples = _precompute_pos_tuples(eff_positions)
     enriched: List[Dict[str, Any]] = []
     for opp in opportunities:
-        item = dict(opp)
-        metrics = compute_capital_efficiency_utility(item, active_global_positions=eff_positions)
-        item["ev_per_dollar_hour"] = metrics["ev_per_dollar_hour"]
-        item["utility_score"] = metrics["utility_score"]
-        if metrics["corridor_completion_bonus"] > 0:
+        item = opp.copy()
+        ev_hr, util, _, _, corr_bon = _compute_capital_efficiency_utility_fast(item, pos_tuples)
+        item["ev_per_dollar_hour"] = ev_hr
+        item["utility_score"] = util
+        if corr_bon > 0.0:
             item["synthetic_corridor_completion"] = True
         enriched.append(item)
     enriched.sort(key=lambda x: (-float(x.get("utility_score", 0.0)), -float(x.get("net_edge", 0.0))))
@@ -66219,6 +68484,8 @@ def rank_microbatch_shock_tournament(
     if len(shocks) <= 1:
         return list(shocks)
 
+    pos_tuples = _precompute_pos_tuples(active_positions)
+
     def _score_shock(s: Dict[str, Any]) -> Tuple[float, float]:
         s_dir = str(s.get("shock_direction") or "BUY").upper()
         side = "UP" if s_dir in ("BUY", "UP") else "DOWN"
@@ -66238,7 +68505,7 @@ def rank_microbatch_shock_tournament(
         sig_rem = max(0.00025, sig_1h * math.sqrt(tte / 3600.0))
         ofi = min(1.0, abs(float(s.get("shock_ofi") if s.get("shock_ofi") is not None else 0.85)))
         z_eff = (dist_pct / 100.0) / sig_rem + 0.35 * ofi
-        p_win = 0.5 * (1.0 + math.erf(z_eff / math.sqrt(2.0)))
+        p_win = 0.5 * (1.0 + math.erf(z_eff * _INV_SQRT2))
         fee_ps = compute_category_taker_fee_per_share(ask, 0.07, 1.0)
         exp_val = p_win * 0.98 + (1.0 - p_win) * 0.36
         ev_per_dollar = (exp_val - ask - fee_ps) / (ask + fee_ps)
@@ -66246,8 +68513,8 @@ def rank_microbatch_shock_tournament(
         k_mult = 1.15 if age_ms >= 250.0 else 1.00
         liq_bonus = 0.015 if asset == "BTC" else (0.008 if asset == "ETH" else 0.0)
         score = (ev_per_dollar * k_mult) + liq_bonus
-        if active_positions:
-            util = compute_capital_efficiency_utility(
+        if pos_tuples:
+            _, _, _, corr_pen, corr_bon = _compute_capital_efficiency_utility_fast(
                 {
                     "asset": asset,
                     "side": side,
@@ -66258,15 +68525,15 @@ def rank_microbatch_shock_tournament(
                     "p_model": p_win,
                     "tte_sec": tte,
                 },
-                active_global_positions=active_positions,
+                pos_tuples,
             )
-            score += float(util.get("corridor_completion_bonus") or 0.0) - float(util.get("corr_penalty") or 0.0)
+            score += corr_bon - corr_pen
         return (round(score, 6), z_eff)
 
     return sorted(shocks, key=_score_shock, reverse=True)
 
 # ======================================================================================
-# [34/67] MODULE: src/polymarket_research/weather_metar_engine.py
+# [34/68] MODULE: src/polymarket_research/weather_metar_engine.py
 # PURPOSE: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
 # ======================================================================================
 
@@ -67834,8 +70101,143 @@ def evaluate_weather_event_slate(
         "subset_basket": best_subset,
     }
 
+
+# ---------------------------------------------------------------------------
+# v6.2 Weather Feed Upgrades: NWS `api.weather.gov` 5m, `DSM`/`CLI`, Spatial QC
+# ---------------------------------------------------------------------------
+
+NWS_API_LATEST_OBS_TMPL = "https://api.weather.gov/stations/{icao}/observations/latest"
+NWS_API_CLI_LIST_TMPL = "https://api.weather.gov/products/types/CLI/locations/{wfo}"
+NWS_API_USER_AGENT = "DominusWeatherEngine/1.0 (contact@dominus-research.local)"
+
+WEATHER_NEIGHBOR_STATIONS: Dict[str, Tuple[str, ...]] = {
+    "KLGA": ("KJFK", "KEWR", "KTEB"),
+    "KJFK": ("KLGA", "KEWR"),
+    "KORD": ("KMDW", "KPWK"),
+    "KMDW": ("KORD",),
+    "KMIA": ("KOPF", "KFLL"),
+    "KSEA": ("KBFI", "KPAE"),
+    "KDFW": ("KDAL", "KAFW"),
+    "KDAL": ("KDFW",),
+    "KLAX": ("KSMO", "KBUR"),
+    "EGLC": ("EGLL", "EGKB"),
+    "EGLL": ("EGLC",),
+}
+
+_NWS_CLI_MAX_RE = re.compile(r"TEMPERATURE\s*\(F\).*?MAXIMUM\s+(-?\d+)\s+", re.IGNORECASE | re.DOTALL)
+_NWS_CLI_MIN_RE = re.compile(r"TEMPERATURE\s*\(F\).*?MINIMUM\s+(-?\d+)\s+", re.IGNORECASE | re.DOTALL)
+_NWS_DSM_MAX_RE = re.compile(r"\bMS\s+\d+\s+\d{4}/\d{2}/\d{2}\b.*?\b(-?\d{1,3})/(-?\d{1,3})\b")
+
+
+def fetch_nws_latest_observation_sync(
+    icao: str,
+    tz_name: str = "America/New_York",
+    *,
+    timeout: float = 3.0,
+) -> Optional[MetarObservation]:
+    """
+    Fetches 5-min ASOS latest observation from `api.weather.gov/stations/{icao}/observations/latest` (`$0/mo`).
+    Strictly preserves `D-006` (`$` maintenance flag, missing `T`-group `±0.55°C` safety cushion, `SPECI` ignored).
+    """
+    st = str(icao or "").strip().upper()
+    if len(st) != 4:
+        return None
+    url = NWS_API_LATEST_OBS_TMPL.format(icao=st)
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": NWS_API_USER_AGENT, "Accept": "application/geo+json"},
+        )
+        raw_json = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8", errors="ignore"))
+        props = raw_json.get("properties") if isinstance(raw_json, dict) else None
+        if not isinstance(props, dict):
+            return None
+        raw_metar = str(props.get("rawMessage") or "").strip()
+        ts_str = str(props.get("timestamp") or "").strip()
+        dt_utc = datetime.fromisoformat(ts_str.replace("Z", "+00:00")) if ts_str else datetime.now(timezone.utc)
+        if raw_metar:
+            parsed = parse_metar_line(raw_metar, st, dt_utc, tz_name, explicit_utc_dt=dt_utc)
+            if parsed is not None:
+                return parsed
+        # Fallback if rawMessage absent or SPECI: never override `D-006` cushion when raw T-group is missing
+        if raw_metar.upper().startswith("SPECI ") or " SPECI " in raw_metar.upper() or "$" in raw_metar:
+            return None
+        temp_obj = props.get("temperature") if isinstance(props.get("temperature"), dict) else {}
+        t_val = temp_obj.get("value")
+        if t_val is None:
+            return None
+        t_c = float(t_val)
+        local_dt = dt_utc.astimezone(ZoneInfo(tz_name))
+        return MetarObservation(
+            icao=st,
+            utc_dt=dt_utc,
+            local_dt=local_dt,
+            temp_c=t_c,
+            has_t_remark=False,
+            raw_line=raw_metar or f"NWS_JSON {st} {t_c:.1f}C",
+            is_corrected=False,
+            has_maintenance_indicator=False,
+        )
+    except Exception as exc:
+        logger.debug(f"NWS latest obs notice ({st}): {exc}")
+        return None
+
+
+def parse_nws_dsm_or_cli_text(text: str, *, product_type: str = "CLI") -> Optional[Dict[str, Any]]:
+    """Parses NWS Daily Climate Report (`CLI`) or Daily Summary Message (`DSM`) daily extreme temperatures."""
+    txt = str(text or "")
+    if not txt.strip():
+        return None
+    pt = str(product_type or "CLI").upper()
+    m_hi = _NWS_CLI_MAX_RE.search(txt)
+    m_lo = _NWS_CLI_MIN_RE.search(txt)
+    if m_hi:
+        return {
+            "product_type": pt,
+            "max_temp_f": float(m_hi.group(1)),
+            "min_temp_f": float(m_lo.group(1)) if m_lo else None,
+            "is_final_cli": pt == "CLI",
+        }
+    m_dsm = _NWS_DSM_MAX_RE.search(txt)
+    if m_dsm:
+        return {
+            "product_type": "DSM",
+            "max_temp_f": float(m_dsm.group(1)),
+            "min_temp_f": float(m_dsm.group(2)),
+            "is_final_cli": False,
+        }
+    return None
+
+
+def check_neighbor_station_temp_anomaly(
+    primary_obs: MetarObservation,
+    neighbor_observations: Sequence[MetarObservation],
+    *,
+    max_delta_c: float = 6.0,
+) -> Tuple[bool, str]:
+    """
+    Spatial consistency cross-check against nearby airport stations (`D-006` trap defense).
+    Returns `(is_anomalous, reason)`; flags stuck/errant sensors when primary deviates > `max_delta_c`
+    from all >= 2 contemporaneous (`<= 90m`) neighbor observations.
+    """
+    if primary_obs.has_maintenance_indicator:
+        return True, "D006_ASOS_DOLLAR_MAINTENANCE_FLAG"
+    peers = [
+        o
+        for o in neighbor_observations
+        if o.icao != primary_obs.icao
+        and not o.has_maintenance_indicator
+        and abs((o.utc_dt - primary_obs.utc_dt).total_seconds()) <= 5400.0
+    ]
+    if len(peers) < 2:
+        return False, "INSUFFICIENT_NEIGHBORS"
+    deltas = [abs(float(primary_obs.temp_c) - float(p.temp_c)) for p in peers]
+    if min(deltas) > float(max_delta_c):
+        return True, f"SPATIAL_SENSOR_ANOMALY_DELTA_{min(deltas):.2f}C"
+    return False, "OK"
+
 # ======================================================================================
-# [35/67] MODULE: src/polymarket_research/barrier_onetouch_svi_engine.py
+# [35/68] MODULE: src/polymarket_research/barrier_onetouch_svi_engine.py
 # PURPOSE: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
 # ======================================================================================
 
@@ -68391,7 +70793,7 @@ def fetch_binance_window_extremes_sync(
         return None
 
 # ======================================================================================
-# [36/67] MODULE: src/polymarket_research/multistrike_svi_scalper.py
+# [36/68] MODULE: src/polymarket_research/multistrike_svi_scalper.py
 # PURPOSE: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
 # ======================================================================================
 
@@ -69167,7 +71569,7 @@ def parse_daily_updown_event(ev: Dict[str, Any], asset: str, series_slug: str) -
     )
 
 # ======================================================================================
-# [37/67] MODULE: src/polymarket_research/same_oracle_dominance_box.py
+# [37/68] MODULE: src/polymarket_research/same_oracle_dominance_box.py
 # PURPOSE: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
 # ======================================================================================
 
@@ -70275,7 +72677,7 @@ def walk_equal_shares_multi_leg_box(
     }
 
 # ======================================================================================
-# [38/67] MODULE: src/polymarket_research/exact_twap_lock_engine.py
+# [38/68] MODULE: src/polymarket_research/exact_twap_lock_engine.py
 # PURPOSE: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
 # ======================================================================================
 
@@ -70615,7 +73017,7 @@ def compute_exact_twap_lock_probability(
     }
 
 # ======================================================================================
-# [39/67] MODULE: src/polymarket_research/tradfi_sports_zero_fee_engine.py
+# [39/68] MODULE: src/polymarket_research/tradfi_sports_zero_fee_engine.py
 # PURPOSE: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
 # ======================================================================================
 
@@ -71169,6 +73571,174 @@ def parse_pyth_close_event(
         )
     out.sort(key=lambda r: r.strike)
     return out
+
+
+_TRADFI_PYTH_ALIASES: Dict[str, str] = {
+    "GOLD": "XAU",
+    "GC=F": "XAU",
+    "SILVER": "XAG",
+    "SI=F": "XAG",
+    "BTC": "BTC",
+    "ETH": "ETH",
+    "SOL": "SOL",
+    "XRP": "XRP",
+    "BNB": "BNB",
+    "DOGE": "DOGE",
+    "SPY": "SPY",
+    "QQQ": "QQQ",
+    "NVDA": "NVDA",
+    "TSLA": "TSLA",
+    "AAPL": "AAPL",
+    "MSFT": "MSFT",
+    "AMZN": "AMZN",
+    "GOOGL": "GOOGL",
+    "META": "META",
+    "NFLX": "NFLX",
+    "COIN": "COIN",
+    "XAU": "XAU",
+    "XAG": "XAG",
+}
+
+
+def _extract_polybolt_spot_sample(chainlink_stream: Any, sym: str, now_ts: float, max_age_sec: float) -> Optional[Tuple[float, float]]:
+    """Extracts `(price, ts)` from `PolymarketChainlinkLiveStream` / `PolyBolt V2` `price.equity` safely."""
+    if chainlink_stream is None or not sym or not hasattr(chainlink_stream, "get_latest_spot"):
+        return None
+    try:
+        res = chainlink_stream.get_latest_spot(sym, now_ts=now_ts, max_age_sec=max_age_sec)
+    except TypeError:
+        try:
+            res = chainlink_stream.get_latest_spot(sym)
+        except Exception:
+            return None
+    except Exception:
+        return None
+    if res is None:
+        return None
+    if isinstance(res, (tuple, list)) and len(res) >= 2:
+        px, ts_v = float(res[0] or 0.0), float(res[1] or now_ts)
+    elif isinstance(res, dict):
+        px = float(res.get("price") or res.get("spot") or 0.0)
+        ts_v = float(res.get("ts") or res.get("rx_ts") or now_ts)
+    elif isinstance(res, (int, float)) and not isinstance(res, bool):
+        px, ts_v = float(res), now_ts
+    else:
+        return None
+    if px <= 0.0 or (now_ts - ts_v) > max_age_sec:
+        return None
+    return px, ts_v
+
+
+def fetch_pyth_intraday_or_spot_sync(
+    asset: str,
+    yahoo_symbol: str = "",
+    vol_floor_annual: float = 0.25,
+    *,
+    pyth_stream: Any = None,
+    chainlink_stream: Any = None,
+    cached_yahoo: Optional[Dict[str, Any]] = None,
+    yahoo_ttl_sec: float = 90.0,
+    use_pyth_hermes: bool = True,
+    max_spot_age_sec: float = 4.0,
+    timeout: float = 2.0,
+    now_ts: Optional[float] = None,
+    session: Any = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Combines sub-second `PythHermesStream` / `fetch_pyth_hermes_latest_sync` (`price` + `conf`) and
+    `PolyBolt V2` `price.equity` consumer (`chainlink_stream`) with the `90s` Yahoo Finance `1m` fallback
+    for realized session volatility (`sigma_session`) and resilient spot anchoring.
+    """
+    import os
+    now = float(now_ts if now_ts is not None else time.time())
+    offline = str(os.environ.get("DOMINUS_NETWORK_MODE") or "").strip().lower() == "offline"
+    raw_asset = str(asset or "").strip().upper()
+    canon_sym = _TRADFI_PYTH_ALIASES.get(raw_asset) or _TRADFI_PYTH_ALIASES.get(str(yahoo_symbol or "").strip().upper(), "")
+
+    # 1. Reuse or refresh 90s Yahoo Finance 1m intraday baseline for session vol + spot fallback.
+    yahoo_data: Optional[Dict[str, Any]] = None
+    if isinstance(cached_yahoo, dict) and cached_yahoo.get("spot"):
+        if (now - float(cached_yahoo.get("yahoo_fetched_ts") or cached_yahoo.get("fetched_ts") or 0.0)) <= max(1.0, float(yahoo_ttl_sec)):
+            yahoo_data = cached_yahoo
+    if yahoo_data is None and yahoo_symbol and not offline:
+        yahoo_data = fetch_yahoo_1m_intraday_sync(
+            yahoo_symbol,
+            vol_floor_annual=vol_floor_annual,
+            timeout=max(2.0, float(timeout)),
+        )
+
+    # 2. Sub-second Pyth Hermes WS/SSE (+ conf) and PolyBolt V2 price.equity stream.
+    pyth_quote: Optional[Dict[str, Any]] = None
+    if canon_sym and pyth_stream is not None and hasattr(pyth_stream, "get_latest"):
+        try:
+            q = pyth_stream.get_latest(canon_sym, max_age_sec=max_spot_age_sec)
+            if isinstance(q, dict) and float(q.get("price") or 0.0) > 0.0:
+                pyth_quote = q
+        except Exception:
+            pyth_quote = None
+
+    polybolt_sample = _extract_polybolt_spot_sample(chainlink_stream, canon_sym or raw_asset, now, max_spot_age_sec)
+
+    if pyth_quote is None and canon_sym and use_pyth_hermes and not offline:
+        try:
+            from src.polymarket_research.riskless_fast_feeds import (
+                PYTH_FEED_IDS,
+                fetch_pyth_hermes_latest_sync,
+            )
+            if canon_sym in PYTH_FEED_IDS:
+                res_map = fetch_pyth_hermes_latest_sync([canon_sym], timeout=timeout, session=session)
+                if isinstance(res_map, dict) and isinstance(res_map.get(canon_sym), dict):
+                    cand_q = res_map[canon_sym]
+                    if float(cand_q.get("price") or 0.0) > 0.0:
+                        pyth_quote = cand_q
+        except Exception:
+            pyth_quote = None
+
+    # 3. Pick freshest fast spot (Pyth Hermes / PolyBolt V2 price.equity), falling back to Yahoo 1m.
+    pyth_px = float(pyth_quote["price"]) if isinstance(pyth_quote, dict) and float(pyth_quote.get("price") or 0.0) > 0.0 else None
+    pyth_conf = float(pyth_quote.get("conf") or 0.0) if isinstance(pyth_quote, dict) else 0.0
+    pyth_ts = float(pyth_quote.get("rx_ts") or pyth_quote.get("publish_time") or now) if isinstance(pyth_quote, dict) else 0.0
+    polybolt_px = float(polybolt_sample[0]) if polybolt_sample is not None else None
+    polybolt_ts = float(polybolt_sample[1]) if polybolt_sample is not None else 0.0
+    yahoo_px = float(yahoo_data["spot"]) if isinstance(yahoo_data, dict) and float(yahoo_data.get("spot") or 0.0) > 0.0 else None
+    yahoo_ts = float(yahoo_data.get("yahoo_fetched_ts") or yahoo_data.get("fetched_ts") or 0.0) if isinstance(yahoo_data, dict) else 0.0
+
+    chosen_px: Optional[float] = None
+    chosen_conf = 0.0
+    chosen_ts = now
+    chosen_src = ""
+    if pyth_px is not None and polybolt_px is not None:
+        if polybolt_ts > pyth_ts + 0.5:
+            chosen_px, chosen_conf, chosen_ts, chosen_src = polybolt_px, pyth_conf, polybolt_ts, "polybolt_price_equity"
+        else:
+            chosen_px, chosen_conf, chosen_ts, chosen_src = pyth_px, pyth_conf, pyth_ts, str(pyth_quote.get("source") or "pyth_hermes")
+    elif pyth_px is not None:
+        chosen_px, chosen_conf, chosen_ts, chosen_src = pyth_px, pyth_conf, pyth_ts, str(pyth_quote.get("source") or "pyth_hermes")
+    elif polybolt_px is not None:
+        chosen_px, chosen_conf, chosen_ts, chosen_src = polybolt_px, 0.0, polybolt_ts, "polybolt_price_equity"
+    elif yahoo_px is not None:
+        chosen_px, chosen_conf, chosen_ts, chosen_src = yahoo_px, 0.0, yahoo_ts or now, "yahoo_1m_fallback"
+
+    if chosen_px is None or chosen_px <= 0.0:
+        return None
+
+    sigma_eff = max(
+        float(vol_floor_annual),
+        float((yahoo_data or {}).get("sigma_session") or vol_floor_annual),
+    )
+    return {
+        "spot": float(chosen_px),
+        "sigma_session": round(sigma_eff, 4),
+        "bars": list((yahoo_data or {}).get("bars") or []),
+        "fetched_ts": float(chosen_ts),
+        "yahoo_fetched_ts": float(yahoo_ts),
+        "spot_source": chosen_src,
+        "conf": float(chosen_conf),
+        "conf_bps": round(10000.0 * chosen_conf / chosen_px, 2) if chosen_conf > 0.0 else 0.0,
+        "pyth_spot": pyth_px,
+        "polybolt_spot": polybolt_px,
+        "yahoo_spot": yahoo_px,
+    }
 
 
 def fetch_yahoo_1m_intraday_sync(
@@ -72398,7 +74968,7 @@ def detect_negrisk_convert_positions_arbs(
 
 
 # ======================================================================================
-# [40/67] MODULE: src/polymarket_research/macro_counting_ctf_engine.py
+# [40/68] MODULE: src/polymarket_research/macro_counting_ctf_engine.py
 # PURPOSE: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
 # ======================================================================================
 
@@ -72413,12 +74983,29 @@ import json
 import logging
 import math
 import re
+import threading
 import time
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
+
+_MACRO_FEED_LOCK = threading.RLock()
+_MACRO_FEED_CLIENT: Any = None
+_MACRO_FEED_CACHE: Tuple[float, str, Dict[str, Any]] = (0.0, "", {})
+
+
+def _get_macro_event_feed_client() -> Any:
+    global _MACRO_FEED_CLIENT
+    with _MACRO_FEED_LOCK:
+        if _MACRO_FEED_CLIENT is None:
+            try:
+                from src.polymarket_research.riskless_fast_feeds import MacroEventFeedClient
+                _MACRO_FEED_CLIENT = MacroEventFeedClient()
+            except Exception:
+                _MACRO_FEED_CLIENT = False
+        return None if _MACRO_FEED_CLIENT is False else _MACRO_FEED_CLIENT
 
 from src.polymarket_research.barrier_onetouch_svi_engine import first_passage_touch_prob
 from src.polymarket_research.tradfi_sports_zero_fee_engine import (
@@ -73527,6 +76114,54 @@ def is_in_scheduled_macro_catalyst_window(now_ts: float) -> Tuple[bool, str]:
     return False, ""
 
 
+def poll_macro_catalyst_feeds_sync(
+    now_ts: float,
+    *,
+    client: Any = None,
+    sec_ciks: Tuple[str, ...] = (),
+    bls_series_ids: Tuple[str, ...] = (),
+    ttl_sec: float = 20.0,
+) -> Dict[str, Any]:
+    """
+    Catalyst-window gated official Fed RSS / SEC EDGAR / optional BLS poller.
+    Strictly dormant (zero HTTP requests) outside `is_in_scheduled_macro_catalyst_window`.
+    """
+    global _MACRO_FEED_CACHE
+    in_win, cat_name = is_in_scheduled_macro_catalyst_window(now_ts)
+    if not in_win:
+        return {"in_window": False, "dormant": True, "catalyst": "", "fed_items": [], "sec_hits": [], "bls_data": None}
+    with _MACRO_FEED_LOCK:
+        c_ts, c_cat, c_pay = _MACRO_FEED_CACHE
+        if c_pay and c_cat == cat_name and (float(now_ts) - c_ts) < max(2.0, float(ttl_sec)):
+            return dict(c_pay)
+    cli = client if client is not None else _get_macro_event_feed_client()
+    if cli is None:
+        return {"in_window": True, "dormant": False, "catalyst": cat_name, "fed_items": [], "sec_hits": [], "bls_data": None}
+    fed_items = cli.fetch_fed_rss_sync(in_window=True) if hasattr(cli, "fetch_fed_rss_sync") else []
+    sec_hits = [
+        res
+        for cik in sec_ciks
+        if cik and (res := (cli.fetch_sec_submissions_sync(cik, in_window=True) if hasattr(cli, "fetch_sec_submissions_sync") else None)) is not None
+    ]
+    bls_data = (
+        cli.fetch_bls_series_sync(bls_series_ids, in_window=True)
+        if (cat_name == "US_0830_MACRO_RELEASE" and bls_series_ids and hasattr(cli, "fetch_bls_series_sync"))
+        else None
+    )
+    out = {
+        "in_window": True,
+        "dormant": False,
+        "catalyst": cat_name,
+        "fed_items": list(fed_items or []),
+        "sec_hits": sec_hits,
+        "bls_data": bls_data,
+        "fetched_ts": float(now_ts),
+    }
+    with _MACRO_FEED_LOCK:
+        _MACRO_FEED_CACHE = (float(now_ts), cat_name, dict(out))
+    return out
+
+
 def evaluate_pyth_catalyst_shock(
     asset: str,
     prev_spot: float,
@@ -73536,6 +76171,9 @@ def evaluate_pyth_catalyst_shock(
     eff_session_hours: float,
     sigma_session: float,
     now_ts: float,
+    *,
+    macro_client: Any = None,
+    poll_official_feeds: bool = False,
 ) -> Dict[str, Any]:
     """
     Graveyard-compliant `<1.5%` fee (`0.00%` Pyth `zero_fees`) scheduled macro release jump detector.
@@ -73545,6 +76183,13 @@ def evaluate_pyth_catalyst_shock(
     in_win, cat_name = is_in_scheduled_macro_catalyst_window(now_ts)
     if not in_win or prev_spot <= 0 or cur_spot <= 0 or eff_session_hours <= 0.1:
         return {"eligible": False}
+    macro_ctx: Optional[Dict[str, Any]] = None
+    if poll_official_feeds or macro_client is not None:
+        macro_ctx = poll_macro_catalyst_feeds_sync(now_ts, client=macro_client)
+    else:
+        with _MACRO_FEED_LOCK:
+            if _MACRO_FEED_CACHE[2] and (float(now_ts) - _MACRO_FEED_CACHE[0]) <= 120.0:
+                macro_ctx = _MACRO_FEED_CACHE[2]
     ret = (cur_spot - prev_spot) / prev_spot
     min_jump = 0.0035 if asset == "SPY" else 0.0045
     if abs(ret) < min_jump:
@@ -73557,7 +76202,7 @@ def evaluate_pyth_catalyst_shock(
         return {"eligible": False}
     side = "YES" if dp > 0 else "NO"
     p_fair = p_after if side == "YES" else (1.0 - p_after)
-    return {
+    res_out: Dict[str, Any] = {
         "eligible": bool(0.22 <= p_fair <= 0.94),
         "catalyst": cat_name,
         "side": side,
@@ -73565,6 +76210,14 @@ def evaluate_pyth_catalyst_shock(
         "delta_p": round(abs(dp), 4),
         "ret_pct": round(ret * 100.0, 3),
     }
+    if macro_ctx is not None:
+        res_out["official_macro_feed"] = {
+            "catalyst": cat_name,
+            "fed_release_count": len(macro_ctx.get("fed_items") or ()),
+            "sec_hits_count": len(macro_ctx.get("sec_hits") or ()),
+            "bls_present": bool(macro_ctx.get("bls_data")),
+        }
+    return res_out
 
 
 def evaluate_ai_elo_ci_lock(
@@ -73668,7 +76321,7 @@ def detect_d2_12pm_binance_boxes(
     return out
 
 # ======================================================================================
-# [41/67] MODULE: src/polymarket_research/uma_nba_endgame_engine.py
+# [41/68] MODULE: src/polymarket_research/uma_nba_endgame_engine.py
 # PURPOSE: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
 # ======================================================================================
 
@@ -73704,12 +76357,32 @@ import logging
 import math
 import os
 import re
+import threading
 import time
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
+
+try:
+    import orjson as _orjson  # type: ignore
+except ImportError:  # pragma: no cover
+    _orjson = None
+
+try:
+    import requests as _requests  # type: ignore
+except ImportError:  # pragma: no cover
+    _requests = None
+
+_RPC_SESSION_LOCK = threading.RLock()
+_RPC_HTTP_SESSION: Any = None
+_SHARED_POLYGON_LOGS_WS: Any = None
+
+
+def set_shared_polygon_logs_ws(ws_client: Any) -> None:
+    global _SHARED_POLYGON_LOGS_WS
+    _SHARED_POLYGON_LOGS_WS = ws_client
 
 from src.polymarket_research.tradfi_sports_zero_fee_engine import (
     NbaGameSpec,
@@ -73908,13 +76581,29 @@ def is_objective_uma_market(m: Dict[str, Any]) -> Tuple[bool, str]:
     return False, "NO_OBJECTIVE_DOMAIN_MATCH"
 
 
+def _get_rpc_session() -> Any:
+    global _RPC_HTTP_SESSION
+    if _requests is None or not hasattr(_requests, "Session"):
+        return None
+    with _RPC_SESSION_LOCK:
+        if _RPC_HTTP_SESSION is None:
+            s = _requests.Session()
+            if not hasattr(s, "post") or not hasattr(s, "headers"):
+                return None
+            s.headers.update({"Content-Type": "application/json", "User-Agent": "DominusUmaVerifier/1.0"})
+            _RPC_HTTP_SESSION = s
+        return _RPC_HTTP_SESSION
+
+
 def _rpc_post(rpc_url: str, payload: Any, timeout: float = 2.5) -> Any:
-    body = json.dumps(payload).encode("utf-8")
+    body = _orjson.dumps(payload) if _orjson is not None else json.dumps(payload).encode("utf-8")
     urls = [rpc_url]
     if rpc_url == DEFAULT_POLYGON_RPC:
         urls.extend(u for u in FALLBACK_POLYGON_RPCS if u != rpc_url)
     per_timeout = max(0.8, float(timeout))
     deadline = time.monotonic() + max(per_timeout, 4.5)
+    urlopen_patched = getattr(urllib.request.urlopen, "__module__", "urllib.request") != "urllib.request"
+    sess = None if urlopen_patched else _get_rpc_session()
     last_exc: Optional[Exception] = None
     for idx, u in enumerate(urls):
         rem = deadline - time.monotonic()
@@ -73922,13 +76611,19 @@ def _rpc_post(rpc_url: str, payload: Any, timeout: float = 2.5) -> Any:
             break
         try_timeout = min(per_timeout, max(0.8, rem))
         try:
+            if sess is not None:
+                resp = sess.post(u, data=body, timeout=try_timeout)
+                if getattr(resp, "status_code", 200) >= 400:
+                    raise RuntimeError(f"RPC_HTTP_{resp.status_code}")
+                return _orjson.loads(resp.content) if _orjson is not None else resp.json()
             req = urllib.request.Request(
                 u,
                 data=body,
                 headers={"Content-Type": "application/json", "User-Agent": "DominusUmaVerifier/1.0"},
                 method="POST",
             )
-            return json.loads(urllib.request.urlopen(req, timeout=try_timeout).read().decode("utf-8"))
+            raw_b = urllib.request.urlopen(req, timeout=try_timeout).read()
+            return _orjson.loads(raw_b) if _orjson is not None else json.loads(raw_b.decode("utf-8"))
         except Exception as exc:
             last_exc = exc
     raise last_exc if last_exc is not None else RuntimeError("RPC_FAILED")
@@ -73986,16 +76681,42 @@ def verify_uma_onchain_proposal_sync(
     min_proposal_age_sec: float = 120.0,
     max_rem_challenge_sec: float = 7500.0,
     timeout: float = 5.0,
+    scoped_logs_ws: Any = None,
 ) -> Dict[str, Any]:
     """
     Queries Polygon `UmaCtfAdapter.getQuestion` + `OptimisticOracleV2.getState`/`getRequest` directly
     on-chain to verify an active, undisputed binary UMA assertion.
+    Uses optional `PolygonScopedLogsWs` cache first (`D-001` quarantine + instant DISPUTED/SETTLED veto).
     """
     ok_obj, domain_tag = is_objective_uma_market(m)
     if not ok_obj:
         return {"verified": False, "reason": domain_tag}
 
+    mid_s = str(m.get("id") or m.get("market_id") or "").strip()
+    if mid_s in ("6707503", "6707502"):
+        return {"verified": False, "reason": "D001_DISPUTED_KMIA_QUARANTINED"}
+
     now = float(now_ts if now_ts is not None else time.time())
+    logs_ws = scoped_logs_ws if scoped_logs_ws is not None else _SHARED_POLYGON_LOGS_WS
+    ws_hint: Optional[Dict[str, Any]] = None
+    if logs_ws is not None:
+        try:
+            if mid_s and hasattr(logs_ws, "get_market_oo_status"):
+                ws_oo = logs_ws.get_market_oo_status(mid_s)
+                if isinstance(ws_oo, dict):
+                    if ws_oo.get("quarantined_d001"):
+                        return {"verified": False, "reason": "D001_WS_QUARANTINED", "ws_fast_path": True}
+                    st_ws = str(ws_oo.get("status") or "").upper()
+                    if st_ws == "DISPUTED":
+                        return {"verified": False, "reason": "WS_DISPUTE_PRICE_VETO", "ws_fast_path": True, "ws_event": ws_oo}
+                    if st_ws == "SETTLED":
+                        return {"verified": False, "reason": "OO_STATE_6_WS_SETTLED", "ws_fast_path": True, "ws_event": ws_oo}
+                    ws_hint = ws_oo
+            cid_s = str(m.get("conditionId") or m.get("condition_id") or "").strip().lower()
+            if cid_s and hasattr(logs_ws, "get_condition_resolution") and logs_ws.get_condition_resolution(cid_s) is not None:
+                return {"verified": False, "reason": "CTF_CONDITION_ALREADY_RESOLVED_WS", "ws_fast_path": True}
+        except Exception:
+            pass
     rpc = rpc_url or os.getenv("POLYGON_RPC_URL") or DEFAULT_POLYGON_RPC
     adapter = str(m.get("resolvedBy") or "").strip().lower()
     is_nr = bool(m.get("negRisk")) or (adapter in NEGRISK_UMA_ADAPTERS)
@@ -74136,7 +76857,7 @@ def verify_uma_onchain_proposal_sync(
 
         fee_rate, fee_exp = _extract_market_fee_rate(m)
         lose_idx = 1 - win_idx
-        return {
+        res_out = {
             "verified": True,
             "domain": domain_tag,
             "adapter": adapter,
@@ -74156,6 +76877,9 @@ def verify_uma_onchain_proposal_sync(
             "fee_rate": fee_rate,
             "fee_exponent": fee_exp,
         }
+        if ws_hint is not None:
+            res_out["ws_fast_path_hint"] = ws_hint.get("event_kind")
+        return res_out
     except Exception as exc:
         return {"verified": False, "reason": f"RPC_ERR:{type(exc).__name__}"}
 
@@ -74472,7 +77196,7 @@ def evaluate_nba_endgame_locks(
     return out
 
 # ======================================================================================
-# [42/67] MODULE: src/polymarket_research/riskless_frontier_v2_engine.py
+# [42/68] MODULE: src/polymarket_research/riskless_frontier_v2_engine.py
 # PURPOSE: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
 # ======================================================================================
 
@@ -76301,7 +79025,7 @@ def evaluate_api1_esports_bo3_opportunities(
     return {"single_leg_locks": locks, "two_leg_boxes": boxes}
 
 # ======================================================================================
-# [43/67] MODULE: src/polymarket_research/riskless_frontier_v3_engine.py
+# [43/68] MODULE: src/polymarket_research/riskless_frontier_v3_engine.py
 # PURPOSE: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
 # ======================================================================================
 
@@ -78599,7 +81323,7 @@ def evaluate_ten1_tennis_opportunities(
     return boxes
 
 # ======================================================================================
-# [44/67] MODULE: src/polymarket_research/riskless_frontier_v4_engine.py
+# [44/68] MODULE: src/polymarket_research/riskless_frontier_v4_engine.py
 # PURPOSE: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
 # ======================================================================================
 
@@ -80976,7 +83700,7 @@ def evaluate_mkr_lock1_post_clinch_rebate_bid(
     }
 
 # ======================================================================================
-# [45/67] MODULE: src/polymarket_research/alpha_124_shadow_daemon.py
+# [45/68] MODULE: src/polymarket_research/alpha_124_shadow_daemon.py
 # PURPOSE: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
 # ======================================================================================
 
@@ -81114,6 +83838,11 @@ except ImportError:
     except ImportError:
         PolymarketChainlinkLiveStream = None  # type: ignore
 try:
+    from src.polymarket_research.riskless_fast_feeds import PolygonScopedLogsWs, PythHermesStream
+except Exception:
+    PolygonScopedLogsWs = None  # type: ignore
+    PythHermesStream = None  # type: ignore
+try:
     from src.polymarket_research.economic_attribution_ledger import (
         GLOBAL_DECAY_TRACKER as _STAGE_B_DECAY_TRACKER,
         emit_funnel_event as _stage_b_emit_funnel,
@@ -81156,6 +83885,7 @@ from src.polymarket_research.tradfi_sports_zero_fee_engine import (
     detect_pyth_close_vs_hit_boxes,
     evaluate_pyth_session_barrier_no_lock,
     evaluate_pyth_session_close_lock,
+    fetch_pyth_intraday_or_spot_sync,
     fetch_yahoo_1m_intraday_sync,
     is_same_continuous_session,
     parse_multi_sport_corridor_event,
@@ -81192,8 +83922,10 @@ from src.polymarket_research.macro_counting_ctf_engine import (
     fetch_aaa_national_gas_sync,
     fetch_xtracker_user_stats_sync,
     find_cross_event_bitmask_boxes,
+    is_in_scheduled_macro_catalyst_window,
     parse_counting_slate_event,
     parse_gas_daily_bracket,
+    poll_macro_catalyst_feeds_sync,
     walk_equal_shares_overround_bids,
     walk_position_overround_bid_unwind,
 )
@@ -84389,6 +87121,7 @@ class Alpha124ShadowDaemon:
                     "fee_rate": round(f_r, 6) if is_fee_mkt else 0.0,
                     "fee_exponent": round(f_e, 4),
                     "fees_enabled": is_fee_mkt,
+                    "holding_rewards_enabled": bool(mkt.get("holdingRewardsEnabled") or ev.get("holdingRewardsEnabled")),
                     "neg_risk": is_nr,
                     "end_ts": float(end_ts),
                     "asset": asset_tag,
@@ -91069,6 +93802,15 @@ class Alpha124ShadowDaemon:
                 extra = pos.get("extra") or {}
                 legs = extra.get("legs") or []
                 close_ts_f = float(pos["close_ts"])
+                if extra.get("v6_instant_realize"):
+                    if now >= close_ts_f:
+                        to_close.append((pid, "SETTLED_V6_INSTANT_LOCK", float(extra.get("guaranteed_payout") or pos.get("p_model_entry") or 1.0), 0.0))
+                    continue
+                all_pm_legs = bool(legs) and all(lg.get("token_id") and str(lg.get("venue", "polymarket")).lower() == "polymarket" for lg in legs)
+                if not all_pm_legs:
+                    if now >= close_ts_f and extra.get("guaranteed_payout"):
+                        to_close.append((pid, "SETTLED_V6_GUARANTEED_FLOOR", float(extra["guaranteed_payout"]), 0.0))
+                    continue
                 if now < close_ts_f + 20.0:
                     bks_m = None
                     if (now - float(pos.get("_last_book_poll_ts") or 0.0)) >= 30.0 and legs:
@@ -91112,10 +93854,12 @@ class Alpha124ShadowDaemon:
                     ]
                 )
                 if resolved_vals and all(v is not None for v in resolved_vals):
-                    total_pay = round(sum(float(v) for v in resolved_vals if v is not None), 4)
+                    total_pay = round(sum(float(v) for v in resolved_vals if v is not None) + float(extra.get("guaranteed_coupon_per_share") or 0.0), 4)
                     to_close.append((pid, "SETTLED_MULTI_LEG_ARB", total_pay, 0.0))
                 elif sleeve == "P1_PREOPEN_MAKER_STRADDLE" and now >= close_ts_f + 900.0:
                     to_close.append((pid, "SETTLED_COMPLETE_SET_1X", 1.0, 0.0))
+                elif extra.get("v6_state_payoff_table") and extra.get("guaranteed_payout") and now >= close_ts_f + 900.0:
+                    to_close.append((pid, "SETTLED_V6_GUARANTEED_FLOOR", float(extra["guaranteed_payout"]), 0.0))
                 continue
 
             # 0B. Dedicated hold-to-expiry & authoritative Chainlink TWAP settlement for S2_EXACT_TWAP_LOCK
@@ -91422,6 +94166,27 @@ class Alpha124ShadowDaemon:
                     and round(pnl_1k, 2) > 0.0
                     and round(adj_pnl_1k, 2) > 0.0
                     and not is_shadow_sleeve_quarantined(sl)
+                    and (
+                        sl != "XV_SUBSET_NO_BOX"
+                        or sum(
+                            1
+                            for p in closed_sl
+                            if not bool((p.get("extra") or {}).get("neg_risk_augmented", False))
+                            and (
+                                str((p.get("extra") or {}).get("box_type") or "") == "NEGRISK_2LEG"
+                                or len((p.get("extra") or {}).get("legs") or []) == 2
+                            )
+                            and float((p.get("tier_pnls_usd") or {}).get("T1000", 0.0) or 0.0) > 0.0
+                        )
+                        >= 8
+                    )
+                    and sl not in {
+                        "XV_FX_INVARIANT_CAD_USD_BOX",
+                        "DERIBIT_VERTICAL_SUPER_REP",
+                        "XV_HALFTIME_FREEZE_CORRIDOR",
+                        "HEDGED_PRESPLIT_CONV_GUN",
+                        "YIELD_STACKED_CARRY_BOX",
+                    }
                 ),
             }
 
@@ -91697,12 +94462,24 @@ class Alpha124ShadowDaemon:
             return None
         yh_sym, _, _, _, vol_floor = cfg
         cached = self.pyth_intraday_cache.get(yh_sym)
-        if cached is not None and (now_ts - cached[0]) < 90.0:
-            return cached[1]
-        res = await asyncio.to_thread(fetch_yahoo_1m_intraday_sync, yh_sym, vol_floor)
-        if res is not None:
-            self.pyth_intraday_cache[yh_sym] = (now_ts, res)
-        return res
+        y_res = cached[1] if (cached is not None and (now_ts - cached[0]) < 90.0) else None
+        if y_res is None:
+            y_res = await asyncio.to_thread(fetch_yahoo_1m_intraday_sync, yh_sym, vol_floor)
+            if y_res is not None:
+                self.pyth_intraday_cache[yh_sym] = (now_ts, y_res)
+        fast_res = await asyncio.to_thread(
+            fetch_pyth_intraday_or_spot_sync,
+            asset,
+            yh_sym,
+            vol_floor,
+            pyth_stream=getattr(self, "_pyth_hermes_stream", None),
+            chainlink_stream=getattr(self, "_chainlink_ws", None),
+            cached_yahoo=y_res,
+            yahoo_ttl_sec=90.0,
+            use_pyth_hermes=not bool(getattr(self, "single_scan", False)),
+            now_ts=now_ts,
+        )
+        return fast_res if fast_res is not None else y_res
 
     async def scan_tradfi_and_sports_markets(self, opps_out: List[Dict[str, Any]]) -> None:
         """
@@ -91869,6 +94646,9 @@ class Alpha124ShadowDaemon:
 
             # CM_SHOCK_PYTH_CATALYST: fee-exact scheduled NY macro release (08:30 CPI/NFP, 10:30 EIA, 14:00 FOMC) Pyth jump sniper
             prev_sp = self.prev_pyth_spots.get(r.asset, 0.0)
+            if in_active_window and not self.single_scan and is_in_scheduled_macro_catalyst_window(now)[0] and (now - float(getattr(self, "_last_macro_rss_ts", 0.0))) >= 2.0:
+                self._last_macro_rss_ts = now
+                await asyncio.to_thread(poll_macro_catalyst_feeds_sync, now)
             if in_active_window and exact_ok and same_sess and not already_hit and prev_sp > 0.0:
                 sh_ev = evaluate_pyth_catalyst_shock(r.asset, prev_sp, spot_p, r.strike, r.direction, eff_hrs, float(fd["sigma_session"]), now)
                 if sh_ev.get("eligible"):
@@ -93627,18 +96407,29 @@ class Alpha124ShadowDaemon:
             if any(ms.sport == sp_k and (ms.start_ts - 900.0) <= now <= (ms.start_ts + 6.0 * 3600.0) for ms in self.multi_sport_games.values()):
                 sports_to_poll.append(sp_k)
         boards_now: Dict[str, List[LiveMultiSportGame]] = {}
+        def _ms_ttl(sp_k: str) -> float:
+            b_ent = self.live_multisport_boards.get(sp_k)
+            gms = (b_ent[1] or []) if b_ent else []
+            has_live = any(getattr(gm, "state", "") == "in" for gm in gms)
+            is_eg = any(
+                getattr(gm, "state", "") == "in"
+                and (float(getattr(gm, "clock_sec", 9999) or 9999) <= 125.0 or bool(getattr(gm, "is_halftime", False)))
+                for gm in gms
+            )
+            try:
+                from src.polymarket_research.polymarket_direct_feeds import compute_adaptive_sports_poll_interval_sec
+                return min(20.0, float(compute_adaptive_sports_poll_interval_sec(is_endgame_or_halftime=is_eg, has_live_games=has_live)))
+            except Exception:
+                return 0.75 if is_eg else (5.5 if has_live else 20.0)
+
         fetch_sp_list = [
             sp_k for sp_k in sports_to_poll
             if sp_k not in self.live_multisport_boards
-            or (now - self.live_multisport_boards[sp_k][0]) >= (
-                6.0
-                if any(getattr(gm, "state", "") == "in" for gm in (self.live_multisport_boards[sp_k][1] or []))
-                else 20.0
-            )
+            or (now - self.live_multisport_boards[sp_k][0]) >= _ms_ttl(sp_k)
         ]
+        _use_df_ms = not self.single_scan and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_official_league_direct_feeds", True))
         if fetch_sp_list:
             fetched_bds = await asyncio.gather(*(asyncio.to_thread(fetch_espn_multisport_board_sync, sp_k) for sp_k in fetch_sp_list))
-            _use_df_ms = not self.single_scan and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_official_league_direct_feeds", True))
             for sp_k, bd_res in zip(fetch_sp_list, fetched_bds):
                 if _use_df_ms and sp_k in ("NHL", "MLB"):
                     try:
@@ -93652,6 +96443,17 @@ class Alpha124ShadowDaemon:
                     except Exception:
                         pass
                 self.live_multisport_boards[sp_k] = (now, bd_res)
+        if _use_df_ms:
+            for _tour in ("ATP", "WTA"):
+                _prev_t = self.live_multisport_boards.get(_tour)
+                _t_live = any((gm.get("state") == "in") if isinstance(gm, dict) else False for gm in ((_prev_t[1] or []) if _prev_t else []))
+                if _prev_t is None or (now - _prev_t[0]) >= (1.0 if _t_live else 30.0):
+                    try:
+                        from src.polymarket_research.polymarket_direct_feeds import fetch_atp_wta_live_scores_sync
+                        _t_res = await asyncio.to_thread(fetch_atp_wta_live_scores_sync, _tour.lower())
+                        self.live_multisport_boards[_tour] = (now, _t_res)
+                    except Exception:
+                        pass
         for sp_k in sports_to_poll:
             if sp_k in self.live_multisport_boards:
                 boards_now[sp_k] = self.live_multisport_boards[sp_k][1]
@@ -95792,7 +98594,23 @@ class Alpha124ShadowDaemon:
         now = float(now_ts if now_ts is not None else time.time())
         if not self.nba_games:
             return
-        poll_ttl = 5.5 if self.has_live_nba_window(now) else 120.0
+        _has_live_nba = self.has_live_nba_window(now)
+        _nba_eg = any(
+            getattr(g, "state", "") == "in"
+            and (
+                (int(getattr(g, "period", 0) or 0) >= 4 and float(getattr(g, "clock_sec", 9999) or 9999) <= 125.0)
+                or (int(getattr(g, "period", 0) or 0) == 2 and float(getattr(g, "clock_sec", 9999) or 9999) <= 15.0)
+                or bool(getattr(g, "is_halftime", False))
+            )
+            for g in (self.live_nba_board or [])
+        )
+        try:
+            from src.polymarket_research.polymarket_direct_feeds import compute_adaptive_sports_poll_interval_sec
+            poll_ttl = float(compute_adaptive_sports_poll_interval_sec(is_endgame_or_halftime=_nba_eg, has_live_games=_has_live_nba))
+            if not _has_live_nba:
+                poll_ttl = max(60.0, poll_ttl)
+        except Exception:
+            poll_ttl = 0.75 if _nba_eg else (5.5 if _has_live_nba else 120.0)
         if self.single_scan or not self.live_nba_board or (now - self.last_espn_board_ts) >= poll_ttl:
             board = await asyncio.to_thread(fetch_espn_nba_scoreboard_sync)
             if not self.single_scan and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_official_league_direct_feeds", True)):
@@ -96255,6 +99073,34 @@ class Alpha124ShadowDaemon:
                 self._bg_clob_ws_task = asyncio.create_task(self._run_clob_d1_ws_loop())
             if not self.single_scan and self._chainlink_ws is not None and (self._bg_chainlink_ws_task is None or self._bg_chainlink_ws_task.done()):
                 self._bg_chainlink_ws_task = asyncio.create_task(self._chainlink_ws.run_forever())
+            if not self.single_scan and PythHermesStream is not None:
+                try:
+                    if getattr(self, "_pyth_hermes_stream", None) is None:
+                        self._pyth_hermes_stream = PythHermesStream()
+                    _ph_t = getattr(self, "_bg_pyth_hermes_task", None)
+                    if _ph_t is None or _ph_t.done():
+                        self._bg_pyth_hermes_task = asyncio.create_task(self._pyth_hermes_stream.run_forever())
+                except Exception:
+                    pass
+            if not self.single_scan and PolygonScopedLogsWs is not None:
+                try:
+                    if getattr(self, "_polygon_logs_ws", None) is None:
+                        self._polygon_logs_ws = PolygonScopedLogsWs()
+                        try:
+                            from src.polymarket_research.uma_nba_endgame_engine import set_shared_polygon_logs_ws
+                            set_shared_polygon_logs_ws(self._polygon_logs_ws)
+                        except Exception:
+                            pass
+                        try:
+                            from src.polymarket_research.riskless_protocol_v2_expansion import set_shared_protocol_v2_polygon_logs_ws
+                            set_shared_protocol_v2_polygon_logs_ws(self._polygon_logs_ws)
+                        except Exception:
+                            pass
+                    _pl_t = getattr(self, "_bg_polygon_logs_ws_task", None)
+                    if _pl_t is None or _pl_t.done():
+                        self._bg_polygon_logs_ws_task = asyncio.create_task(self._polygon_logs_ws.run_forever())
+                except Exception:
+                    pass
             _gatling_task = getattr(self, "_bg_gatling_fast_task", None)
             if not self.single_scan and (_gatling_task is None or _gatling_task.done()):
                 self._bg_gatling_fast_task = asyncio.create_task(self._run_gatling_fast_gun_loop())
@@ -96528,7 +99374,7 @@ if __name__ == "__main__":
     main()
 
 # ======================================================================================
-# [46/67] MODULE: scripts/backtest_alpha_124.py
+# [46/68] MODULE: scripts/backtest_alpha_124.py
 # PURPOSE: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
 # ======================================================================================
 
@@ -97391,7 +100237,7 @@ if __name__ == "__main__":
     main()
 
 # ======================================================================================
-# [47/67] MODULE: scripts/polymarket_daily_projections.py
+# [47/68] MODULE: scripts/polymarket_daily_projections.py
 # PURPOSE: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
 # ======================================================================================
 
@@ -99174,7 +102020,7 @@ if __name__ == "__main__":
     main()
 
 # ======================================================================================
-# [48/67] MODULE: scripts/alpha124_status.py
+# [48/68] MODULE: scripts/alpha124_status.py
 # PURPOSE: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
 # ======================================================================================
 
@@ -99253,7 +102099,7 @@ if __name__ == "__main__":
     main()
 
 # ======================================================================================
-# [49/67] MODULE: scripts/polymarket_scorecard_snapshot.py
+# [49/68] MODULE: scripts/polymarket_scorecard_snapshot.py
 # PURPOSE: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
 # ======================================================================================
 
@@ -99403,7 +102249,7 @@ if __name__ == "__main__":
     main()
 
 # ======================================================================================
-# [50/67] MODULE: src/polymarket_research/exp316_macro_strike_shadow.py
+# [50/68] MODULE: src/polymarket_research/exp316_macro_strike_shadow.py
 # PURPOSE: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
 # ======================================================================================
 
@@ -101298,7 +104144,7 @@ if __name__ == "__main__":
     main()
 
 # ======================================================================================
-# [51/67] MODULE: src/polymarket_research/honest_riskless_backtester.py
+# [51/68] MODULE: src/polymarket_research/honest_riskless_backtester.py
 # PURPOSE: v6.0 Honest CLOB L2 Execution Kernel, Zero-Lookahead Harness & CompactCandidateL2Recorder
 # ======================================================================================
 
@@ -102198,7 +105044,7 @@ class ZeroLookaheadBacktestHarness:
         )
 
 # ======================================================================================
-# [52/67] MODULE: src/polymarket_research/riskless_expansion_v6_engines.py
+# [52/68] MODULE: src/polymarket_research/riskless_expansion_v6_engines.py
 # PURPOSE: v6.0 8-Sleeve Riskless Expansion Engine (XV Subset-NO, 0.001 Tail, BOND3, CAD/USD FX, Deribit USDC, Halftime, PreConv NR3, Yield Box)
 # ======================================================================================
 
@@ -102498,6 +105344,7 @@ def detect_cross_venue_subset_no_boxes(
                         "subset_size_m": m,
                         "partition_total_outcomes_seen": len(chosen_pool),
                         "outsider_jackpot_bonus_usd": round(best_p - worst_p, 6),
+                        "box_type": "NEGRISK_2LEG" if m == 2 else f"NEGRISK_{m}LEG",
                     },
                 )
             )
@@ -102907,6 +105754,80 @@ def evaluate_bond3_multisource_verified_carry(
 # ---------------------------------------------------------------------------
 
 
+import threading
+import time
+_FX_CAD_USD_CACHE_LOCK = threading.Lock()
+_FX_CAD_USD_CACHE: Optional[Tuple[float, Dict[str, Any]]] = None
+
+
+def _resolve_live_cad_usd_sync(
+    *,
+    ibkr_quote: Any = None,
+    pyth_stream: Any = None,
+    fallback_bid: float = 0.7230,
+    fallback_ask: float = 0.7250,
+    use_live_fx: bool = True,
+    timeout: float = 2.0,
+    cache_ttl_sec: float = 10.0,
+) -> Dict[str, Any]:
+    """Resolves intraday live `CAD/USD` bid/ask via `riskless_fast_feeds.fetch_live_cad_usd_sync`, never daily BoC."""
+    global _FX_CAD_USD_CACHE
+    import os
+    now = time.time()
+    offline = (not use_live_fx) or str(os.environ.get("DOMINUS_NETWORK_MODE") or "").strip().lower() == "offline"
+    if ibkr_quote is None and pyth_stream is None and not offline:
+        with _FX_CAD_USD_CACHE_LOCK:
+            if _FX_CAD_USD_CACHE is not None and (now - _FX_CAD_USD_CACHE[0]) <= max(1.0, float(cache_ttl_sec)):
+                return dict(_FX_CAD_USD_CACHE[1])
+    if offline and ibkr_quote is None and pyth_stream is None:
+        return {
+            "bid": float(fallback_bid),
+            "ask": float(fallback_ask),
+            "mid": 0.5 * (float(fallback_bid) + float(fallback_ask)),
+            "ts": now,
+            "source": "stale_fallback_offline",
+            "stale": True,
+            "is_daily_ref": False,
+        }
+    try:
+        from src.polymarket_research.riskless_fast_feeds import fetch_live_cad_usd_sync
+
+        res = fetch_live_cad_usd_sync(
+            ibkr_quote=ibkr_quote,
+            pyth_stream=pyth_stream,
+            timeout=timeout,
+            fallback_bid=float(fallback_bid),
+            fallback_ask=float(fallback_ask),
+        )
+        bid = float(res.get("bid") or 0.0)
+        ask = float(res.get("ask") or 0.0)
+        if bool(res.get("is_daily_ref")) or bid <= 0.25 or ask < bid or ask >= 2.0:
+            raise ValueError("INVALID_OR_DAILY_REF_FX")
+        out = {
+            "bid": bid,
+            "ask": ask,
+            "mid": 0.5 * (bid + ask),
+            "ts": float(res.get("ts") or now),
+            "source": str(res.get("source") or "live_fx"),
+            "stale": bool(res.get("stale", False)),
+            "is_daily_ref": False,
+        }
+        if ibkr_quote is None and pyth_stream is None and not out["stale"]:
+            with _FX_CAD_USD_CACHE_LOCK:
+                _FX_CAD_USD_CACHE = (now, dict(out))
+        return out
+    except Exception:
+        return {
+            "bid": float(fallback_bid),
+            "ask": float(fallback_ask),
+            "mid": 0.5 * (float(fallback_bid) + float(fallback_ask)),
+            "ts": now,
+            "source": "stale_fallback",
+            "stale": True,
+            "is_daily_ref": False,
+        }
+
+
 def evaluate_stx_forecastex_fx_invariant_box(
     *,
     pair_id: str,
@@ -102915,14 +105836,20 @@ def evaluate_stx_forecastex_fx_invariant_box(
     stx_execution_style: str,
     forecastex_market: NormalizedBinaryMarket,
     forecastex_side: str,
-    spot_cad_to_usd_bid: float = 0.7230,
-    spot_cad_to_usd_ask: float = 0.7250,
+    spot_cad_to_usd_bid: Optional[float] = None,
+    spot_cad_to_usd_ask: Optional[float] = None,
     fx_shock_band_frac: float = 0.0180,
     ibkr_fx_hedge_locked: bool = False,
     ibkr_fx_ticket_fee_usd: float = 0.25,
     event_cancel_exempt: bool = True,
     target_usd_shares: float = 100.0,
     min_net_profit_usd: float = MIN_NET_PROFIT_USD,
+    use_live_fx: bool = True,
+    ibkr_fx_quote: Any = None,
+    pyth_fx_stream: Any = None,
+    fallback_cad_usd_bid: float = 0.7230,
+    fallback_cad_usd_ask: float = 0.7250,
+    fx_timeout: float = 2.0,
 ) -> Optional[VerifiedRisklessOpportunity]:
     """
     `100%` Ontario (`CA-ON`) legal cross-currency box sizing between AGCO-registered
@@ -102938,18 +105865,39 @@ def evaluate_stx_forecastex_fx_invariant_box(
     if not stx_asks or not fex_asks:
         return None
 
+    if spot_cad_to_usd_bid is not None and spot_cad_to_usd_ask is not None:
+        eff_fx_bid = float(spot_cad_to_usd_bid)
+        eff_fx_ask = max(eff_fx_bid, float(spot_cad_to_usd_ask))
+        fx_source = "caller_supplied"
+        fx_stale = False
+        fx_is_daily_ref = False
+    else:
+        fx_res = _resolve_live_cad_usd_sync(
+            ibkr_quote=ibkr_fx_quote,
+            pyth_stream=pyth_fx_stream,
+            fallback_bid=fallback_cad_usd_bid,
+            fallback_ask=fallback_cad_usd_ask,
+            use_live_fx=use_live_fx,
+            timeout=fx_timeout,
+        )
+        eff_fx_bid = float(fx_res["bid"])
+        eff_fx_ask = max(eff_fx_bid, float(fx_res["ask"]))
+        fx_source = str(fx_res["source"])
+        fx_stale = bool(fx_res["stale"])
+        fx_is_daily_ref = bool(fx_res["is_daily_ref"])
+
     q_usd = float(max(forecastex_market.min_shares, math.floor(target_usd_shares)))
     w_fex = walk_asks_for_shares(fex_asks, q_usd, forecastex_market)
     if not w_fex.filled or w_fex.filled_shares + 1e-6 < q_usd:
         return None
 
     if ibkr_fx_hedge_locked:
-        fx_settle_floor = float(spot_cad_to_usd_bid) * (1.0 - 0.0002)
-        fx_settle_ceil = float(spot_cad_to_usd_ask) * (1.0 + 0.0002)
+        fx_settle_floor = eff_fx_bid * (1.0 - 0.0002)
+        fx_settle_ceil = eff_fx_ask * (1.0 + 0.0002)
         fx_fee_usd = float(ibkr_fx_ticket_fee_usd)
     else:
-        fx_settle_floor = float(spot_cad_to_usd_bid) * (1.0 - max(0.0, float(fx_shock_band_frac)))
-        fx_settle_ceil = float(spot_cad_to_usd_ask) * (1.0 + max(0.0, float(fx_shock_band_frac)))
+        fx_settle_floor = eff_fx_bid * (1.0 - max(0.0, float(fx_shock_band_frac)))
+        fx_settle_ceil = eff_fx_ask * (1.0 + max(0.0, float(fx_shock_band_frac)))
         fx_fee_usd = 0.0
 
     stx_top_px = float(stx_asks[0].price)
@@ -102967,7 +105915,7 @@ def evaluate_stx_forecastex_fx_invariant_box(
     # from the winning CAD payout (`cad_net_payout_cad`), NOT paid upfront on losing outcomes!
     is_stx_maker = stx_execution_style.strip().upper() == "PASSIVE_MAKER"
     stx_upfront_fee_cad = 0.0 if is_stx_maker else w_stx.taker_fee_usd
-    stx_cost_usd = (w_stx.gross_cost_usd + stx_upfront_fee_cad) * float(spot_cad_to_usd_ask)
+    stx_cost_usd = (w_stx.gross_cost_usd + stx_upfront_fee_cad) * eff_fx_ask
 
     fex_leg_usd = w_fex.gross_cost_usd + w_fex.taker_fee_usd
     all_in_cost_usd = fex_leg_usd + stx_cost_usd + fx_fee_usd
@@ -103024,6 +105972,11 @@ def evaluate_stx_forecastex_fx_invariant_box(
         ),
         metadata={
             "fx_mode": "IBKR_LOCKED_FX" if ibkr_fx_hedge_locked else "UNHEDGED_STRESSED_BAND",
+            "fx_bid": round(eff_fx_bid, 6),
+            "fx_ask": round(eff_fx_ask, 6),
+            "fx_source": fx_source,
+            "fx_stale": fx_stale,
+            "is_daily_ref": fx_is_daily_ref,
             "fx_settle_floor": round(fx_settle_floor, 6),
             "cad_to_usd_share_ratio": round(q_cad_needed / q_usd, 6),
         },
@@ -103066,6 +106019,7 @@ def detect_deribit_usdc_vertical_super_replication(
     cross_oracle_basis_bps: float = 150.0,
     target_units: float = 50.0,
     min_net_profit_usd: float = MIN_NET_PROFIT_USD,
+    max_expiry_skew_sec: float = 1.0,
 ) -> List[VerifiedRisklessOpportunity]:
     """
     Construct tight linear `USDC` vertical call/put spreads on Deribit (`08:00 UTC` expiry)
@@ -103075,12 +106029,13 @@ def detect_deribit_usdc_vertical_super_replication(
     if binary_market.end_ts is None or binary_strike <= 0.0:
         return []
 
+    skew_tol = max(1.0, float(max_expiry_skew_sec))
     calls: List[DeribitLinearOptionQuote] = []
     puts: List[DeribitLinearOptionQuote] = []
     for opt in deribit_options:
         if opt.settlement_currency.strip().upper() != "USDC" or "_USDC" not in opt.underlying.upper():
             continue
-        if abs(float(opt.expiry_ts) - float(binary_market.end_ts)) > 1.0:
+        if abs(float(opt.expiry_ts) - float(binary_market.end_ts)) > skew_tol:
             continue
         if opt.best_ask_usd <= 0.0 or opt.best_ask_size <= 0.0:
             continue
@@ -103899,6 +106854,7 @@ def _open_v6_shadow_box_in_alpha124(
     close_ts: float,
     legs: Sequence[Dict[str, Any]],
     now_ts: float,
+    extra_fields: Optional[Mapping[str, Any]] = None,
 ) -> bool:
     """Opens an honest multi-leg shadow position in `Alpha124ShadowDaemon` (never emits live orders)."""
     from datetime import datetime, timezone
@@ -103935,13 +106891,22 @@ def _open_v6_shadow_box_in_alpha124(
 
     pos_id = f"{opp.strategy_id}_{int(now_ts)}_{abs(hash(dedupe_key)) % 100000:05d}"
     tok_join = "|".join(str(lg.get("token_id") or "") for lg in legs if lg.get("token_id"))
+    extra_dict: Dict[str, Any] = {
+        "is_multi_leg_bundle": True,
+        "guaranteed_payout": guar_unit,
+        "max_payout": round(float(opp.best_case_payout_usd) / q_ref, 5),
+        "v6_state_payoff_table": dict(opp.state_payoff_table),
+        "legs": list(legs),
+    }
+    if extra_fields:
+        extra_dict.update(dict(extra_fields))
     pos = {
         "position_id": pos_id,
         "dedupe_key": dedupe_key,
         "sleeve": opp.strategy_id,
         "asset_or_city": str(asset_or_city or "POLY"),
         "title": str(title)[:96],
-        "side": "+".join(str(lg.get("side") or "LEG") for lg in legs[:4]),
+        "side": "+".join(str(lg.get("side") or "LEG") for lg in legs[:4]) or "BOX",
         "token_id": tok_join or opp.opportunity_id,
         "fee_rate": 0.0,
         "entry_ts": float(now_ts),
@@ -103955,13 +106920,7 @@ def _open_v6_shadow_box_in_alpha124(
         "last_bid": unit_cost,
         "maker_tp_px": None,
         "tier_fills": tier_fills,
-        "extra": {
-            "is_multi_leg_bundle": True,
-            "guaranteed_payout": guar_unit,
-            "max_payout": round(float(opp.best_case_payout_usd) / q_ref, 5),
-            "v6_state_payoff_table": dict(opp.state_payoff_table),
-            "legs": list(legs),
-        },
+        "extra": extra_dict,
         "status": "OPEN",
     }
     open_positions[pos_id] = pos
@@ -103975,6 +106934,305 @@ def _open_v6_shadow_box_in_alpha124(
     return True
 
 
+def _load_or_init_xv_shadow_ledger(collector: Any, data_dir: Any) -> Dict[str, Any]:
+    """Loads or initializes the bounded Stage G Cross-Venue v6 shadow position ledger inside `data_dir`."""
+    import json
+    from pathlib import Path
+
+    mem_ledger = getattr(collector, "_v6_xv_shadow_ledger", None)
+    if isinstance(mem_ledger, dict) and "open_positions" in mem_ledger and "closed_positions" in mem_ledger:
+        return mem_ledger
+
+    ledger: Dict[str, Any] = {"open_positions": {}, "closed_positions": [], "entered_keys": [], "purged_false_positives": 0}
+    if data_dir is not None:
+        fp = Path(data_dir) / "v6_expansion_shadow_ledger.json"
+        if fp.exists():
+            try:
+                raw = json.loads(fp.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    if isinstance(raw.get("open_positions"), dict):
+                        ledger["open_positions"] = dict(raw["open_positions"])
+                    if isinstance(raw.get("closed_positions"), list):
+                        ledger["closed_positions"] = list(raw["closed_positions"])[-240:]
+                    if isinstance(raw.get("entered_keys"), list):
+                        ledger["entered_keys"] = list(raw["entered_keys"])[-2000:]
+                    ledger["purged_false_positives"] = int(raw.get("purged_false_positives", 0) or 0)
+            except Exception:
+                pass
+    # Evict any legacy pre-v6.1.2 XV_SUBSET_NO_BOX open entry that lacked verified mutual-exclusion proof
+    open_pos_map = ledger.get("open_positions")
+    if isinstance(open_pos_map, dict) and open_pos_map:
+        purged_dks: set[str] = set()
+        for pid_k, p_val in list(open_pos_map.items()):
+            if (
+                isinstance(p_val, Mapping)
+                and p_val.get("sleeve") == "XV_SUBSET_NO_BOX"
+                and not bool((p_val.get("extra") or {}).get("verified_mutual_exclusion", False))
+            ):
+                open_pos_map.pop(pid_k, None)
+                dk_old = str(p_val.get("dedupe_key") or "")
+                if dk_old:
+                    purged_dks.add(dk_old)
+                ledger["purged_false_positives"] = int(ledger.get("purged_false_positives", 0)) + 1
+        if purged_dks and isinstance(ledger.get("entered_keys"), list):
+            ledger["entered_keys"] = [k for k in ledger["entered_keys"] if k not in purged_dks]
+    collector._v6_xv_shadow_ledger = ledger
+    return ledger
+
+
+def _settle_xv_v6_shadow_positions(ledger: Dict[str, Any], now_ts: float) -> None:
+    """Settles matured cross-venue v6 shadow boxes at their mathematically verified worst-case payout floor."""
+    from datetime import datetime, timezone
+
+    open_map = ledger.get("open_positions")
+    if not isinstance(open_map, dict) or not open_map:
+        return
+    closed_list = ledger.setdefault("closed_positions", [])
+    for pid, pos in list(open_map.items()):
+        close_ts = float(pos.get("close_ts") or 0.0)
+        if now_ts < close_ts:
+            continue
+        open_map.pop(pid, None)
+        guar_unit = float((pos.get("extra") or {}).get("guaranteed_payout") or pos.get("p_model_entry") or 1.0)
+        tier_pnls: Dict[str, float] = {}
+        for t_name, tf in (pos.get("tier_fills") or {}).items():
+            cost_total = float(tf.get("spent_usd", 0.0)) + float(tf.get("fee_usd", 0.0))
+            payout_usd = float(tf.get("shares", 0.0)) * guar_unit
+            tier_pnls[t_name] = round(payout_usd - cost_total, 2)
+        won_t1000 = tier_pnls.get("T1000", 0.0) > 0.0
+        pos_closed = {
+            **pos,
+            "status": "SETTLED_XV_GUARANTEED_FLOOR",
+            "closed_ts": round(now_ts, 3),
+            "closed_utc": datetime.now(timezone.utc).isoformat(),
+            "net_payout_per_share": round(guar_unit, 5),
+            "tier_pnls_usd": tier_pnls,
+            "won": won_t1000,
+        }
+        closed_list.append(pos_closed)
+    if len(closed_list) > 240:
+        del closed_list[:-200]
+
+
+def _open_xv_v6_shadow_position(
+    ledger: Dict[str, Any],
+    *,
+    opp: VerifiedRisklessOpportunity,
+    dedupe_key: str,
+    title: str,
+    close_ts: float,
+    now_ts: float,
+) -> bool:
+    """Opens a deduplicated shadow position in the Stage G Cross-Venue v6 ledger (zero live orders)."""
+    from datetime import datetime, timezone
+
+    open_map = ledger.setdefault("open_positions", {})
+    entered_list: List[str] = ledger.setdefault("entered_keys", [])
+    if dedupe_key in entered_list or any(p.get("dedupe_key") == dedupe_key for p in open_map.values()):
+        return False
+
+    q_ref = max(1.0, float(opp.shares_or_units))
+    unit_cost = round(float(opp.all_in_cost_usd) / q_ref, 5)
+    guar_unit = round(float(opp.worst_case_payout_usd) / q_ref, 5)
+    if unit_cost <= 0.0 or unit_cost >= guar_unit:
+        return False
+
+    tier_caps = {"T100": 20.0, "T1000": 110.0, "T5000": 350.0}
+    tier_fills: Dict[str, Dict[str, Any]] = {}
+    for t_name, cap_usd in tier_caps.items():
+        sh = max(5.0, min(q_ref, float(math.floor(cap_usd / max(0.25, unit_cost)))))
+        tier_fills[t_name] = {
+            "filled": True,
+            "vwap": unit_cost,
+            "eff_px": unit_cost,
+            "spent_usd": round(sh * unit_cost, 2),
+            "fee_usd": 0.0,
+            "shares": sh,
+            "l1_usd": round(q_ref * unit_cost, 2),
+        }
+
+    pos_id = f"XV_{opp.strategy_id}_{int(now_ts)}_{abs(hash(dedupe_key)) % 100000:05d}"
+    open_map[pos_id] = {
+        "position_id": pos_id,
+        "dedupe_key": dedupe_key,
+        "sleeve": opp.strategy_id,
+        "asset_or_city": "+".join(v.upper()[:4] for v in opp.venues[:2]) or "XV",
+        "title": str(title)[:96],
+        "side": "XV_BOX",
+        "token_id": opp.opportunity_id,
+        "entry_ts": round(now_ts, 3),
+        "entry_utc": datetime.now(timezone.utc).isoformat(),
+        "close_ts": round(float(close_ts), 3),
+        "p_model_entry": guar_unit,
+        "entry_eff_px_t1000": unit_cost,
+        "entry_vwap_t1000": unit_cost,
+        "realized_edge_t1000": round(guar_unit - unit_cost, 5),
+        "tier_fills": tier_fills,
+        "extra": {
+            "is_multi_leg_bundle": True,
+            "guaranteed_payout": guar_unit,
+            "max_payout": round(float(opp.best_case_payout_usd) / q_ref, 5),
+            "venues": list(opp.venues),
+            "verified_mutual_exclusion": True,
+        },
+        "status": "OPEN",
+    }
+    entered_list.append(dedupe_key)
+    if len(entered_list) > 2000:
+        del entered_list[:-1500]
+    return True
+
+
+def _summarize_xv_v6_by_sleeve(ledger: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
+    open_vals = list((ledger.get("open_positions") or {}).values())
+    closed_vals = list(ledger.get("closed_positions") or ())
+    out: Dict[str, Dict[str, Any]] = {}
+    for slv in ALL_V6_EXPANSION_SLEEVES:
+        op_s = [p for p in open_vals if p.get("sleeve") == slv]
+        cl_s = [p for p in closed_vals if p.get("sleeve") == slv]
+        wins = sum(1 for p in cl_s if p.get("won"))
+        pnl_1k = round(sum(float((p.get("tier_pnls_usd") or {}).get("T1000", 0.0)) for p in cl_s), 2)
+        out[slv] = {
+            "open": len(op_s),
+            "closed": len(cl_s),
+            "wins": wins,
+            "losses": len(cl_s) - wins,
+            "win_rate_pct": round(100.0 * wins / len(cl_s), 2) if cl_s else 0.0,
+            "realized_pnl_t1000_usd": pnl_1k,
+            "grad8_live_promoted": False,
+        }
+    return out
+
+
+def _parse_halftime_legs_from_norm_markets(
+    markets: Sequence[NormalizedBinaryMarket],
+) -> Dict[str, Tuple[List[HalftimeLineLeg], List[HalftimeLineLeg]]]:
+    """
+    Extracts `.5`-hook Full-Game (`FG`) and Second-Half (`2H`) `TOTAL` / `HOME_SPREAD` legs
+    from zero-delay sports `NormalizedBinaryMarket` snapshots, grouped by canonical matchup key.
+    """
+    import re
+
+    _sub_exclude_re = re.compile(
+        r"\b(?:1st\s+half|first\s+half|1h|q[1-4]|[1-4](?:st|nd|rd|th)\s+(?:quarter|period|inning))\b",
+        re.IGNORECASE,
+    )
+    _h2_re = re.compile(r"\b(?:2nd\s+half|second\s+half|2h)\b", re.IGNORECASE)
+    _no_ot_re = re.compile(r"\b(?:regulation\s+only|excl(?:uding)?\s+ot|no\s+overtime|no\s+ot)\b", re.IGNORECASE)
+    _hook_num_re = re.compile(r"([+-]?\d+\.5)\b")
+    _team_stop = {
+        "nba", "nfl", "ncaa", "basketball", "football", "total", "over", "under", "points", "spread",
+        "handicap", "2nd", "second", "half", "2h", "full", "game", "will", "the", "and", "vs", "at",
+    }
+
+    grouped: Dict[str, Tuple[List[HalftimeLineLeg], List[HalftimeLineLeg]]] = {}
+    for m in markets:
+        cat_l = m.category.lower()
+        if not any(k in cat_l for k in ("sport", "nba", "nfl", "basketball", "football")):
+            continue
+        if float(m.taker_delay_ms or 0.0) > 0.0 or not (m.yes_asks or m.no_asks):
+            continue
+        txt = f"{m.title} {m.slug}".strip()
+        if _sub_exclude_re.search(txt):
+            continue
+        is_2h = bool(_h2_re.search(txt))
+        scope = "2H" if is_2h else "FG"
+        inc_ot = not bool(_no_ot_re.search(txt))
+        m_hook = _hook_num_re.search(txt)
+        if not m_hook:
+            continue
+        try:
+            line_val = float(m_hook.group(1))
+        except ValueError:
+            continue
+        if not _is_half_integer_hook(line_val):
+            continue
+
+        low_t = txt.lower()
+        is_total = any(w in low_t for w in ("total", "over/under", "o/u", "combined points")) or (
+            line_val >= 30.5 and ("over" in low_t or "under" in low_t)
+        )
+        is_spread = (not is_total) and (
+            any(w in low_t for w in ("spread", "handicap", "cover")) or m_hook.group(1).startswith(("+", "-"))
+        )
+        if not (is_total or is_spread):
+            continue
+
+        # Canonical matchup key (prefer explicit partition/event tag without period suffix, else token words)
+        raw_pg = str(getattr(m, "partition_group_id", "") or "").strip().lower()
+        if raw_pg:
+            game_key = re.sub(r"[-_:]*(?:2h|fg|total|spread).*$", "", raw_pg) or raw_pg
+        else:
+            words = [w for w in re.findall(r"[a-z]{3,}", m.title.lower()) if w not in _team_stop]
+            if len(words) < 2:
+                continue
+            day_bucket = int(float(m.end_ts or 0) // 43200) if m.end_ts else 0
+            game_key = f"{'_'.join(sorted(words[:2]))}_{day_bucket}"
+
+        fg_list, h2_list = grouped.setdefault(game_key, ([], []))
+        target_list = h2_list if is_2h else fg_list
+        if is_total and abs(line_val) > 5.0:
+            abs_line = abs(line_val)
+            if m.yes_asks:
+                target_list.append(
+                    HalftimeLineLeg(
+                        leg_id=f"{m.venue}_{m.market_id}_O{abs_line}",
+                        period_scope=scope,
+                        line_kind="TOTAL",
+                        direction="OVER",
+                        line_value=abs_line,
+                        includes_overtime=inc_ot,
+                        live_betting_delay_ms=0,
+                        market=m,
+                        market_side="YES",
+                    )
+                )
+            if m.no_asks:
+                target_list.append(
+                    HalftimeLineLeg(
+                        leg_id=f"{m.venue}_{m.market_id}_U{abs_line}",
+                        period_scope=scope,
+                        line_kind="TOTAL",
+                        direction="UNDER",
+                        line_value=abs_line,
+                        includes_overtime=inc_ot,
+                        live_betting_delay_ms=0,
+                        market=m,
+                        market_side="NO",
+                    )
+                )
+        elif is_spread:
+            if m.yes_asks:
+                target_list.append(
+                    HalftimeLineLeg(
+                        leg_id=f"{m.venue}_{m.market_id}_HC{line_val}",
+                        period_scope=scope,
+                        line_kind="HOME_SPREAD",
+                        direction="HOME_COVER",
+                        line_value=line_val,
+                        includes_overtime=inc_ot,
+                        live_betting_delay_ms=0,
+                        market=m,
+                        market_side="YES",
+                    )
+                )
+            if m.no_asks:
+                target_list.append(
+                    HalftimeLineLeg(
+                        leg_id=f"{m.venue}_{m.market_id}_AC{line_val}",
+                        period_scope=scope,
+                        line_kind="HOME_SPREAD",
+                        direction="AWAY_COVER",
+                        line_value=line_val,
+                        includes_overtime=inc_ot,
+                        live_betting_delay_ms=0,
+                        market=m,
+                        market_side="NO",
+                    )
+                )
+    return {k: v for k, v in grouped.items() if v[0] and v[1]}
+
+
 async def run_v6_expansion_alpha124_scan(
     daemon: Any,
     opps_out: List[Dict[str, Any]],
@@ -103984,9 +107242,12 @@ async def run_v6_expansion_alpha124_scan(
     """
     Fault-isolated intra-Polymarket v6 Riskless Expansion scanner for `Alpha124ShadowDaemon`:
       - `CompactCandidateL2Recorder` (`<= 12 MB/day` compressed candidate L2 archive)
+      - `XV_SUBSET_NO_BOX` (cancel-safe `m=2` `NO_i + NO_j` across open/augmented `NegRisk` slates)
       - `TAIL_BOUNDARY_001_ARB` (`0.001`-tick sub-penny parabolic fee collapse boxes)
       - `BOND3_MULTISOURCE_DEAD_SPLIT` (multi-source verified `MOOV2` carry + Stage C2 dead-split)
-      - `HEDGED_PRESPLIT_CONV_GUN` (closed `NegRisk` `NR3` pre-converted overround + shadow binary Maker-Ask)
+      - `DERIBIT_VERTICAL_SUPER_REP` (keyless Deribit linear `USDC` options vs `08:00 UTC` strikes)
+      - `XV_HALFTIME_FREEZE_CORRIDOR` (live NBA halftime `.5`-hook `FG = S_1H + 2H` affine corridors)
+      - `HEDGED_PRESPLIT_CONV_GUN` (closed `NegRisk` `NR3` pre-converted overround + honest pending Maker-Ask)
       - `YIELD_STACKED_CARRY_BOX` (Holding-Reward contractual carry boxes)
     """
     from datetime import datetime, timezone
@@ -104000,7 +107261,7 @@ async def run_v6_expansion_alpha124_scan(
     prev_stats = getattr(daemon, "_v6_expansion_stats", None) or {}
     scan_seq = int(prev_stats.get("cycles_scanned", 0)) + 1
 
-    per_sleeve_counts: Dict[str, Dict[str, int]] = {
+    per_sleeve_counts: Dict[str, Dict[str, Any]] = {
         slv: {
             "evaluated": int((prev_stats.get("per_sleeve") or {}).get(slv, {}).get("evaluated", 0)),
             "opportunities_found": int((prev_stats.get("per_sleeve") or {}).get(slv, {}).get("opportunities_found", 0)),
@@ -104018,7 +107279,7 @@ async def run_v6_expansion_alpha124_scan(
         q_u = max(1.0, float(v_opp.shares_or_units))
         unit_c = round(float(v_opp.all_in_cost_usd) / q_u, 4)
         unit_edge = round(float(v_opp.guaranteed_net_profit_usd) / q_u, 4)
-        hold_hr = max(0.25, float(rem_sec) / 3600.0 if rem_sec > 0 else float(v_opp.lockup_hours))
+        hold_hr = max(0.05, float(rem_sec) / 3600.0 if rem_sec > 0 else float(v_opp.lockup_hours))
         ev_hr = round(unit_edge / max(0.10, unit_c * hold_hr), 6)
         opps_out.append(
             {
@@ -104039,6 +107300,7 @@ async def run_v6_expansion_alpha124_scan(
                     "opportunity_id": v_opp.opportunity_id,
                     "title": label[:84],
                     "venues": list(v_opp.venues),
+                    "jurisdiction_tags": list(v_opp.jurisdiction_tags),
                     "live_eligible": bool(v_opp.live_eligible),
                     "shares": round(q_u, 2),
                     "unit_cost": unit_c,
@@ -104050,17 +107312,41 @@ async def run_v6_expansion_alpha124_scan(
                 }
             )
 
-    # Hydrate a bounded pool of active strike ladder / dominance books (<= 32 tokens)
+    # Hydrate a bounded pool of active strike ladder rungs + general/holding-reward binaries (<= 64 missing tokens)
     hydrated_books: Dict[str, Dict[str, Any]] = {}
     ladder_rungs: List[Any] = []
+    gen_binaries: List[Dict[str, Any]] = []
     try:
         for rgs in (getattr(daemon, "strike_ladders", None) or {}).values():
             for rg in rgs:
+                mid_rg = str(getattr(rg, "market_id", "") or "")
+                if mid_rg in ("6707502", "6707503"):
+                    continue
                 rem_r = float(getattr(rg, "end_ts", 0.0) or 0.0) - now
-                if 90.0 < rem_r <= 172800.0 and getattr(rg, "yes_token", "") and getattr(rg, "no_token", ""):
+                if 90.0 < rem_r <= 259200.0 and getattr(rg, "yes_token", "") and getattr(rg, "no_token", ""):
                     ladder_rungs.append(rg)
         ladder_rungs.sort(key=lambda r: float(getattr(r, "end_ts", 0.0) or 0.0))
-        ladder_rungs = ladder_rungs[:16]
+        ladder_rungs = ladder_rungs[:24]
+
+        raw_gen = list(getattr(daemon, "zerofee_general_binaries", None) or ())
+        raw_gen.sort(
+            key=lambda g: (
+                not bool(g.get("holding_rewards_enabled")),
+                not bool(g.get("fees_enabled")),
+                float(g.get("end_ts", 0.0) or 0.0),
+            )
+        )
+        for gb in raw_gen:
+            if not isinstance(gb, dict):
+                continue
+            mid_g = str(gb.get("market_id") or "")
+            if not mid_g or mid_g in ("6707502", "6707503"):
+                continue
+            if float(gb.get("end_ts") or 0.0) > now + 120.0 and gb.get("yes_token") and gb.get("no_token"):
+                gen_binaries.append(gb)
+            if len(gen_binaries) >= 16:
+                break
+
         missing_toks: List[str] = []
         for rg in ladder_rungs:
             for tk in (str(rg.yes_token), str(rg.no_token)):
@@ -104069,16 +107355,24 @@ async def run_v6_expansion_alpha124_scan(
                     hydrated_books[tk] = wb
                 elif tk not in hydrated_books:
                     missing_toks.append(tk)
+        for gb in gen_binaries:
+            for tk in (str(gb["yes_token"]), str(gb["no_token"])):
+                wb = daemon._get_fresh_ws_book(tk, now, max_age_sec=8.0) if hasattr(daemon, "_get_fresh_ws_book") else None
+                if wb:
+                    hydrated_books[tk] = wb
+                elif tk not in hydrated_books:
+                    missing_toks.append(tk)
         if missing_toks and hasattr(daemon, "fetch_books_batch"):
-            fetched = await daemon.fetch_books_batch(list(dict.fromkeys(missing_toks))[:32], timeout=2.2)
+            fetched = await daemon.fetch_books_batch(list(dict.fromkeys(missing_toks))[:64], timeout=2.5)
             if isinstance(fetched, dict):
                 hydrated_books.update(fetched)
-    except Exception:
-        pass
+    except Exception as exc_hyd:
+        per_sleeve_counts["TAIL_BOUNDARY_001_ARB"]["last_error"] = f"hydrate:{type(exc_hyd).__name__}"
 
-    # Build NormalizedBinaryMarket snapshots for L2 recording + Engine #2 / #7 / #8
+    # Build NormalizedBinaryMarket snapshots for L2 recording + Engine #2 / #5 / #7 / #8
     norm_markets: List[NormalizedBinaryMarket] = []
     rung_by_id: Dict[str, Any] = {}
+    gen_meta_by_id: Dict[str, Dict[str, Any]] = {}
     now_ms_int = int(now * 1000)
     for rg in ladder_rungs:
         by_y = hydrated_books.get(str(rg.yes_token))
@@ -104126,6 +107420,54 @@ async def run_v6_expansion_alpha124_scan(
             )
         )
 
+    for gb in gen_binaries:
+        mid_g = str(gb["market_id"])
+        if mid_g in rung_by_id or mid_g in gen_meta_by_id:
+            continue
+        by_y = hydrated_books.get(str(gb["yes_token"]))
+        by_n = hydrated_books.get(str(gb["no_token"]))
+        if not by_y or not by_n:
+            continue
+        ya = _raw_levels_to_order_levels(by_y.get("asks"), descending=False)
+        yb = _raw_levels_to_order_levels(by_y.get("bids"), descending=True)
+        na = _raw_levels_to_order_levels(by_n.get("asks"), descending=False)
+        nb = _raw_levels_to_order_levels(by_n.get("bids"), descending=True)
+        if not (ya or na):
+            continue
+        fr_g = float(gb.get("fee_rate", 0.0) or 0.0)
+        gen_meta_by_id[mid_g] = gb
+        norm_markets.append(
+            NormalizedBinaryMarket(
+                venue="polymarket",
+                market_id=mid_g,
+                slug=f"pm-gen-{mid_g}",
+                title=str(gb.get("title") or mid_g)[:90],
+                category="general",
+                yes_asks=list(ya),
+                yes_bids=list(yb),
+                no_asks=list(na),
+                no_bids=list(nb),
+                fee_rate_bps=round(fr_g * 10_000.0, 2),
+                fee_enabled=fr_g > 0.0,
+                taker_delay_ms=0.0,
+                min_shares=5.0,
+                asset=str(gb.get("asset") or "POLY"),
+                horizon="event",
+                oracle_family="uma_optimistic_oracle",
+                strike_price=None,
+                strike_direction="",
+                end_ts=int(float(gb.get("end_ts") or (now + 86400.0))),
+                cancel_rule="50_50",
+                has_unlisted_draw=False,
+                tick_size=0.001 if ((ya and (ya[0].price >= 0.96 or ya[0].price <= 0.04)) or (na and (na[0].price >= 0.96 or na[0].price <= 0.04))) else 0.01,
+                lot_size=1.0,
+                quote_ts_ms=now_ms_int,
+                collateral_asset="USDC",
+                settlement_delay_hours=2.0,
+                partition_group_id="",
+            )
+        )
+
     # 0. CompactCandidateL2Recorder (bounded <= 12 MB/day compressed L2 archive)
     rec_stats: Dict[str, Any] = {"enabled": not is_single_scan, "frames_recorded": 0, "bytes_today": 0, "budget_drops": 0}
     if not is_single_scan:
@@ -104156,39 +107498,197 @@ async def run_v6_expansion_alpha124_scan(
         except Exception:
             pass
 
-    # 1. Engine #2: TAIL_BOUNDARY_001_ARB (0.001-tick sub-penny boundary fee collapse)
+    # 1. Engine #1: XV_SUBSET_NO_BOX (Cancel-safe m=2 NO_i + NO_j across open & augmented NegRisk slates)
+    try:
+        sub_slates = [
+            sp
+            for sp in (getattr(daemon, "negrisk_convert_slates", None) or {}).values()
+            if 2 <= len(getattr(sp, "brackets", ())) <= 12 and float(getattr(sp, "end_ts", 0.0) or 0.0) > now + 120.0
+        ][:10]
+        sub_missing_no: List[str] = []
+        for sp_s in sub_slates:
+            for br in sp_s.brackets:
+                mid_br = str(br.get("market_id") or "")
+                nt = str(br.get("no_token") or "")
+                if mid_br in ("6707502", "6707503") or not nt:
+                    continue
+                wb_n = hydrated_books.get(nt) or (daemon._get_fresh_ws_book(nt, now, max_age_sec=8.0) if hasattr(daemon, "_get_fresh_ws_book") else None)
+                if wb_n:
+                    hydrated_books[nt] = wb_n
+                elif nt not in sub_missing_no:
+                    sub_missing_no.append(nt)
+        if sub_missing_no and hasattr(daemon, "fetch_books_batch"):
+            fetched_sub = await daemon.fetch_books_batch(sub_missing_no[:32], timeout=2.2)
+            if isinstance(fetched_sub, dict):
+                hydrated_books.update(fetched_sub)
+
+        for sp_s in sub_slates:
+            sub_cands: List[SubsetNoCandidateOutcome] = []
+            br_by_key: Dict[str, Dict[str, Any]] = {}
+            for idx_b, br in enumerate(sp_s.brackets):
+                mid_br = str(br.get("market_id") or f"{sp_s.event_id}_{idx_b}")
+                if mid_br in ("6707502", "6707503"):
+                    continue
+                nt = str(br.get("no_token") or "")
+                bk_n = hydrated_books.get(nt)
+                if not bk_n:
+                    continue
+                na_lvls = _raw_levels_to_order_levels(bk_n.get("asks"), descending=False)
+                nb_lvls = _raw_levels_to_order_levels(bk_n.get("bids"), descending=True)
+                if not na_lvls:
+                    continue
+                fr_b = float(br.get("fee_rate", 0.0) or 0.0)
+                okey = str(br.get("market_id") or f"B{idx_b}")
+                br_by_key[okey] = br
+                sub_cands.append(
+                    SubsetNoCandidateOutcome(
+                        outcome_key=okey,
+                        market=NormalizedBinaryMarket(
+                            venue="polymarket",
+                            market_id=mid_br,
+                            slug=f"{sp_s.slug}-{idx_b}",
+                            title=f"{sp_s.title}: {br.get('label', okey)}"[:90],
+                            category="negrisk_partition",
+                            yes_asks=[],
+                            yes_bids=[],
+                            no_asks=list(na_lvls),
+                            no_bids=list(nb_lvls),
+                            fee_rate_bps=round(fr_b * 10_000.0, 2),
+                            fee_enabled=fr_b > 0.0,
+                            taker_delay_ms=0.0,
+                            min_shares=5.0,
+                            asset="POLY",
+                            horizon="event",
+                            oracle_family="uma_negrisk",
+                            end_ts=int(sp_s.end_ts),
+                            cancel_rule="50_50",
+                            tick_size=0.001 if (na_lvls[0].price >= 0.96 or na_lvls[0].price <= 0.04) else 0.01,
+                            lot_size=1.0,
+                            quote_ts_ms=now_ms_int,
+                            collateral_asset="USDC",
+                            partition_group_id=str(sp_s.event_id),
+                        ),
+                        cancel_payout_mode="50_50",
+                    )
+                )
+            if len(sub_cands) >= 2:
+                per_sleeve_counts["XV_SUBSET_NO_BOX"]["evaluated"] += 1
+                rem_sub = max(60.0, float(sp_s.end_ts) - now)
+                for hit_sub in detect_cross_venue_subset_no_boxes(
+                    str(sp_s.event_id),
+                    sub_cands,
+                    event_cancel_exempt=False,
+                    subset_sizes=(2,),
+                    target_notional_usd=50.0,
+                ):
+                    _record_hit(hit_sub, f"m=2 Subset NO Box: {sp_s.title}", rem_sub)
+                    if not is_single_scan:
+                        legs_sub = []
+                        for lg_r in hit_sub.legs:
+                            br_m = br_by_key.get(str(lg_r.get("outcome_key") or ""))
+                            if br_m and br_m.get("no_token"):
+                                legs_sub.append(
+                                    {
+                                        "venue": "polymarket",
+                                        "token_id": str(br_m["no_token"]),
+                                        "side": "NO",
+                                        "market_id": str(br_m.get("market_id") or ""),
+                                        "fee_rate": float(br_m.get("fee_rate", 0.0) or 0.0),
+                                        "fee_exponent": float(br_m.get("fee_exponent", 1.0) or 1.0),
+                                    }
+                                )
+                        if len(legs_sub) >= 2:
+                            _is_aug_s = bool(getattr(sp_s, "is_augmented", False))
+                            _open_v6_shadow_box_in_alpha124(
+                                daemon,
+                                opp=hit_sub,
+                                dedupe_key=f"V6_SUBNO_{hit_sub.opportunity_id}",
+                                asset_or_city="POLY",
+                                title=f"Subset NO Box: {sp_s.title}",
+                                close_ts=float(sp_s.end_ts),
+                                legs=legs_sub,
+                                now_ts=now,
+                                extra_fields={
+                                    "box_type": "NEGRISK_2LEG" if len(legs_sub) == 2 else f"NEGRISK_{len(legs_sub)}LEG",
+                                    "neg_risk_augmented": _is_aug_s,
+                                    "subset_size_m": len(legs_sub),
+                                },
+                            )
+    except Exception as exc_s1:
+        per_sleeve_counts["XV_SUBSET_NO_BOX"]["last_error"] = f"{type(exc_s1).__name__}: {str(exc_s1)[:120]}"
+
+    # 2. Engine #2: TAIL_BOUNDARY_001_ARB (0.001-tick sub-penny boundary fee collapse)
     try:
         tail_pairs: List[BoundaryTickDominancePair] = []
-        pair_meta: Dict[str, Tuple[Any, str, Any, str]] = {}
+        pair_meta: Dict[str, Tuple[Dict[str, Any], Dict[str, Any], float, str]] = {}
         by_grp: Dict[Tuple[str, int], List[NormalizedBinaryMarket]] = {}
         for m in norm_markets:
             rg = rung_by_id.get(m.market_id)
-            if rg is None or bool(getattr(rg, "is_downward", False)):
-                continue
-            if m.yes_asks and m.no_asks and (
-                m.yes_asks[0].price >= 0.96 or m.yes_asks[0].price <= 0.04 or m.no_asks[0].price >= 0.96 or m.no_asks[0].price <= 0.04
-            ):
-                pid_c = f"cset_{m.market_id}"
-                pair_meta[pid_c] = (rg, "YES", rg, "NO")
-                tail_pairs.append(
-                    BoundaryTickDominancePair(
-                        pair_id=pid_c,
-                        pair_type="COMPLETE_SET",
-                        oracle_signature=f"binance_1m_{rg.asset}_{int(rg.end_ts)}",
-                        expiry_ts=float(rg.end_ts),
-                        leg_a_token_id=str(rg.yes_token),
-                        leg_a_label=f"{rg.asset} >= {rg.strike} YES",
-                        leg_a_asks=tuple(m.yes_asks),
-                        leg_b_token_id=str(rg.no_token),
-                        leg_b_label=f"{rg.asset} >= {rg.strike} NO",
-                        leg_b_asks=tuple(m.no_asks),
-                        fee_rate=float(getattr(rg, "fee_rate", 0.0) or 0.0),
-                        fee_exponent=float(getattr(rg, "fee_exponent", 1.0) or 1.0),
-                        strike_low=float(rg.strike),
-                        strike_high=float(rg.strike),
+            gb = gen_meta_by_id.get(m.market_id)
+            if rg is not None and not bool(getattr(rg, "is_downward", False)):
+                if m.yes_asks and m.no_asks and (
+                    m.yes_asks[0].price >= 0.96 or m.yes_asks[0].price <= 0.04 or m.no_asks[0].price >= 0.96 or m.no_asks[0].price <= 0.04
+                ):
+                    pid_c = f"cset_{m.market_id}"
+                    fr_r = float(getattr(rg, "fee_rate", 0.0) or 0.0)
+                    fe_r = float(getattr(rg, "fee_exponent", 1.0) or 1.0)
+                    pair_meta[pid_c] = (
+                        {"venue": "polymarket", "token_id": str(rg.yes_token), "side": "YES", "market_id": str(rg.market_id), "fee_rate": fr_r, "fee_exponent": fe_r},
+                        {"venue": "polymarket", "token_id": str(rg.no_token), "side": "NO", "market_id": str(rg.market_id), "fee_rate": fr_r, "fee_exponent": fe_r},
+                        float(rg.end_ts),
+                        str(rg.asset),
                     )
-                )
-            by_grp.setdefault((str(rg.asset), int(rg.end_ts)), []).append(m)
+                    tail_pairs.append(
+                        BoundaryTickDominancePair(
+                            pair_id=pid_c,
+                            pair_type="COMPLETE_SET",
+                            oracle_signature=f"binance_1m_{rg.asset}_{int(rg.end_ts)}",
+                            expiry_ts=float(rg.end_ts),
+                            leg_a_token_id=str(rg.yes_token),
+                            leg_a_label=f"{rg.asset} >= {rg.strike} YES",
+                            leg_a_asks=tuple(m.yes_asks),
+                            leg_b_token_id=str(rg.no_token),
+                            leg_b_label=f"{rg.asset} >= {rg.strike} NO",
+                            leg_b_asks=tuple(m.no_asks),
+                            fee_rate=fr_r,
+                            fee_exponent=fe_r,
+                            strike_low=float(rg.strike),
+                            strike_high=float(rg.strike),
+                        )
+                    )
+                by_grp.setdefault((str(rg.asset), int(rg.end_ts)), []).append(m)
+            elif gb is not None and float(gb.get("fee_rate", 0.0) or 0.0) > 0.0:
+                if m.yes_asks and m.no_asks and (
+                    m.yes_asks[0].price >= 0.96 or m.yes_asks[0].price <= 0.04 or m.no_asks[0].price >= 0.96 or m.no_asks[0].price <= 0.04
+                ):
+                    pid_g = f"cset_gen_{m.market_id}"
+                    fr_g = float(gb.get("fee_rate", 0.0) or 0.0)
+                    fe_g = float(gb.get("fee_exponent", 1.0) or 1.0)
+                    exp_g = float(gb.get("end_ts") or (now + 3600.0))
+                    pair_meta[pid_g] = (
+                        {"venue": "polymarket", "token_id": str(gb["yes_token"]), "side": "YES", "market_id": m.market_id, "fee_rate": fr_g, "fee_exponent": fe_g},
+                        {"venue": "polymarket", "token_id": str(gb["no_token"]), "side": "NO", "market_id": m.market_id, "fee_rate": fr_g, "fee_exponent": fe_g},
+                        exp_g,
+                        str(gb.get("asset") or "POLY"),
+                    )
+                    tail_pairs.append(
+                        BoundaryTickDominancePair(
+                            pair_id=pid_g,
+                            pair_type="COMPLETE_SET",
+                            oracle_signature=f"pm_cond_{gb.get('condition_id', m.market_id)}",
+                            expiry_ts=exp_g,
+                            leg_a_token_id=str(gb["yes_token"]),
+                            leg_a_label=f"{m.title[:36]} YES",
+                            leg_a_asks=tuple(m.yes_asks),
+                            leg_b_token_id=str(gb["no_token"]),
+                            leg_b_label=f"{m.title[:36]} NO",
+                            leg_b_asks=tuple(m.no_asks),
+                            fee_rate=fr_g,
+                            fee_exponent=fe_g,
+                            strike_low=1.0,
+                            strike_high=1.0,
+                        )
+                    )
 
         for (asset_k, exp_k), grp in by_grp.items():
             grp_sorted = sorted(grp, key=lambda x: float(rung_by_id[x.market_id].strike))
@@ -104198,7 +107698,16 @@ async def run_v6_expansion_alpha124_scan(
                     rg_lo, rg_hi = rung_by_id[m_lo.market_id], rung_by_id[m_hi.market_id]
                     if float(rg_lo.strike) < float(rg_hi.strike) and m_lo.yes_asks and m_hi.no_asks:
                         pid_d = f"dom_{asset_k}_{m_lo.market_id}_{m_hi.market_id}_{exp_k}"
-                        pair_meta[pid_d] = (rg_lo, "YES", rg_hi, "NO")
+                        fr_lo = float(getattr(rg_lo, "fee_rate", 0.0) or 0.0)
+                        fr_hi = float(getattr(rg_hi, "fee_rate", 0.0) or 0.0)
+                        fe_lo = float(getattr(rg_lo, "fee_exponent", 1.0) or 1.0)
+                        fe_hi = float(getattr(rg_hi, "fee_exponent", 1.0) or 1.0)
+                        pair_meta[pid_d] = (
+                            {"venue": "polymarket", "token_id": str(rg_lo.yes_token), "side": "YES", "market_id": str(rg_lo.market_id), "fee_rate": fr_lo, "fee_exponent": fe_lo},
+                            {"venue": "polymarket", "token_id": str(rg_hi.no_token), "side": "NO", "market_id": str(rg_hi.market_id), "fee_rate": fr_hi, "fee_exponent": fe_hi},
+                            float(min(rg_lo.end_ts, rg_hi.end_ts)),
+                            asset_k,
+                        )
                         tail_pairs.append(
                             BoundaryTickDominancePair(
                                 pair_id=pid_d,
@@ -104211,8 +107720,8 @@ async def run_v6_expansion_alpha124_scan(
                                 leg_b_token_id=str(rg_hi.no_token),
                                 leg_b_label=f"{asset_k} < {rg_hi.strike}",
                                 leg_b_asks=tuple(m_hi.no_asks),
-                                fee_rate=max(float(getattr(rg_lo, "fee_rate", 0.0) or 0.0), float(getattr(rg_hi, "fee_rate", 0.0) or 0.0)),
-                                fee_exponent=float(getattr(rg_lo, "fee_exponent", 1.0) or 1.0),
+                                fee_rate=max(fr_lo, fr_hi),
+                                fee_exponent=fe_lo,
                                 strike_low=float(rg_lo.strike),
                                 strike_high=float(rg_hi.strike),
                             )
@@ -104222,45 +107731,157 @@ async def run_v6_expansion_alpha124_scan(
             for hit_tb in detect_tail_boundary_001_fee_collapse_boxes(tail_pairs, target_box_notional_usd=45.0):
                 raw_pid = hit_tb.opportunity_id.replace("tail001:", "", 1)
                 meta_t = pair_meta.get(raw_pid)
-                rem_s = max(60.0, float(meta_t[0].end_ts) - now) if meta_t is not None else 900.0
+                rem_s = max(60.0, float(meta_t[2]) - now) if meta_t is not None else 900.0
                 _record_hit(hit_tb, f"Sub-Penny Tail Box {raw_pid}", rem_s)
                 if meta_t is not None and not is_single_scan:
-                    rg_a, s_a, rg_b, s_b = meta_t
-                    tok_a = rg_a.yes_token if s_a == "YES" else rg_a.no_token
-                    tok_b = rg_b.yes_token if s_b == "YES" else rg_b.no_token
+                    lg_a, lg_b, close_t, asset_t = meta_t
                     _open_v6_shadow_box_in_alpha124(
                         daemon,
                         opp=hit_tb,
                         dedupe_key=f"V6_TAIL001_{raw_pid}",
-                        asset_or_city=str(rg_a.asset),
-                        title=f"{rg_a.asset} 0.001-Tail Box ({rg_a.strike}/{rg_b.strike})",
-                        close_ts=float(min(rg_a.end_ts, rg_b.end_ts)),
-                        legs=[
-                            {"token_id": tok_a, "side": s_a, "market_id": str(rg_a.market_id), "fee_rate": float(rg_a.fee_rate or 0.0), "fee_exponent": float(rg_a.fee_exponent or 1.0)},
-                            {"token_id": tok_b, "side": s_b, "market_id": str(rg_b.market_id), "fee_rate": float(rg_b.fee_rate or 0.0), "fee_exponent": float(rg_b.fee_exponent or 1.0)},
-                        ],
+                        asset_or_city=asset_t,
+                        title=f"{asset_t} 0.001-Tail Box ({raw_pid[:44]})",
+                        close_ts=close_t,
+                        legs=[lg_a, lg_b],
                         now_ts=now,
                     )
-    except Exception:
-        pass
+    except Exception as exc_s2:
+        per_sleeve_counts["TAIL_BOUNDARY_001_ARB"]["last_error"] = f"{type(exc_s2).__name__}: {str(exc_s2)[:120]}"
 
-    # 2. Engine #3: BOND3_MULTISOURCE_DEAD_SPLIT (UMA MOOV2 verified multi-source carry + Stage C2 dead-split)
+    # 3. Engine #3: BOND3_MULTISOURCE_DEAD_SPLIT (UMA MOOV2 verified multi-source carry + Stage C2 dead-split)
     try:
-        uma_mkts = list((getattr(daemon, "uma_proposed_markets", None) or {}).values())[:20]
+        raw_uma_map = getattr(daemon, "uma_proposed_markets", None) or {}
+        uma_items: List[Tuple[str, Any]] = (
+            list(raw_uma_map.items())[:24] if isinstance(raw_uma_map, Mapping) else [(str(i), x) for i, x in enumerate(list(raw_uma_map)[:24])]
+        )
         uma_cache = getattr(daemon, "uma_onchain_cache", None) or {}
-        for um in uma_mkts:
-            cid_u = str(getattr(um, "condition_id", "") or (um.get("condition_id") if isinstance(um, Mapping) else "") or "")
-            oc = uma_cache.get(cid_u) or {}
-            if not (oc.get("verified") and oc.get("proposer_whitelisted") and not oc.get("disputed")):
+        live_nba_board = getattr(daemon, "live_nba_board", None) or []
+        spots_map = getattr(daemon, "spots", None) or {}
+
+        for key_u, um in uma_items:
+            mid_u = str(
+                (um.get("id") or um.get("market_id") if isinstance(um, Mapping) else getattr(um, "market_id", ""))
+                or key_u
+            ).strip()
+            if not mid_u or mid_u in ("6707502", "6707503"):
                 continue
-            indep_sources = list(oc.get("independent_sources") or ())
-            if len(indep_sources) < 2:
+            cid_u = str(
+                (um.get("conditionId") or um.get("condition_id") if isinstance(um, Mapping) else getattr(um, "condition_id", ""))
+                or ""
+            ).strip()
+            raw_oc = uma_cache.get(mid_u) if mid_u in uma_cache else uma_cache.get(cid_u)
+            if isinstance(raw_oc, tuple) and len(raw_oc) >= 2 and isinstance(raw_oc[1], Mapping):
+                oc = dict(raw_oc[1])
+            elif isinstance(raw_oc, Mapping):
+                oc = dict(raw_oc)
+            else:
                 continue
+            if not oc.get("verified") or oc.get("disputed"):
+                continue
+
             per_sleeve_counts["BOND3_MULTISOURCE_DEAD_SPLIT"]["evaluated"] += 1
-            win_tok = str(getattr(um, "win_token", "") or (um.get("win_token") if isinstance(um, Mapping) else "") or "")
-            lose_tok = str(getattr(um, "lose_token", "") or (um.get("lose_token") if isinstance(um, Mapping) else "") or "")
+            win_lbl = str(oc.get("win_label") or "YES").strip().upper()
+            if win_lbl not in {"YES", "NO"}:
+                win_lbl = "YES"
+            win_tok = str(
+                oc.get("win_token")
+                or (um.get("win_token") if isinstance(um, Mapping) else getattr(um, "win_token", ""))
+                or ""
+            ).strip()
+            lose_tok = str(
+                oc.get("lose_token")
+                or (um.get("lose_token") if isinstance(um, Mapping) else getattr(um, "lose_token", ""))
+                or ""
+            ).strip()
             if not win_tok or not lose_tok:
                 continue
+
+            prop_age = float(oc.get("proposal_age_sec") or 1200.0)
+            q_u_txt = str((um.get("question") if isinstance(um, Mapping) else getattr(um, "question", "")) or mid_u)
+            q_low = q_u_txt.lower()
+            cat_u = str(
+                oc.get("category")
+                or ("nba" if any(t in q_low for t in ("nba", "lakers", "celtics", "knicks", "warriors")) else "crypto")
+            )
+
+            # Build strictly verified PrimaryOracleObservation list (requires >=2 genuinely independent feeds)
+            obs_list: List[PrimaryOracleObservation] = []
+            explicit_srcs = list(oc.get("independent_sources") or ())
+            if explicit_srcs:
+                for src_item in explicit_srcs[:4]:
+                    if isinstance(src_item, PrimaryOracleObservation):
+                        obs_list.append(src_item)
+                    elif isinstance(src_item, Mapping):
+                        obs_list.append(
+                            PrimaryOracleObservation(
+                                source_name=str(src_item.get("source_name") or src_item.get("source_id") or "primary_feed"),
+                                is_terminal_final=bool(src_item.get("is_terminal_final", True)),
+                                winning_outcome=str(src_item.get("winning_outcome") or src_item.get("outcome") or win_lbl).upper(),
+                                post_final_elapsed_sec=float(src_item.get("post_final_elapsed_sec", prop_age)),
+                                has_speci_or_cor_conflict=bool(src_item.get("has_speci_or_cor_conflict", False)),
+                                has_protest_or_review_flag=bool(src_item.get("has_protest_or_review_flag", False)),
+                            )
+                        )
+                    else:
+                        obs_list.append(
+                            PrimaryOracleObservation(
+                                source_name=str(src_item),
+                                is_terminal_final=True,
+                                winning_outcome=win_lbl,
+                                post_final_elapsed_sec=max(prop_age, 1200.0),
+                            )
+                        )
+            else:
+                if int(oc.get("oo_state") or 0) in (2, 3) and prop_age >= 900.0:
+                    obs_list.append(
+                        PrimaryOracleObservation(
+                            source_name="polygon_uma_oov2_onchain",
+                            is_terminal_final=True,
+                            winning_outcome=win_lbl,
+                            post_final_elapsed_sec=prop_age,
+                        )
+                    )
+                if isinstance(um, dict) and live_nba_board and "win_index" in oc:
+                    try:
+                        from src.polymarket_research.uma_nba_endgame_engine import verify_uma_against_nba_live
+
+                        ok_nba, rsn_nba = verify_uma_against_nba_live(um, int(oc["win_index"]), live_nba_board)
+                        if ok_nba and rsn_nba not in ("NON_NBA_PASS", "UNMATCHED_NBA_GAME", ""):
+                            obs_list.append(
+                                PrimaryOracleObservation(
+                                    source_name="espn_official_final_boxscore",
+                                    is_terminal_final=True,
+                                    winning_outcome=win_lbl,
+                                    post_final_elapsed_sec=prop_age,
+                                )
+                            )
+                            cat_u = "nba"
+                    except Exception:
+                        pass
+                if len(obs_list) < 2 and spots_map and prop_age >= 900.0 and not any(w in q_low for w in ("reach", "hit", "touch", "dip")):
+                    import re as _re_b3
+
+                    m_k = _re_b3.search(r"\b(bitcoin|btc|ethereum|eth|solana|sol)\b.*?\$([0-9]{2,6}(?:,[0-9]{3})*(?:\.[0-9]+)?)", q_low)
+                    if m_k and any(w in q_low for w in ("above", "greater than")):
+                        sym_k = {"bitcoin": "BTC", "btc": "BTC", "ethereum": "ETH", "eth": "ETH", "solana": "SOL", "sol": "SOL"}[m_k.group(1)]
+                        k_val = float(m_k.group(2).replace(",", ""))
+                        spot_now = float(spots_map.get(sym_k) or 0.0)
+                        if spot_now > 0.0 and k_val > 0.0 and abs(spot_now - k_val) / k_val >= 0.025:
+                            spot_out = "YES" if spot_now > k_val else "NO"
+                            if spot_out == win_lbl:
+                                obs_list.append(
+                                    PrimaryOracleObservation(
+                                        source_name="direct_spot_post_expiry_feed",
+                                        is_terminal_final=True,
+                                        winning_outcome=spot_out,
+                                        post_final_elapsed_sec=prop_age,
+                                    )
+                                )
+                                cat_u = "crypto"
+
+            if len(obs_list) < 2:
+                continue
+
             bk_w = hydrated_books.get(win_tok)
             bk_l = hydrated_books.get(lose_tok)
             if (bk_w is None or bk_l is None) and hasattr(daemon, "fetch_books_batch"):
@@ -104272,53 +107893,137 @@ async def run_v6_expansion_alpha124_scan(
             w_asks = _raw_levels_to_order_levels(bk_w.get("asks"), descending=False)
             w_bids = _raw_levels_to_order_levels(bk_w.get("bids"), descending=True)
             l_bids = _raw_levels_to_order_levels(bk_l.get("bids"), descending=True)
-            if not w_asks:
+            if not (w_asks or l_bids) or not w_bids:
                 continue
-            exp_u = float(oc.get("expiration_ts") or (now + 3600.0))
-            rem_liveness = max(60.0, exp_u - now)
-            mid_u = str(getattr(um, "market_id", "") or (um.get("market_id") if isinstance(um, Mapping) else cid_u[:12]))
-            q_u_txt = str(getattr(um, "question", "") or (um.get("question") if isinstance(um, Mapping) else mid_u))
-            cat_u = str(oc.get("category") or "crypto")
+            rem_liveness = max(
+                60.0,
+                float(oc.get("rem_challenge_sec") or ((float(oc.get("expiration_ts") or (now + 3600.0))) - now)),
+            )
+            is_wl = bool(
+                oc.get("proposer_whitelisted", True if oc.get("oo_state") in (2, 3) else False)
+            )
+            fr_u = float(oc.get("fee_rate", 0.0) or 0.0)
+            fe_u = float(oc.get("fee_exponent", 2.0) or 2.0)
             ev_bond3 = evaluate_bond3_multisource_verified_carry(
                 market_id=mid_u,
                 category=cat_u,
-                uma_proposed_outcome="YES",
+                uma_proposed_outcome=win_lbl,
                 uma_status="proposed",
-                is_whitelisted_proposer=True,
+                is_whitelisted_proposer=is_wl,
                 remaining_challenge_sec=rem_liveness,
                 winner_asks=w_asks,
                 winner_bids=w_bids,
                 dead_loser_bids=l_bids,
-                observations=[
-                    PrimaryOracleObservation(
-                        source_id=str(src_name),
-                        is_official_final=True,
-                        outcome="YES",
-                        post_final_elapsed_sec=1200.0,
-                    )
-                    for src_name in indep_sources[:3]
-                ],
-                fee_rate=float(oc.get("fee_rate", 0.0) or 0.0),
+                observations=obs_list,
+                fee_rate=fr_u,
+                fee_exponent=fe_u,
                 target_notional_usd=45.0,
             )
             if ev_bond3 is not None:
                 _record_hit(ev_bond3, q_u_txt, rem_liveness)
-    except Exception:
-        pass
+                if not is_single_scan:
+                    _open_v6_shadow_box_in_alpha124(
+                        daemon,
+                        opp=ev_bond3,
+                        dedupe_key=f"V6_BOND3_{mid_u}",
+                        asset_or_city=cat_u.upper()[:8],
+                        title=f"BOND3 Verified Carry: {q_u_txt}",
+                        close_ts=now + rem_liveness,
+                        legs=[
+                            {
+                                "venue": "polymarket",
+                                "token_id": win_tok,
+                                "side": win_lbl,
+                                "market_id": mid_u,
+                                "fee_rate": fr_u,
+                                "fee_exponent": fe_u,
+                            }
+                        ],
+                        now_ts=now,
+                    )
+    except Exception as exc_s3:
+        per_sleeve_counts["BOND3_MULTISOURCE_DEAD_SPLIT"]["last_error"] = f"{type(exc_s3).__name__}: {str(exc_s3)[:120]}"
 
-    # 3. Engine #7: HEDGED_PRESPLIT_CONV_GUN (Closed NegRisk NR3 Overround + Shadow Binary Maker-Ask)
+    # 4. Engine #5: DERIBIT_VERTICAL_SUPER_REP (Keyless Deribit USDC options vs Polymarket 08:00 UTC crypto strikes)
+    try:
+        if not is_single_scan and (hasattr(daemon, "fetch_json") or hasattr(daemon, "http_session")):
+            d_quotes_a = await _fetch_deribit_usdc_public_options(daemon, cache_holder=daemon, now_ts=now)
+            if d_quotes_a:
+                for sm in norm_markets:
+                    if sm.category != "crypto_strike" or not sm.strike_price or not sm.end_ts:
+                        continue
+                    if str(sm.strike_direction).upper() == "DOWN":
+                        continue
+                    und_a = {"BTC": "BTC_USDC", "ETH": "ETH_USDC", "SOL": "SOL_USDC"}.get(str(sm.asset).upper(), "")
+                    if not und_a:
+                        continue
+                    cand_qa = [q for q in d_quotes_a if q.underlying == und_a and abs(q.expiry_ts - float(sm.end_ts)) <= 300.0]
+                    if len(cand_qa) >= 2:
+                        per_sleeve_counts["DERIBIT_VERTICAL_SUPER_REP"]["evaluated"] += 1
+                        rg_sm = rung_by_id.get(sm.market_id)
+                        for dv_hit_a in detect_deribit_usdc_vertical_super_replication(
+                            binary_market=sm,
+                            binary_strike=float(sm.strike_price),
+                            deribit_options=cand_qa,
+                            cross_oracle_basis_bps=150.0,
+                            target_units=50.0,
+                            max_expiry_skew_sec=300.0,
+                        ):
+                            rem_dv = max(60.0, float(sm.end_ts) - now)
+                            _record_hit(dv_hit_a, f"Deribit {und_a} Super-Rep vs {sm.title}", rem_dv)
+                            if rg_sm is not None:
+                                bin_side = "NO" if "bullcall" in dv_hit_a.opportunity_id else "YES"
+                                bin_tok = str(rg_sm.no_token if bin_side == "NO" else rg_sm.yes_token)
+                                _open_v6_shadow_box_in_alpha124(
+                                    daemon,
+                                    opp=dv_hit_a,
+                                    dedupe_key=f"V6_DERIBIT_{dv_hit_a.opportunity_id}",
+                                    asset_or_city=str(sm.asset),
+                                    title=f"Deribit+PM Super-Rep {sm.title}",
+                                    close_ts=float(sm.end_ts),
+                                    legs=[
+                                        {"venue": "polymarket", "token_id": bin_tok, "side": bin_side, "market_id": sm.market_id},
+                                        {"venue": "deribit", "token_id": dv_hit_a.opportunity_id, "side": "VERTICAL"},
+                                    ],
+                                    now_ts=now,
+                                )
+    except Exception as exc_s5:
+        per_sleeve_counts["DERIBIT_VERTICAL_SUPER_REP"]["last_error"] = f"{type(exc_s5).__name__}: {str(exc_s5)[:120]}"
+
+    # 5. Engine #7: HEDGED_PRESPLIT_CONV_GUN (Closed NegRisk NR3 Overround + Honest Pending Binary Maker-Ask)
     try:
         nr_slates = [
             sp
             for sp in (getattr(daemon, "negrisk_convert_slates", None) or {}).values()
             if getattr(sp, "is_closed_convert_safe", False) and 3 <= len(getattr(sp, "brackets", ())) <= 12
         ][:8]
+        nr3_missing_yes: List[str] = []
+        for sp in nr_slates:
+            for br in sp.brackets:
+                yt = str(br.get("yes_token") or "")
+                if not yt:
+                    continue
+                wb = hydrated_books.get(yt) or (daemon._get_fresh_ws_book(yt, now, max_age_sec=8.0) if hasattr(daemon, "_get_fresh_ws_book") else None)
+                if wb:
+                    hydrated_books[yt] = wb
+                elif yt not in nr3_missing_yes:
+                    nr3_missing_yes.append(yt)
+        if nr3_missing_yes and hasattr(daemon, "fetch_books_batch"):
+            fetched_nr3 = await daemon.fetch_books_batch(nr3_missing_yes[:32], timeout=2.2)
+            if isinstance(fetched_nr3, dict):
+                hydrated_books.update(fetched_nr3)
+
         for sp in nr_slates:
             nr_books: List[PreConvertedNegRiskOutcomeBook] = []
+            br_by_oid: Dict[str, Dict[str, Any]] = {}
             all_ok = True
             for idx_b, br in enumerate(sp.brackets):
+                mid_br = str(br.get("market_id") or "")
+                if mid_br in ("6707502", "6707503"):
+                    all_ok = False
+                    break
                 yt = str(br.get("yes_token") or "")
-                wb = hydrated_books.get(yt) or (daemon._get_fresh_ws_book(yt, now, max_age_sec=8.0) if hasattr(daemon, "_get_fresh_ws_book") else None)
+                wb = hydrated_books.get(yt)
                 if not wb:
                     all_ok = False
                     break
@@ -104327,9 +108032,11 @@ async def run_v6_expansion_alpha124_scan(
                 if not b_lvls:
                     all_ok = False
                     break
+                oid = str(br.get("label") or mid_br or f"B{idx_b}")
+                br_by_oid[oid] = br
                 nr_books.append(
                     PreConvertedNegRiskOutcomeBook(
-                        outcome_label=str(br.get("label") or f"B{idx_b}"),
+                        outcome_id=oid,
                         yes_bids=b_lvls,
                         yes_asks=a_lvls,
                         fee_rate=float(br.get("fee_rate", 0.0) or 0.0),
@@ -104346,46 +108053,154 @@ async def run_v6_expansion_alpha124_scan(
                     onchain_question_count=len(nr_books),
                 )
                 if nr3_hit is not None:
-                    _record_hit(nr3_hit, f"NR3 Pre-Converted Overround: {sp.title}", max(60.0, float(sp.end_ts) - now))
+                    _record_hit(nr3_hit, f"NR3 Pre-Converted Overround: {sp.title}", 60.0)
+                    if not is_single_scan:
+                        legs_nr3 = [
+                            {
+                                "venue": "polymarket",
+                                "token_id": str((br_by_oid.get(str(lg.get("outcome_id") or "")) or {}).get("yes_token") or ""),
+                                "side": "SELL_YES",
+                                "market_id": str((br_by_oid.get(str(lg.get("outcome_id") or "")) or {}).get("market_id") or ""),
+                            }
+                            for lg in nr3_hit.legs
+                        ]
+                        _open_v6_shadow_box_in_alpha124(
+                            daemon,
+                            opp=nr3_hit,
+                            dedupe_key=f"V6_NR3_{sp.event_id}_{int(now // 900)}",
+                            asset_or_city="POLY",
+                            title=f"NR3 Overround: {sp.title}",
+                            close_ts=now + 60.0,
+                            legs=legs_nr3,
+                            now_ts=now,
+                            extra_fields={"v6_instant_realize": True},
+                        )
 
-        # Shadow-only binary hedged pre-split Maker-Ask check across hydrated markets
-        for m in norm_markets[:12]:
+        # Shadow-only binary hedged pre-split Maker-Ask: honest queue-crossing fill check (never instant-fills resting asks!)
+        pend_mkr: Dict[str, Dict[str, Any]] = getattr(daemon, "_pending_v6_maker_asks", None)
+        if not isinstance(pend_mkr, dict):
+            pend_mkr = {}
+            daemon._pending_v6_maker_asks = pend_mkr
+        by_mid_norm = {m.market_id: m for m in norm_markets}
+
+        for mk_id, p_st in list(pend_mkr.items()):
+            if now - float(p_st["posted_ts"]) > 300.0:
+                pend_mkr.pop(mk_id, None)
+                continue
+            cur_m = by_mid_norm.get(mk_id)
+            if cur_m is None or not cur_m.no_bids:
+                continue
+            fr_p = float(p_st["fee_rate"])
+            fe_p = float(p_st["fee_exponent"])
+            cur_no_net = v2_net_sell_proceeds_per_share(cur_m.no_bids[0].price, fr_p, fe_p)
+            if cur_no_net < float(p_st["cancel_no_net_below"]) or cur_m.no_bids[0].size < 3.0 * float(p_st["shares"]):
+                pend_mkr.pop(mk_id, None)
+                continue
+            # Require subsequent best_yes_bid >= posted_ask_px (crossed) to credit a passive maker fill
+            if cur_m.yes_bids and cur_m.yes_bids[0].price >= float(p_st["posted_ask_px"]):
+                pend_mkr.pop(mk_id, None)
+                re_opp = evaluate_hedged_presplit_maker_ask(
+                    market_id=mk_id,
+                    maker_yes_ask_price=float(p_st["posted_ask_px"]),
+                    complement_no_bids=tuple(cur_m.no_bids),
+                    settled_split_shares=float(p_st["shares"]),
+                    fee_rate=fr_p,
+                    fee_exponent=fe_p,
+                    live_enabled=False,
+                )
+                if re_opp is not None and not is_single_scan:
+                    _open_v6_shadow_box_in_alpha124(
+                        daemon,
+                        opp=re_opp,
+                        dedupe_key=f"V6_HP_MKR_{mk_id}_{int(now // 600)}",
+                        asset_or_city=str(cur_m.asset),
+                        title=f"Hedged Maker-Ask {cur_m.title}",
+                        close_ts=now + 45.0,
+                        legs=[
+                            {"venue": "polymarket", "token_id": str(p_st["yes_token"]), "side": "MAKER_SELL_YES", "market_id": mk_id},
+                            {"venue": "polymarket", "token_id": str(p_st["no_token"]), "side": "FOK_SELL_NO", "market_id": mk_id},
+                        ],
+                        now_ts=now,
+                        extra_fields={"v6_instant_realize": True},
+                    )
+
+        for m in norm_markets[:28]:
             if m.yes_asks and m.no_bids:
                 per_sleeve_counts["HEDGED_PRESPLIT_CONV_GUN"]["evaluated"] += 1
                 maker_ask_px = round(min(0.99, m.yes_asks[0].price), 3)
+                rg_m = rung_by_id.get(m.market_id)
+                gb_m = gen_meta_by_id.get(m.market_id)
+                fe_m = float(getattr(rg_m, "fee_exponent", 1.0) if rg_m is not None else (gb_m or {}).get("fee_exponent", 2.0))
                 hp_hit = evaluate_hedged_presplit_maker_ask(
                     market_id=m.market_id,
                     maker_yes_ask_price=maker_ask_px,
                     complement_no_bids=tuple(m.no_bids),
-                    settled_split_shares=20.0,
+                    settled_split_shares=15.0,
                     fee_rate=float(m.fee_rate_bps) / 10_000.0,
+                    fee_exponent=fe_m,
                     live_enabled=False,
                 )
                 if hp_hit is not None:
                     _record_hit(hp_hit, f"Shadow Pre-Split Maker-Ask {m.title}", max(60.0, float(m.end_ts) - now))
-    except Exception:
-        pass
+                    yt_m = str(getattr(rg_m, "yes_token", "") if rg_m is not None else (gb_m or {}).get("yes_token", ""))
+                    nt_m = str(getattr(rg_m, "no_token", "") if rg_m is not None else (gb_m or {}).get("no_token", ""))
+                    if yt_m and nt_m and m.market_id not in pend_mkr and len(pend_mkr) < 32:
+                        pend_mkr[m.market_id] = {
+                            "posted_ts": now,
+                            "posted_ask_px": maker_ask_px,
+                            "shares": 15.0,
+                            "fee_rate": float(m.fee_rate_bps) / 10_000.0,
+                            "fee_exponent": fe_m,
+                            "cancel_no_net_below": float(hp_hit.metadata.get("auto_cancel_if_no_net_bid_below", 0.01)),
+                            "yes_token": yt_m,
+                            "no_token": nt_m,
+                        }
+    except Exception as exc_s7:
+        per_sleeve_counts["HEDGED_PRESPLIT_CONV_GUN"]["last_error"] = f"{type(exc_s7).__name__}: {str(exc_s7)[:120]}"
 
-    # 4. Engine #8: YIELD_STACKED_CARRY_BOX (Polymarket Holding Rewards 4% APY carry boxes)
+    # 6. Engine #8: YIELD_STACKED_CARRY_BOX (Polymarket Holding Rewards 4.0% APY carry boxes)
     try:
-        holding_apy = float(getattr(daemon, "holding_rewards_apy", 0.0) or 0.0)
-        if holding_apy > 0.0:
-            for m in norm_markets[:10]:
-                rem_days = (float(m.end_ts) - now) / 86400.0
-                if rem_days >= 2.0 and m.yes_asks and m.no_asks:
-                    per_sleeve_counts["YIELD_STACKED_CARRY_BOX"]["evaluated"] += 1
-                    yb_hit = evaluate_yield_stacked_locked_box(
-                        box_id=f"pm_hold_{m.market_id}",
-                        leg_a=YieldBearingBoxLeg(market=m, side="YES", contractual_apy=holding_apy),
-                        leg_b=YieldBearingBoxLeg(market=m, side="NO", contractual_apy=holding_apy),
-                        min_guaranteed_hold_days=rem_days,
-                        can_resolve_early=False,
-                        target_usd_shares=50.0,
-                    )
-                    if yb_hit is not None:
-                        _record_hit(yb_hit, f"Yield Carry Box {m.title}", rem_days * 86400.0)
-    except Exception:
-        pass
+        daemon_apy = float(getattr(daemon, "holding_rewards_apy", 0.0) or 0.0)
+        for m in norm_markets[:28]:
+            gb_y = gen_meta_by_id.get(m.market_id)
+            eff_apy = daemon_apy if daemon_apy > 0.0 else (0.040 if (gb_y and gb_y.get("holding_rewards_enabled")) else 0.0)
+            if eff_apy <= 0.0:
+                continue
+            rem_days = (float(m.end_ts) - now) / 86400.0
+            if rem_days >= 2.0 and m.yes_asks and m.no_asks:
+                per_sleeve_counts["YIELD_STACKED_CARRY_BOX"]["evaluated"] += 1
+                yb_hit = evaluate_yield_stacked_locked_box(
+                    box_id=f"pm_hold_{m.market_id}",
+                    leg_a=YieldBearingBoxLeg(market=m, side="YES", contractual_apy=eff_apy),
+                    leg_b=YieldBearingBoxLeg(market=m, side="NO", contractual_apy=eff_apy),
+                    min_guaranteed_hold_days=rem_days,
+                    can_resolve_early=False,
+                    target_usd_shares=50.0,
+                )
+                if yb_hit is not None:
+                    _record_hit(yb_hit, f"Yield Carry Box {m.title}", rem_days * 86400.0)
+                    rg_y = rung_by_id.get(m.market_id)
+                    yt_y = str(getattr(rg_y, "yes_token", "") if rg_y is not None else (gb_y or {}).get("yes_token", ""))
+                    nt_y = str(getattr(rg_y, "no_token", "") if rg_y is not None else (gb_y or {}).get("no_token", ""))
+                    if yt_y and nt_y and not is_single_scan:
+                        q_yb = max(1.0, float(yb_hit.shares_or_units))
+                        coupon_ps = round(float(yb_hit.metadata.get("guaranteed_min_coupon_usd", 0.0)) / q_yb, 5)
+                        _open_v6_shadow_box_in_alpha124(
+                            daemon,
+                            opp=yb_hit,
+                            dedupe_key=f"V6_YIELD_{m.market_id}",
+                            asset_or_city=str(m.asset),
+                            title=f"Yield Carry Box: {m.title}",
+                            close_ts=float(m.end_ts),
+                            legs=[
+                                {"venue": "polymarket", "token_id": yt_y, "side": "YES", "market_id": m.market_id},
+                                {"venue": "polymarket", "token_id": nt_y, "side": "NO", "market_id": m.market_id},
+                            ],
+                            now_ts=now,
+                            extra_fields={"guaranteed_coupon_per_share": coupon_ps},
+                        )
+    except Exception as exc_s8:
+        per_sleeve_counts["YIELD_STACKED_CARRY_BOX"]["last_error"] = f"{type(exc_s8).__name__}: {str(exc_s8)[:120]}"
 
     summary = {
         "updated_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -104393,6 +108208,7 @@ async def run_v6_expansion_alpha124_scan(
         "daemon": "alpha_124_shadow_daemon",
         "cycles_scanned": scan_seq,
         "hydrated_markets": len(norm_markets),
+        "pending_maker_asks": len(getattr(daemon, "_pending_v6_maker_asks", None) or {}),
         "per_sleeve": per_sleeve_counts,
         "top_opportunities": top_hits,
         "candidate_l2_recorder": rec_stats,
@@ -104404,81 +108220,131 @@ async def run_v6_expansion_alpha124_scan(
     return summary
 
 
+_DERIBIT_MONTH_MAP = {
+    "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+    "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+}
+
+
+def _parse_deribit_usdc_option_rows(rows: Any) -> List[DeribitLinearOptionQuote]:
+    """Parses Deribit REST `get_book_summary_by_currency` or `DeribitPublicWs` ticker rows into `DeribitLinearOptionQuote`."""
+    from datetime import datetime, timezone
+
+    quotes: List[DeribitLinearOptionQuote] = []
+    if isinstance(rows, Mapping):
+        iter_rows = list(rows.values())
+    elif isinstance(rows, (list, tuple)):
+        iter_rows = list(rows)
+    else:
+        return quotes
+    for r in iter_rows:
+        if not isinstance(r, Mapping):
+            continue
+        inst = str(r.get("instrument_name") or "")
+        parts = inst.split("-")
+        if len(parts) != 4 or parts[0] not in {"BTC_USDC", "ETH_USDC", "SOL_USDC"} or parts[3] not in {"C", "P"}:
+            continue
+        dt_s = parts[1]
+        try:
+            if len(dt_s) == 7:
+                dd, mmm, yy = int(dt_s[:2]), dt_s[2:5].upper(), int(dt_s[5:7])
+            elif len(dt_s) == 6:
+                dd, mmm, yy = int(dt_s[:1]), dt_s[1:4].upper(), int(dt_s[4:6])
+            else:
+                continue
+            mm = _DERIBIT_MONTH_MAP.get(mmm)
+            if mm is None:
+                continue
+            exp_dt = datetime(2000 + yy, mm, dd, 8, 0, 0, tzinfo=timezone.utc)
+            strike_v = float(parts[2])
+            und_px = float(r.get("underlying_price") or r.get("estimated_delivery_price") or 0.0)
+            ask_raw = float(r.get("ask_price") if r.get("ask_price") is not None else (r.get("best_ask_price") or 0.0))
+            bid_raw = float(r.get("bid_price") if r.get("bid_price") is not None else (r.get("best_bid_price") or 0.0))
+            if und_px <= 0.0 or strike_v <= 0.0:
+                continue
+            quote_ccy = str(r.get("quote_currency") or "USDC").strip().upper()
+            ask_usdc = ask_raw if quote_ccy == "USDC" else (ask_raw * und_px if ask_raw > 0.0 else 0.0)
+            bid_usdc = bid_raw if quote_ccy == "USDC" else (bid_raw * und_px if bid_raw > 0.0 else 0.0)
+            if ask_usdc <= 0.0 and bid_usdc <= 0.0:
+                continue
+            bid_sz = float(r.get("bid_size") if r.get("bid_size") is not None else (r.get("best_bid_amount") or (5.0 if bid_usdc > 0.0 else 0.0)))
+            ask_sz = float(r.get("ask_size") if r.get("ask_size") is not None else (r.get("best_ask_amount") or (5.0 if ask_usdc > 0.0 else 0.0)))
+            quotes.append(
+                DeribitLinearOptionQuote(
+                    instrument_name=inst,
+                    underlying=parts[0],
+                    settlement_currency="USDC",
+                    option_type=parts[3],
+                    strike=strike_v,
+                    expiry_ts=exp_dt.timestamp(),
+                    best_bid_usd=max(0.0, round(bid_usdc, 4)),
+                    best_bid_size=max(0.0, bid_sz),
+                    best_ask_usd=max(0.0, round(ask_usdc, 4)),
+                    best_ask_size=max(0.0, ask_sz),
+                    underlying_index_price=und_px,
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+    return quotes
+
+
 async def _fetch_deribit_usdc_public_options(
     transport: Any,
     *,
     cache_holder: Any,
     now_ts: float,
+    deribit_ws: Any = None,
 ) -> List[DeribitLinearOptionQuote]:
     """
-    Keyless public Deribit linear USDC options book-summary reader (`BTC_USDC`, `ETH_USDC`),
-    cached for 60s so Stage G shadow scans add negligible HTTP overhead.
+    Keyless public Deribit linear USDC options reader (`BTC_USDC`, `ETH_USDC`, `SOL_USDC`).
+    Prefers fresh `DeribitPublicWs` WS ticker cache before falling back to 60s cached REST `get_book_summary_by_currency`.
+    Supports `ResilientReadOnlyTransport.get(...)`, `Alpha124ShadowDaemon.fetch_json(...)`, and `.get_json(...)`.
     """
-    from datetime import datetime, timezone
+    ws_obj = deribit_ws or getattr(cache_holder, "_deribit_public_ws", None) or getattr(transport, "_deribit_public_ws", None)
+    if ws_obj is not None and hasattr(ws_obj, "get_quotes_by_currency"):
+        ws_rows: List[Mapping[str, Any]] = []
+        for ccy in ("BTC_USDC", "ETH_USDC", "SOL_USDC"):
+            try:
+                q_map = ws_obj.get_quotes_by_currency(ccy, max_age_sec=5.0)
+            except TypeError:
+                q_map = ws_obj.get_quotes_by_currency(ccy)
+            except Exception:
+                q_map = {}
+            if isinstance(q_map, Mapping) and q_map:
+                ws_rows.extend(q_map.values())
+        ws_quotes = _parse_deribit_usdc_option_rows(ws_rows)
+        if ws_quotes:
+            cache_holder._deribit_usdc_cache = (now_ts, tuple(ws_quotes))
+            return ws_quotes
 
     cached = getattr(cache_holder, "_deribit_usdc_cache", None)
     if isinstance(cached, tuple) and len(cached) == 2 and (now_ts - float(cached[0])) < 60.0:
         return list(cached[1])
-    if transport is None or not hasattr(transport, "get_json"):
+    if transport is None:
         return []
 
-    quotes: List[DeribitLinearOptionQuote] = []
-    month_map = {
-        "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
-        "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
-    }
     url = "https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency=USDC&kind=option"
+    resp: Any = None
     try:
-        raw_resp = await transport.get_json(url)
-        resp = raw_resp[1] if isinstance(raw_resp, tuple) and len(raw_resp) >= 2 else raw_resp
+        if hasattr(transport, "get_json") and callable(transport.get_json):
+            raw_resp = await transport.get_json(url)
+            resp = raw_resp[1] if isinstance(raw_resp, tuple) and len(raw_resp) >= 2 else raw_resp
+        elif hasattr(transport, "get") and callable(transport.get):
+            if bool(getattr(transport, "network_disabled", False)):
+                return []
+            http_res = await transport.get("deribit", url, timeout_sec=6.0)
+            resp = getattr(http_res, "data", None) if getattr(http_res, "status", 0) == 200 else None
+        elif hasattr(transport, "fetch_json") and callable(transport.fetch_json):
+            resp = await transport.fetch_json(url, timeout=5.0)
+        else:
+            return []
+    except Exception:
+        return []
+
+    try:
         rows = (resp or {}).get("result") if isinstance(resp, Mapping) else None
-        if isinstance(rows, list):
-            for r in rows:
-                if not isinstance(r, Mapping):
-                    continue
-                inst = str(r.get("instrument_name") or "")
-                parts = inst.split("-")
-                if len(parts) != 4 or parts[0] not in {"BTC_USDC", "ETH_USDC", "SOL_USDC"} or parts[3] not in {"C", "P"}:
-                    continue
-                dt_s = parts[1]
-                try:
-                    if len(dt_s) == 7:
-                        dd, mmm, yy = int(dt_s[:2]), dt_s[2:5].upper(), int(dt_s[5:7])
-                    elif len(dt_s) == 6:
-                        dd, mmm, yy = int(dt_s[:1]), dt_s[1:4].upper(), int(dt_s[4:6])
-                    else:
-                        continue
-                    mm = month_map.get(mmm)
-                    if mm is None:
-                        continue
-                    exp_dt = datetime(2000 + yy, mm, dd, 8, 0, 0, tzinfo=timezone.utc)
-                    strike_v = float(parts[2])
-                    und_px = float(r.get("underlying_price") or r.get("estimated_delivery_price") or 0.0)
-                    ask_raw = float(r.get("ask_price") or 0.0)
-                    bid_raw = float(r.get("bid_price") or 0.0)
-                    if und_px <= 0.0 or strike_v <= 0.0:
-                        continue
-                    ask_usdc = ask_raw if ask_raw > 1.5 else (ask_raw * und_px if ask_raw > 0 else 0.0)
-                    bid_usdc = bid_raw if bid_raw > 1.5 else (bid_raw * und_px if bid_raw > 0 else 0.0)
-                    if ask_usdc <= 0.0 and bid_usdc <= 0.0:
-                        continue
-                    quotes.append(
-                        DeribitLinearOptionQuote(
-                            instrument_name=inst,
-                            currency_pair=parts[0],
-                            settlement_currency="USDC",
-                            option_type=parts[3],
-                            strike=strike_v,
-                            expiry_ts=exp_dt.timestamp(),
-                            best_bid_usdc=max(0.0, round(bid_usdc, 4)),
-                            best_bid_contracts=10.0,
-                            best_ask_usdc=round(ask_usdc if ask_usdc > 0.0 else strike_v, 4),
-                            best_ask_contracts=10.0,
-                            index_price_usd=und_px,
-                        )
-                    )
-                except (TypeError, ValueError):
-                    continue
+        quotes = _parse_deribit_usdc_option_rows(rows)
     except Exception:
         return []
     cache_holder._deribit_usdc_cache = (now_ts, tuple(quotes))
@@ -104511,7 +108377,10 @@ async def run_v6_expansion_cross_venue_scan(
     prev = getattr(collector, "_v6_expansion_stats", None) or {}
     scan_seq = int(prev.get("cycles_scanned", 0)) + 1
 
-    per_sleeve: Dict[str, Dict[str, int]] = {
+    xv_ledger = _load_or_init_xv_shadow_ledger(collector, data_dir)
+    _settle_xv_v6_shadow_positions(xv_ledger, now)
+
+    per_sleeve: Dict[str, Dict[str, Any]] = {
         slv: {
             "evaluated": int((prev.get("per_sleeve") or {}).get(slv, {}).get("evaluated", 0)),
             "opportunities_found": int((prev.get("per_sleeve") or {}).get(slv, {}).get("opportunities_found", 0)),
@@ -104521,11 +108390,20 @@ async def run_v6_expansion_cross_venue_scan(
     }
     top_hits: List[Dict[str, Any]] = []
 
-    def _push_xv_hit(v_opp: VerifiedRisklessOpportunity, title: str) -> None:
+    def _push_xv_hit(v_opp: VerifiedRisklessOpportunity, title: str, *, close_ts: Optional[float] = None) -> None:
         sl = v_opp.strategy_id
         if sl in per_sleeve:
             per_sleeve[sl]["opportunities_found"] += 1
             per_sleeve[sl]["cycle_hits"] += 1
+        eff_close = float(close_ts) if (close_ts is not None and close_ts > now) else (now + max(60.0, float(v_opp.lockup_hours) * 3600.0))
+        _open_xv_v6_shadow_position(
+            xv_ledger,
+            opp=v_opp,
+            dedupe_key=f"XV6_{v_opp.opportunity_id}",
+            title=title,
+            close_ts=eff_close,
+            now_ts=now,
+        )
         if len(top_hits) < 16:
             q_u = max(1.0, float(v_opp.shares_or_units))
             hold_h = max(0.25, float(v_opp.lockup_hours))
@@ -104569,25 +108447,62 @@ async def run_v6_expansion_cross_venue_scan(
         except Exception:
             pass
 
-    # 1. Engine #1: XV_SUBSET_NO_BOX (Mutually-exclusive cross-venue partition slates, m=2..3)
+    # 1. Engine #1: XV_SUBSET_NO_BOX (Mutually-exclusive single- & cross-venue partition slates, m=2..3)
     try:
-        part_groups: Dict[str, List[NormalizedBinaryMarket]] = {}
+        _non_excl_submarket_re = re.compile(
+            r"\b(?:map\s*[1-9]|game\s*[1-9]|set\s*[1-5]|1st\s+half|2nd\s+half|first\s+half|second\s+half|"
+            r"[12]h|q[1-4]|[1-4](?:st|nd|rd|th)\s+(?:quarter|period|inning)|over/under|o/u|"
+            r"total\s+(?:points|goals|runs|maps|games|rounds)|spread|handicap|both\s+teams\s+to\s+score|btts)\b",
+            re.IGNORECASE,
+        )
+
+        def _is_verified_mutually_exclusive_xv_member(mv: NormalizedBinaryMarket, *, allow_ext_twin: bool = False) -> bool:
+            if mv.market_id in ("6707502", "6707503") or not mv.no_asks:
+                return False
+            if mv.category.lower() in ("crypto_barrier", "crypto_strike") or mv.strike_price is not None:
+                return False
+            txt_chk = f"{mv.title} {mv.slug} {getattr(mv, 'partition_label', '')}"
+            if _non_excl_submarket_re.search(txt_chk):
+                return False
+            if mv.venue.lower() == "polymarket":
+                return bool(getattr(mv, "neg_risk", False)) or int(getattr(mv, "partition_expected_legs", 0) or 0) >= 2
+            if allow_ext_twin:
+                return True
+            return bool(getattr(mv, "neg_risk", False)) or int(getattr(mv, "partition_expected_legs", 0) or 0) >= 2
+
+        # Map matched cross-venue twins onto the same partition_group_id & canonical outcome_key so Venue A NO_i + Venue B NO_j is evaluated!
+        part_groups: Dict[str, List[Tuple[str, NormalizedBinaryMarket]]] = {}
         for m in all_live_markets:
             pg = str(getattr(m, "partition_group_id", "") or "").strip()
-            if pg and m.no_asks and m.category != "crypto_barrier":
-                part_groups.setdefault(pg, []).append(m)
-        for pg_id, members in list(part_groups.items())[:25]:
-            dedup_by_out: Dict[str, NormalizedBinaryMarket] = {}
-            for m in members:
-                cur = dedup_by_out.get(m.market_id)
-                if cur is None or (m.no_asks[0].price < cur.no_asks[0].price):
-                    dedup_by_out[m.market_id] = m
-            if 2 <= len(dedup_by_out) <= 8:
+            if pg and _is_verified_mutually_exclusive_xv_member(m):
+                part_groups.setdefault(pg, []).append((str(m.market_id), m))
+        for ma, mb in pairs:
+            pg_a = str(getattr(ma, "partition_group_id", "") or "").strip() if _is_verified_mutually_exclusive_xv_member(ma) else ""
+            pg_b = str(getattr(mb, "partition_group_id", "") or "").strip() if _is_verified_mutually_exclusive_xv_member(mb) else ""
+            shared_pg = pg_a or pg_b
+            canon_key = str(ma.market_id if ma.venue == "polymarket" else mb.market_id)
+            if shared_pg:
+                if _is_verified_mutually_exclusive_xv_member(mb, allow_ext_twin=True):
+                    part_groups.setdefault(shared_pg, []).append((canon_key, mb))
+                if _is_verified_mutually_exclusive_xv_member(ma, allow_ext_twin=True):
+                    part_groups.setdefault(shared_pg, []).append((canon_key, ma))
+
+        for pg_id, members in list(part_groups.items())[:30]:
+            distinct_outcomes = {ok for ok, _ in members}
+            end_vals = [float(mv.end_ts) for _, mv in members if mv.end_ts]
+            if end_vals and (max(end_vals) - min(end_vals)) > 3600.0:
+                continue
+            if 2 <= len(distinct_outcomes) <= 10:
                 per_sleeve["XV_SUBSET_NO_BOX"]["evaluated"] += 1
                 cands_sub = [
-                    SubsetNoCandidateOutcome(outcome_label=k, market=v, cancel_payout_mode="50_50")
-                    for k, v in sorted(dedup_by_out.items())
+                    SubsetNoCandidateOutcome(
+                        outcome_key=ok,
+                        market=mv,
+                        cancel_payout_mode="VOID" if str(mv.cancel_rule).strip().upper() == "VOID" else "50_50",
+                    )
+                    for ok, mv in members
                 ]
+                min_end = min(end_vals) if end_vals else (now + 3600.0)
                 for hit_s in detect_cross_venue_subset_no_boxes(
                     pg_id,
                     cands_sub,
@@ -104595,9 +108510,9 @@ async def run_v6_expansion_cross_venue_scan(
                     subset_sizes=(2, 3),
                     target_notional_usd=50.0,
                 ):
-                    _push_xv_hit(hit_s, f"Subset NO Box ({pg_id[:42]})")
-    except Exception:
-        pass
+                    _push_xv_hit(hit_s, f"Subset NO Box ({pg_id[:42]})", close_ts=min_end)
+    except Exception as exc_x1:
+        per_sleeve["XV_SUBSET_NO_BOX"]["last_error"] = f"{type(exc_x1).__name__}: {str(exc_x1)[:120]}"
 
     # 2. Engine #4: XV_FX_INVARIANT_CAD_USD_BOX (100% CA-ON Legal STX CAD <-> ForecastEx USD)
     try:
@@ -104607,6 +108522,7 @@ async def run_v6_expansion_cross_venue_scan(
                 stx_m = ma if ma.venue == "stx_ontario" else mb
                 fex_m = mb if ma.venue == "stx_ontario" else ma
                 cancel_ex = stx_m.category in {"macro", "economics", "crypto"}
+                end_fx = min(float(stx_m.end_ts or (now + 86400.0)), float(fex_m.end_ts or (now + 86400.0)))
                 for stx_s, fex_s in (("YES", "NO"), ("NO", "YES")):
                     for style in ("PASSIVE_MAKER", "TAKER"):
                         per_sleeve["XV_FX_INVARIANT_CAD_USD_BOX"]["evaluated"] += 1
@@ -104619,11 +108535,12 @@ async def run_v6_expansion_cross_venue_scan(
                             forecastex_side=fex_s,
                             event_cancel_exempt=cancel_ex,
                             target_usd_shares=100.0,
+                            use_live_fx=(eff_mode != "offline"),
                         )
                         if fx_hit is not None:
-                            _push_xv_hit(fx_hit, f"CA-ON STX/ForecastEx {stx_m.title[:48]} ({style})")
-    except Exception:
-        pass
+                            _push_xv_hit(fx_hit, f"CA-ON STX/ForecastEx {stx_m.title[:48]} ({style})", close_ts=end_fx)
+    except Exception as exc_x4:
+        per_sleeve["XV_FX_INVARIANT_CAD_USD_BOX"]["last_error"] = f"{type(exc_x4).__name__}: {str(exc_x4)[:120]}"
 
     # 3. Engine #5: DERIBIT_VERTICAL_SUPER_REP (Keyless Deribit USDC options vs 08:00 UTC crypto strikes)
     deribit_quotes_count = 0
@@ -104634,19 +108551,28 @@ async def run_v6_expansion_cross_venue_scan(
             if d_quotes:
                 strike_mkts = [
                     m for m in all_live_markets if ("crypto" in m.category.lower() or m.strike_price is not None)
-                ][:20]
+                ][:32]
                 for sm in strike_mkts:
+                    if str(sm.strike_direction).upper() == "DOWN":
+                        continue
                     k_bin = float(sm.strike_price or 0.0)
                     if k_bin <= 0.0:
                         m_num = re.search(r"\$?([0-9]{2,6}(?:,[0-9]{3})*(?:\.[0-9]+)?)", sm.title)
                         if m_num:
                             k_bin = float(m_num.group(1).replace(",", ""))
-                    und = "BTC_USDC" if ("BTC" in sm.title.upper() or "BITCOIN" in sm.title.upper() or sm.asset == "BTC") else (
-                        "ETH_USDC" if ("ETH" in sm.title.upper() or sm.asset == "ETH") else ""
+                    t_up = sm.title.upper()
+                    und = (
+                        "BTC_USDC"
+                        if ("BTC" in t_up or "BITCOIN" in t_up or sm.asset.upper() == "BTC")
+                        else (
+                            "ETH_USDC"
+                            if ("ETH" in t_up or "ETHEREUM" in t_up or sm.asset.upper() == "ETH")
+                            else ("SOL_USDC" if ("SOL" in t_up or "SOLANA" in t_up or sm.asset.upper() == "SOL") else "")
+                        )
                     )
                     if not und or k_bin <= 0.0 or not sm.end_ts:
                         continue
-                    cand_q = [q for q in d_quotes if q.currency_pair == und and abs(q.expiry_ts - float(sm.end_ts)) <= 300.0]
+                    cand_q = [q for q in d_quotes if q.underlying == und and abs(q.expiry_ts - float(sm.end_ts)) <= 300.0]
                     if len(cand_q) >= 2:
                         per_sleeve["DERIBIT_VERTICAL_SUPER_REP"]["evaluated"] += 1
                         for dv_hit in detect_deribit_usdc_vertical_super_replication(
@@ -104655,17 +108581,40 @@ async def run_v6_expansion_cross_venue_scan(
                             deribit_options=cand_q,
                             cross_oracle_basis_bps=150.0,
                             target_units=50.0,
+                            max_expiry_skew_sec=300.0,
                         ):
-                            _push_xv_hit(dv_hit, f"Deribit {und} Super-Rep vs {sm.title[:44]}")
-    except Exception:
-        pass
+                            _push_xv_hit(dv_hit, f"Deribit {und} Super-Rep vs {sm.title[:44]}", close_ts=float(sm.end_ts))
+    except Exception as exc_x5:
+        per_sleeve["DERIBIT_VERTICAL_SUPER_REP"]["last_error"] = f"{type(exc_x5).__name__}: {str(exc_x5)[:120]}"
 
-    # 4. Engine #6: XV_HALFTIME_FREEZE_CORRIDOR (Sports .5-hook Halftime Freeze FG vs 2H)
+    # 4. Engine #6: XV_HALFTIME_FREEZE_CORRIDOR (Sports .5-hook Halftime Freeze FG = S_1H + 2H)
     try:
-        sports_mkts = [m for m in all_live_markets if "sport" in m.category.lower() and float(m.taker_delay_ms or 0.0) == 0.0]
-        per_sleeve["XV_HALFTIME_FREEZE_CORRIDOR"]["evaluated"] += len(sports_mkts)
-    except Exception:
-        pass
+        ht_groups = _parse_halftime_legs_from_norm_markets(all_live_markets)
+        sb_map = getattr(collector, "_halftime_scoreboards", None) or {}
+        for game_key, (fg_legs, h2_legs) in ht_groups.items():
+            per_sleeve["XV_HALFTIME_FREEZE_CORRIDOR"]["evaluated"] += 1
+            sb = sb_map.get(game_key)
+            if not isinstance(sb, Mapping):
+                continue
+            end_ht = min(
+                [float(lg.market.end_ts) for lg in (fg_legs + h2_legs) if lg.market.end_ts] or [now + 6300.0]
+            )
+            for ht_hit in detect_cross_venue_halftime_affine_corridors(
+                game_id=game_key,
+                sport=str(sb.get("sport") or "nba"),
+                is_halftime=bool(sb.get("is_halftime", False)),
+                game_clock_sec=float(sb.get("game_clock_sec", 0.0)),
+                elapsed_halftime_sec=float(sb.get("elapsed_halftime_sec", 0.0)),
+                remaining_halftime_sec=float(sb.get("remaining_halftime_sec", 0.0)),
+                confirmed_1h_home_score=int(sb.get("confirmed_1h_home_score", 0)),
+                confirmed_1h_away_score=int(sb.get("confirmed_1h_away_score", 0)),
+                fg_legs=fg_legs,
+                h2_legs=h2_legs,
+                target_usd_shares=40.0,
+            ):
+                _push_xv_hit(ht_hit, f"Halftime Freeze Corridor {game_key}", close_ts=end_ht)
+    except Exception as exc_x6:
+        per_sleeve["XV_HALFTIME_FREEZE_CORRIDOR"]["last_error"] = f"{type(exc_x6).__name__}: {str(exc_x6)[:120]}"
 
     # 5. Engine #8: YIELD_STACKED_CARRY_BOX (ForecastEx ~3.83% / Predict.fun vUSDT ~3.5% matched pairs)
     try:
@@ -104675,7 +108624,8 @@ async def run_v6_expansion_cross_venue_scan(
             apy_b = venue_default_apy.get(mb.venue, 0.0)
             end_a = float(ma.end_ts or 0.0)
             end_b = float(mb.end_ts or 0.0)
-            rem_days = (min(end_a, end_b) - now) / 86400.0 if (end_a > 0 and end_b > 0) else 0.0
+            min_end_yb = min(end_a, end_b)
+            rem_days = (min_end_yb - now) / 86400.0 if (end_a > 0 and end_b > 0) else 0.0
             if (apy_a > 0.0 or apy_b > 0.0) and rem_days >= 2.0:
                 for sa, sb in (("YES", "NO"), ("NO", "YES")):
                     per_sleeve["YIELD_STACKED_CARRY_BOX"]["evaluated"] += 1
@@ -104698,10 +108648,11 @@ async def run_v6_expansion_cross_venue_scan(
                         target_usd_shares=50.0,
                     )
                     if yb_xv is not None:
-                        _push_xv_hit(yb_xv, f"Yield Box {ma.venue}+{mb.venue}: {ma.title[:48]}")
-    except Exception:
-        pass
+                        _push_xv_hit(yb_xv, f"Yield Box {ma.venue}+{mb.venue}: {ma.title[:48]}", close_ts=min_end_yb)
+    except Exception as exc_x8:
+        per_sleeve["YIELD_STACKED_CARRY_BOX"]["last_error"] = f"{type(exc_x8).__name__}: {str(exc_x8)[:120]}"
 
+    by_sleeve_xv = _summarize_xv_v6_by_sleeve(xv_ledger)
     summary = {
         "updated_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "updated_at_unix": round(now, 3),
@@ -104712,11 +108663,14 @@ async def run_v6_expansion_cross_venue_scan(
         "matched_pairs_seen": len(pairs),
         "deribit_usdc_quotes_cached": deribit_quotes_count,
         "per_sleeve": per_sleeve,
+        "by_sleeve": by_sleeve_xv,
+        "open_positions": list((xv_ledger.get("open_positions") or {}).values())[:24],
         "top_opportunities": top_hits,
         "candidate_l2_recorder": rec_stats,
     }
     collector._v6_expansion_stats = summary
     if data_dir is not None:
+        _atomic_write_json_safe(data_dir / "v6_expansion_shadow_ledger.json", xv_ledger)
         _atomic_write_json_safe(data_dir / "v6_expansion_telemetry.json", summary)
     return summary
 
@@ -104740,6 +108694,11 @@ def write_v6_offline_telemetry_snapshot(data_dir: Any, *, cycles_completed: int 
             slv: {"evaluated": 0, "opportunities_found": 0, "cycle_hits": 0}
             for slv in ALL_V6_EXPANSION_SLEEVES
         },
+        "by_sleeve": {
+            slv: {"open": 0, "closed": 0, "wins": 0, "losses": 0, "win_rate_pct": 0.0, "realized_pnl_t1000_usd": 0.0, "grad8_live_promoted": False}
+            for slv in ALL_V6_EXPANSION_SLEEVES
+        },
+        "open_positions": [],
         "top_opportunities": [],
         "candidate_l2_recorder": {
             "enabled": True,
@@ -104754,8 +108713,1342 @@ def write_v6_offline_telemetry_snapshot(data_dir: Any, *, cycles_completed: int 
     return payload
 
 
+
 # ======================================================================================
-# [53/67] MODULE: tests/test_alpha_124_oracles.py
+# [53/68] MODULE: src/polymarket_research/riskless_fast_feeds.py
+# PURPOSE: v6.2 $0/mo Fast Feeds: Pyth Hermes, Scoped Polygon Logs WS, Hyperliquid/Coinbase/Deribit WS, Macro RSS/EDGAR & Live CAD/USD FX
+# ======================================================================================
+
+"""
+Dominus v6.2 Riskless Fast Feeds (`$0/mo` Native, Push & Scoped Public Feeds)
+(`src/polymarket_research/riskless_fast_feeds.py`).
+
+Provides lightweight, memory-bounded (`D-010`: `< 20 MiB` combined on 3,907 MiB swapless host),
+`100%` read-only (`D-008`), `D-001`-compliant fast data feeds exported cleanly for optional
+`try/except ImportError` integration across the Dominus riskless pipeline:
+
+  1. `PythHermesStream` & `fetch_pyth_hermes_latest_sync` (`~$0/mo`):
+     Official Pyth Hermes SSE/WS stream (`https://hermes.pyth.network/v2/updates/price/stream`
+     & `wss://hermes.pyth.network/ws`) + persistent REST latest snapshot for commodities, equities,
+     FX, and crypto (`price`, `conf`, `expo`, `publish_time`) — replacing `90s` Yahoo Finance polls.
+  2. `PolygonScopedLogsWs` (`$0/mo`):
+     Scoped Polygon PoS `eth_subscribe("logs", ...)` WebSocket listener targeting ONLY
+     `ProposePrice` / `DisputePrice` / `Settle` (`MOOV2`, `OOV2`), `ConditionResolution` (`CTF_V1`),
+     and optional funder-indexed `PayoutRedemption` (`CTF_V1`, `NEG_RISK_ADAPTER_V2`).
+     Strictly quarantines `D-001` disputed `KMIA` markets (`6707503`, `6707502`).
+  3. `HyperliquidCoinbaseWs` (`$0/mo`, read-only public market data):
+     Hyperliquid public WS (`wss://api.hyperliquid.xyz/ws`, `allMids` / `trades` for `HYPE` & spot-perp
+     discovery) + Coinbase Advanced public WS (`wss://advanced-trade-ws.coinbase.com`, `ticker`).
+  4. `DeribitPublicWs` (`$0/mo`, read-only public market data):
+     Deribit v2 public WS (`wss://www.deribit.com/ws/api/v2`, bounded option `ticker`/`book` cache)
+     for `DERIBIT_VERTICAL_SUPER_REP`.
+  5. `MacroEventFeedClient` (`$0/mo`):
+     Catalyst-window gated Fed monetary RSS, SEC EDGAR submissions (with compliant `User-Agent`),
+     and optional BLS v2 (strict keyless daily quota guard when `BLS_API_KEY` is unset).
+  6. `fetch_live_cad_usd_sync` (`$0/mo`):
+     Live intraday `CAD/USD` resolver (IBKR `CAD.USD` -> Pyth Hermes `FX.USD/CAD` -> Coinbase `USD-CAD`)
+     for `XV_FX_INVARIANT_CAD_USD_BOX`, never silently using once-daily Bank of Canada closing rates.
+"""
+
+# from __future__ import annotations  # (Lifted to top of consolidated bundle)
+
+import asyncio
+from collections import deque
+import json
+import logging
+import math
+import os
+import re
+import threading
+import time
+from typing import Any, Callable, Deque, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Tuple
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
+
+try:
+    import orjson as _orjson  # type: ignore
+except ImportError:  # pragma: no cover
+    _orjson = None
+
+try:
+    import requests as _requests  # type: ignore
+except ImportError:  # pragma: no cover
+    _requests = None
+
+try:
+    import aiohttp as _aiohttp  # type: ignore
+except ImportError:  # pragma: no cover
+    _aiohttp = None
+
+try:
+    import websockets as _websockets  # type: ignore
+except ImportError:  # pragma: no cover
+    _websockets = None
+
+logger = logging.getLogger("RisklessFastFeeds")
+
+# `D-001`: Absolute non-interference on disputed KMIA markets
+FROZEN_KMIA_MARKET_IDS: FrozenSet[str] = frozenset({"6707503", "6707502"})
+
+# Official Endpoints (`$0/mo` public read-only)
+PYTH_HERMES_BASE_URL = "https://hermes.pyth.network"
+PYTH_HERMES_WS_URL = "wss://hermes.pyth.network/ws"
+POLYGON_PUBLIC_WSS_URLS: Tuple[str, ...] = (
+    "wss://polygon-bor-rpc.publicnode.com",
+    "wss://1rpc.io/matic",
+)
+HYPERLIQUID_PUBLIC_WS_URL = "wss://api.hyperliquid.xyz/ws"
+COINBASE_ADVANCED_WS_URL = "wss://advanced-trade-ws.coinbase.com"
+DERIBIT_PUBLIC_WS_URL = "wss://www.deribit.com/ws/api/v2"
+FED_PRESS_MONETARY_RSS_URL = "https://www.federalreserve.gov/feeds/press_monetary.xml"
+SEC_EDGAR_SUBMISSIONS_TMPL = "https://data.sec.gov/submissions/CIK{cik10}.json"
+BLS_PUBLIC_API_V2_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
+COINBASE_SPOT_USDCAD_URL = "https://api.coinbase.com/v2/prices/USD-CAD/spot"
+
+# Verified Polygon Contracts (`riskless_protocol_v2_expansion.py:11675-11680` & `POLYMARKET_ONCHAIN_MOF_AUDIT.md:45-50`)
+POLYGON_MOOV2_ADDR = "0x2c0367a9db231ddebd88a94b4f6461a6e47c58b1"
+POLYGON_OOV2_ADDR = "0xee3afe347d5c74317041e2618c49534daf887c24"
+POLYGON_CTF_V1_ADDR = "0x4d97dcd97ec945f40cf65f87097ace5ea0476045"
+POLYGON_NEG_RISK_ADAPTER_V2_ADDR = "0xada2005600dec949baf300f4c6120000bdb6eaab"
+
+TOPIC_OO_PROPOSE_PRICE = "0x6e51dd00371aabffa82cd401592f76ed51e98a9ea4b58751c70463a2c78b5ca1"
+TOPIC_OO_DISPUTE_PRICE = "0x5165909c3d1c01c5d1e121ac6f6d01dda1ba24bc9e1f975b5a375339c15be7f3"
+
+_ANC_MARKET_ID_RE = re.compile(r"market_id:\s*(\d{5,9})")
+
+# Verified Pyth Network v2 Price Feed IDs (64-hex lowercase, `0x` stripped for uniform lookup)
+DEFAULT_PYTH_FEED_IDS: Dict[str, str] = {
+    "BTC": "e62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43",
+    "ETH": "ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace",
+    "SOL": "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d",
+    "XRP": "ec5d399846a9209f3fe5881d70aae9268c94339ff9817e8d18ff19fa05eea1c8",
+    "BNB": "2f95862b045670cd22bee3114c39763a4a08beeb663b145d283c31d7d1101c4f",
+    "DOGE": "dcef50dd0a4cd2dcc17e45df1676dcb336a11a61c69df7a0299b0150c672d25c",
+    "XAU": "765d2ba906dbc32ca17cc11f5310a89e9ee1f6420508c63861f2f8ba4ee34bb2",
+    "XAG": "f2fb02c32b055c805e7238d628e5e9dadef274376114eb1f012337cabe93871e",
+    "SPY": "19e09bb805456ada3979a7d1cbb4b6d63babc3a0f8e8a9509f6804c4e1d611f5",
+    "QQQ": "9695e2b96ea7b3859da9ed25b7a46a920a776e2fdae19a7bcfdf2b219230452d",
+    "NVDA": "b1073854ed24cbc755dc527418f52b7d271f6cc967bbf8d8129112b18860a593",
+    "TSLA": "16dad506d7db8da01c87581c87ca897a012a153557d4d578c3b9c9e1bc0632f1",
+    "AAPL": "49f6b65cb1de6b10eaf75e7c03ca029c306d0357e91b5311b175084a5ad55688",
+    "MSFT": "d0ca23c1cc005e004ccf1db5bf76aeb6a49218f43dac3d4b275e92de12ded4d1",
+    "AMZN": "b5d0e0fa58a1f8b81498ae670ce22c8759140f2a5db4b0715e8a588cfd970a75",
+    "GOOGL": "5a48c03e9b9cb337801073ed9d166817473697efff0d138874e0f6a33d6d5aa6",
+    "META": "78a3e3b8e676a8f73c439f5d749737034b139bbbe899ba5775216fba596607fe",
+    "NFLX": "8376cfd7ca8bcdf372ced05307b24dced1f15b1afafdeff715664598f15a3dd2",
+    "COIN": "f0524891463a2f2e59f96d8be982a9df07cf3807a323502264fa52604b04c9a3",
+    "USDCAD": "3112b03a41c910ed446852aacf67118cb1bec67b2cd0b9a214c58cc0eaa2ecca",
+}
+DEFAULT_PYTH_FEED_ALIASES: Dict[str, str] = {
+    "XAUUSD": "XAU",
+    "GC": "XAU",
+    "GC=F": "XAU",
+    "XAGUSD": "XAG",
+    "SI": "XAG",
+    "SI=F": "XAG",
+    "FX.USD/CAD": "USDCAD",
+    "USD/CAD": "USDCAD",
+}
+
+
+def _fast_loads(raw: Any) -> Any:
+    if isinstance(raw, (bytes, bytearray, str)):
+        if _orjson is not None:
+            return _orjson.loads(raw)
+        return json.loads(raw.decode("utf-8", errors="ignore") if isinstance(raw, (bytes, bytearray)) else raw)
+    return raw
+
+
+def _fast_dumps(obj: Any) -> str:
+    if _orjson is not None:
+        return _orjson.dumps(obj).decode("utf-8")
+    return json.dumps(obj, separators=(",", ":"))
+
+
+def _sf(val: Any, default: float = 0.0) -> float:
+    if val is None or isinstance(val, bool) or val == "":
+        return default
+    try:
+        f = float(val)
+        return f if math.isfinite(f) else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_feed_id(fid: str) -> str:
+    s = str(fid or "").strip().lower()
+    return s[2:] if s.startswith("0x") else s
+
+
+# ---------------------------------------------------------------------------
+# Pure-Python Keccak-256 fallback (for environments without `eth_utils`/`pycryptodome`)
+# ---------------------------------------------------------------------------
+_KECCAK_RC = (
+    0x0000000000000001, 0x0000000000008082, 0x800000000000808A, 0x8000000080008000,
+    0x000000000000808B, 0x0000000080000001, 0x8000000080008081, 0x8000000000008009,
+    0x000000000000008A, 0x0000000000000088, 0x0000000080008009, 0x000000008000000A,
+    0x000000008000808B, 0x800000000000008B, 0x8000000000008089, 0x8000000000008003,
+    0x8000000000008002, 0x8000000000000080, 0x000000000000800A, 0x800000008000000A,
+    0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008,
+)
+_KECCAK_ROT = (
+    (0, 36, 3, 41, 18),
+    (1, 44, 10, 45, 2),
+    (62, 6, 43, 15, 61),
+    (28, 55, 25, 21, 56),
+    (27, 20, 39, 8, 14),
+)
+_MASK64 = 0xFFFFFFFFFFFFFFFF
+
+
+def keccak256_hex(text: str) -> str:
+    """Computes `0x`-prefixed Keccak-256 digest of an Ethereum event signature using `eth_utils` or stdlib fallback."""
+    try:
+        from eth_utils import keccak  # type: ignore
+
+        return "0x" + keccak(text=text).hex().replace("0x", "")
+    except Exception:
+        pass
+
+    data = bytearray(text.encode("utf-8"))
+    rate = 136  # 1088 bits for keccak-256
+    data.append(0x01)
+    while len(data) % rate != 0:
+        data.append(0x00)
+    data[-1] ^= 0x80
+
+    state = [[0] * 5 for _ in range(5)]
+    for off in range(0, len(data), rate):
+        blk = data[off : off + rate]
+        for i in range(17):
+            lane = int.from_bytes(blk[i * 8 : (i + 1) * 8], "little")
+            state[i % 5][i // 5] ^= lane
+        for rc in _KECCAK_RC:
+            c = [state[x][0] ^ state[x][1] ^ state[x][2] ^ state[x][3] ^ state[x][4] for x in range(5)]
+            d = [c[(x - 1) % 5] ^ (((c[(x + 1) % 5] << 1) | (c[(x + 1) % 5] >> 63)) & _MASK64) for x in range(5)]
+            for x in range(5):
+                for y in range(5):
+                    state[x][y] ^= d[x]
+            b = [[0] * 5 for _ in range(5)]
+            for x in range(5):
+                for y in range(5):
+                    r = _KECCAK_ROT[x][y]
+                    v = state[x][y]
+                    b[y][(2 * x + 3 * y) % 5] = ((v << r) | (v >> (64 - r))) & _MASK64 if r else v
+            for x in range(5):
+                for y in range(5):
+                    state[x][y] = b[x][y] ^ ((~b[(x + 1) % 5][y]) & b[(x + 2) % 5][y])
+            state[0][0] ^= rc
+
+    out = bytearray()
+    for i in range(4):
+        out.extend(state[i % 5][i // 5].to_bytes(8, "little"))
+    return "0x" + out.hex()
+
+
+TOPIC_CTF_CONDITION_RESOLUTION = keccak256_hex("ConditionResolution(bytes32,address,bytes32,uint256,uint256[])")
+TOPIC_CTF_PAYOUT_REDEMPTION = keccak256_hex("PayoutRedemption(address,address,bytes32,bytes32,uint256[],uint256)")
+TOPIC_NEGRISK_PAYOUT_REDEMPTION = keccak256_hex("PayoutRedemption(address,bytes32,uint256[],uint256)")
+TOPIC_OO_SETTLE = keccak256_hex("Settle(address,address,address,bytes32,uint256,bytes,int256)")
+
+
+def _make_requests_session(user_agent: str = "DominusRisklessFeeds/1.0") -> Any:
+    if _requests is None:
+        return None
+    sess = _requests.Session()
+    sess.headers.update({"User-Agent": user_agent, "Accept": "application/json", "Connection": "keep-alive"})
+    return sess
+
+
+_SYNC_HTTP_LOCAL = threading.local()
+
+
+def _get_sync_session() -> Any:
+    sess = getattr(_SYNC_HTTP_LOCAL, "session", None)
+    if sess is None:
+        sess = _make_requests_session()
+        _SYNC_HTTP_LOCAL.session = sess
+    return sess
+
+
+def _http_get_json_sync(url: str, *, timeout: float = 2.5, session: Any = None, headers: Optional[Mapping[str, str]] = None) -> Any:
+    sess = session or _get_sync_session()
+    if sess is not None:
+        resp = sess.get(url, timeout=timeout, headers=dict(headers or {}))
+        if int(getattr(resp, "status_code", 0)) != 200:
+            return None
+        return _fast_loads(resp.content)
+    req_headers = {"User-Agent": "DominusRisklessFeeds/1.0", "Accept": "application/json"}
+    if headers:
+        req_headers.update(headers)
+    req = urllib.request.Request(url, headers=req_headers)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return _fast_loads(resp.read())
+
+
+# ---------------------------------------------------------------------------
+# 1. Pyth Hermes Real-Time SSE/WS Stream & Sync Snapshot (`$0/mo`)
+# ---------------------------------------------------------------------------
+
+def _parse_pyth_parsed_entries(
+    payload: Any,
+    id_to_symbol: Mapping[str, str],
+    rx_ts: Optional[float] = None,
+) -> Dict[str, Dict[str, Any]]:
+    now_f = float(time.time() if rx_ts is None else rx_ts)
+    if not isinstance(payload, Mapping):
+        return {}
+    rows = payload.get("parsed")
+    if not isinstance(rows, list):
+        # Hermes WS emits `{"type": "price_update", "price_feed": {...}}`
+        pf = payload.get("price_feed")
+        rows = [pf] if isinstance(pf, Mapping) else []
+    out: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        fid = _normalize_feed_id(str(row.get("id") or ""))
+        if not fid:
+            continue
+        pr = row.get("price")
+        if not isinstance(pr, Mapping):
+            continue
+        raw_p = _sf(pr.get("price"), 0.0)
+        raw_c = _sf(pr.get("conf"), 0.0)
+        expo = int(_sf(pr.get("expo"), 0))
+        pub_ts = _sf(pr.get("publish_time"), now_f)
+        scale = 10.0 ** expo
+        px = raw_p * scale
+        conf = abs(raw_c * scale)
+        if px <= 0.0 or not math.isfinite(px):
+            continue
+        sym = id_to_symbol.get(fid, fid)
+        out[sym] = {
+            "symbol": sym,
+            "feed_id": fid,
+            "price": px,
+            "conf": conf,
+            "expo": expo,
+            "publish_time": pub_ts,
+            "rx_ts": now_f,
+            "source": "pyth_hermes",
+        }
+    return out
+
+
+def fetch_pyth_hermes_latest_sync(
+    symbols_or_feed_ids: Sequence[str],
+    *,
+    symbol_to_feed_id: Optional[Mapping[str, str]] = None,
+    timeout: float = 2.5,
+    session: Any = None,
+    base_url: str = PYTH_HERMES_BASE_URL,
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Fetches latest Pyth Hermes prices + confidence intervals via persistent REST
+    (`GET /v2/updates/price/latest?ids[]=...&parsed=true`, `$0/mo`).
+    """
+    feed_map = dict(DEFAULT_PYTH_FEED_IDS)
+    if symbol_to_feed_id:
+        for k, v in symbol_to_feed_id.items():
+            feed_map[str(k).strip().upper()] = _normalize_feed_id(v)
+
+    id_to_sym: Dict[str, str] = {}
+    ids_q: List[str] = []
+    for item in symbols_or_feed_ids:
+        raw = str(item or "").strip()
+        if not raw:
+            continue
+        up = raw.upper()
+        canon = DEFAULT_PYTH_FEED_ALIASES.get(up, up)
+        if canon in feed_map:
+            fid = _normalize_feed_id(feed_map[canon])
+            sym_lbl = canon
+        else:
+            fid = _normalize_feed_id(raw)
+            sym_lbl = raw
+        if len(fid) == 64:
+            ids_q.append(fid)
+            id_to_sym[fid] = sym_lbl
+
+    if not ids_q:
+        return {}
+    qs = "&".join(f"ids[]={urllib.parse.quote(fid)}" for fid in dict.fromkeys(ids_q))
+    url = f"{base_url.rstrip('/')}/v2/updates/price/latest?{qs}&parsed=true"
+    try:
+        data = _http_get_json_sync(url, timeout=timeout, session=session)
+        return _parse_pyth_parsed_entries(data, id_to_sym)
+    except Exception as exc:
+        logger.debug(f"Pyth Hermes latest sync notice: {exc}")
+        return {}
+
+
+class PythHermesStream:
+    """
+    Lightweight `$0/mo` streaming Pyth Hermes client (SSE `/v2/updates/price/stream`
+    or WS `wss://hermes.pyth.network/ws`) maintaining bounded latest quotes + `conf` bands.
+    """
+
+    def __init__(
+        self,
+        symbols_or_feed_ids: Sequence[str] = ("BTC", "ETH", "SOL", "XAU", "XAG", "SPY", "QQQ", "NVDA", "TSLA", "USDCAD"),
+        *,
+        symbol_to_feed_id: Optional[Mapping[str, str]] = None,
+        prefer_sse: bool = True,
+        base_url: str = PYTH_HERMES_BASE_URL,
+        ws_url: str = PYTH_HERMES_WS_URL,
+        on_quote: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+    ) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._ws_url = ws_url
+        self._prefer_sse = bool(prefer_sse)
+        self._on_quote = on_quote
+        self._lock = threading.RLock()
+        self._feed_map: Dict[str, str] = dict(DEFAULT_PYTH_FEED_IDS)
+        if symbol_to_feed_id:
+            for k, v in symbol_to_feed_id.items():
+                self._feed_map[str(k).strip().upper()] = _normalize_feed_id(v)
+        self._id_to_sym: Dict[str, str] = {}
+        self._feed_ids: List[str] = []
+        self.set_symbols(symbols_or_feed_ids)
+        self._quotes: Dict[str, Dict[str, Any]] = {}
+        self._connected: bool = False
+        self._last_rx_mono: float = 0.0
+        self._stop_event = threading.Event()
+        self._bg_thread: Optional[threading.Thread] = None
+
+    def set_symbols(self, symbols_or_feed_ids: Sequence[str]) -> None:
+        ids_new: List[str] = []
+        id_map: Dict[str, str] = {}
+        for item in symbols_or_feed_ids:
+            raw = str(item or "").strip()
+            if not raw:
+                continue
+            up = raw.upper()
+            canon = DEFAULT_PYTH_FEED_ALIASES.get(up, up)
+            fid = _normalize_feed_id(self._feed_map.get(canon, raw))
+            if len(fid) == 64:
+                ids_new.append(fid)
+                id_map[fid] = canon if canon in self._feed_map else raw
+        with self._lock:
+            self._feed_ids = list(dict.fromkeys(ids_new))
+            self._id_to_sym = id_map
+
+    def process_payload(self, raw_payload: Any, rx_ts: Optional[float] = None) -> int:
+        if isinstance(raw_payload, (str, bytes, bytearray)):
+            txt = raw_payload.decode("utf-8", errors="ignore") if isinstance(raw_payload, (bytes, bytearray)) else raw_payload
+            s = txt.strip()
+            if not s or s.startswith(":"):
+                return 0
+            if s.startswith("data:"):
+                s = s[5:].strip()
+            if not s:
+                return 0
+            data = _fast_loads(s)
+        else:
+            data = raw_payload
+        with self._lock:
+            id_map = dict(self._id_to_sym)
+        parsed = _parse_pyth_parsed_entries(data, id_map, rx_ts=rx_ts)
+        if not parsed:
+            return 0
+        with self._lock:
+            self._last_rx_mono = time.monotonic()
+            for sym, q in parsed.items():
+                self._quotes[sym] = q
+        if self._on_quote is not None:
+            for sym, q in parsed.items():
+                try:
+                    self._on_quote(sym, q)
+                except Exception:
+                    pass
+        return len(parsed)
+
+    def get_latest(self, symbol: str, max_age_sec: float = 5.0) -> Optional[Dict[str, Any]]:
+        up = DEFAULT_PYTH_FEED_ALIASES.get(str(symbol or "").strip().upper(), str(symbol or "").strip().upper())
+        now_f = time.time()
+        with self._lock:
+            q = self._quotes.get(up)
+            if q is None:
+                return None
+            if (now_f - float(q.get("rx_ts") or 0.0)) > max_age_sec:
+                return None
+            return dict(q)
+
+    def get_price(self, symbol: str, max_age_sec: float = 5.0) -> Optional[float]:
+        q = self.get_latest(symbol, max_age_sec=max_age_sec)
+        return float(q["price"]) if q is not None else None
+
+    def is_healthy(self, max_silence_sec: float = 10.0) -> bool:
+        with self._lock:
+            return self._connected and (time.monotonic() - self._last_rx_mono) <= max_silence_sec
+
+    async def _run_sse_once(self, stop_check: Optional[Callable[[], bool]] = None) -> None:
+        if _aiohttp is None:
+            raise RuntimeError("aiohttp unavailable")
+        with self._lock:
+            ids = list(self._feed_ids)
+        if not ids:
+            await asyncio.sleep(1.0)
+            return
+        qs = "&".join(f"ids[]={urllib.parse.quote(fid)}" for fid in ids)
+        url = f"{self._base_url}/v2/updates/price/stream?{qs}&parsed=true"
+        timeout = _aiohttp.ClientTimeout(total=None, sock_connect=6.0, sock_read=15.0)
+        async with _aiohttp.ClientSession(timeout=timeout) as sess:
+            async with sess.get(url, headers={"Accept": "text/event-stream", "User-Agent": "DominusPyth/1.0"}) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"Pyth SSE status={resp.status}")
+                with self._lock:
+                    self._connected = True
+                    self._last_rx_mono = time.monotonic()
+                while not (stop_check and stop_check()) and not self._stop_event.is_set():
+                    line_b = await resp.content.readline()
+                    if not line_b:
+                        break
+                    self.process_payload(line_b)
+
+    async def _run_ws_once(self, stop_check: Optional[Callable[[], bool]] = None) -> None:
+        if _websockets is None:
+            raise RuntimeError("websockets unavailable")
+        with self._lock:
+            ids = list(self._feed_ids)
+        if not ids:
+            await asyncio.sleep(1.0)
+            return
+        async with _websockets.connect(self._ws_url, ping_interval=15, ping_timeout=10, compression=None) as ws:
+            await ws.send(_fast_dumps({"type": "subscribe", "ids": [f"0x{fid}" for fid in ids]}))
+            with self._lock:
+                self._connected = True
+                self._last_rx_mono = time.monotonic()
+            while not (stop_check and stop_check()) and not self._stop_event.is_set():
+                msg = await asyncio.wait_for(ws.recv(), timeout=12.0)
+                self.process_payload(msg)
+
+    async def run_forever(self, stop_check: Optional[Callable[[], bool]] = None) -> None:
+        backoff = 0.5
+        while not (stop_check and stop_check()) and not self._stop_event.is_set():
+            try:
+                if self._prefer_sse and _aiohttp is not None:
+                    await self._run_sse_once(stop_check)
+                elif _websockets is not None:
+                    await self._run_ws_once(stop_check)
+                else:
+                    # Graceful periodic sync fallback when neither aiohttp nor websockets is available
+                    with self._lock:
+                        syms = list(self._id_to_sym.values())
+                    snap = fetch_pyth_hermes_latest_sync(syms, symbol_to_feed_id=self._feed_map, base_url=self._base_url)
+                    if snap:
+                        with self._lock:
+                            self._connected = True
+                            self._last_rx_mono = time.monotonic()
+                            self._quotes.update(snap)
+                    await asyncio.sleep(1.5)
+                backoff = 0.5
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.debug(f"PythHermesStream reconnect notice: {exc}")
+                with self._lock:
+                    self._connected = False
+                await asyncio.sleep(backoff)
+                backoff = min(10.0, backoff * 1.8)
+
+    def start_background(self) -> None:
+        if self._bg_thread is not None and self._bg_thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._bg_thread = threading.Thread(
+            target=lambda: asyncio.run(self.run_forever()),
+            name="PythHermesStream",
+            daemon=True,
+        )
+        self._bg_thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+
+
+# ---------------------------------------------------------------------------
+# 2. Polygon Scoped `eth_subscribe("logs")` WebSocket (`$0/mo`, `D-001` Safe)
+# ---------------------------------------------------------------------------
+
+def _pad_topic_address(addr: str) -> str:
+    clean = str(addr or "").strip().lower()
+    if clean.startswith("0x"):
+        clean = clean[2:]
+    if len(clean) != 40:
+        return ""
+    return "0x" + clean.zfill(64)
+
+
+class PolygonScopedLogsWs:
+    """
+    Scoped Polygon PoS `eth_subscribe("logs", ...)` WebSocket listener (`$0/mo`).
+      - Subscription 1: `ProposePrice`, `DisputePrice`, `Settle` (`MOOV2`, `OOV2`) + `ConditionResolution` (`CTF_V1`).
+      - Subscription 2 (when `funder_address` set): funder-indexed `PayoutRedemption` on `[CTF_V1, NEG_RISK_ADAPTER_V2]`.
+    Strictly enforces `D-001` non-interference on disputed `KMIA` markets (`6707503`, `6707502`).
+    """
+
+    def __init__(
+        self,
+        *,
+        wss_urls: Optional[Sequence[str]] = None,
+        funder_address: str = "",
+        quarantined_market_ids: FrozenSet[str] = FROZEN_KMIA_MARKET_IDS,
+        max_events: int = 256,
+        on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> None:
+        env_wss = os.environ.get("POLYGON_WSS_URL", "").strip()
+        urls = [env_wss] if env_wss else []
+        urls.extend(wss_urls or POLYGON_PUBLIC_WSS_URLS)
+        self._wss_urls: Tuple[str, ...] = tuple(dict.fromkeys(u for u in urls if u))
+        self._funder_topic = _pad_topic_address(funder_address)
+        self._quarantined_ids = frozenset(str(x) for x in quarantined_market_ids)
+        self._on_event = on_event
+        self._lock = threading.RLock()
+        self._events: Deque[Dict[str, Any]] = deque(maxlen=max(32, int(max_events)))
+        self._oo_status_by_mid: Dict[str, Dict[str, Any]] = {}
+        self._condition_resolutions: Dict[str, Dict[str, Any]] = {}
+        self._connected: bool = False
+        self._last_rx_mono: float = 0.0
+        self._stop_event = threading.Event()
+        self._bg_thread: Optional[threading.Thread] = None
+
+    def build_subscribe_payloads(self) -> List[Dict[str, Any]]:
+        reqs: List[Dict[str, Any]] = [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "eth_subscribe",
+                "params": [
+                    "logs",
+                    {
+                        "address": [POLYGON_MOOV2_ADDR, POLYGON_OOV2_ADDR, POLYGON_CTF_V1_ADDR],
+                        "topics": [
+                            [
+                                TOPIC_OO_PROPOSE_PRICE,
+                                TOPIC_OO_DISPUTE_PRICE,
+                                TOPIC_OO_SETTLE,
+                                TOPIC_CTF_CONDITION_RESOLUTION,
+                            ]
+                        ],
+                    },
+                ],
+            }
+        ]
+        if self._funder_topic:
+            reqs.append(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "eth_subscribe",
+                    "params": [
+                        "logs",
+                        {
+                            "address": [POLYGON_CTF_V1_ADDR, POLYGON_NEG_RISK_ADAPTER_V2_ADDR],
+                            "topics": [
+                                [TOPIC_CTF_PAYOUT_REDEMPTION, TOPIC_NEGRISK_PAYOUT_REDEMPTION],
+                                self._funder_topic,
+                            ],
+                        },
+                    ],
+                }
+            )
+        return reqs
+
+    @staticmethod
+    def _extract_market_ids_from_hex_data(data_hex: str) -> List[str]:
+        if not data_hex or not str(data_hex).startswith("0x") or len(data_hex) < 10:
+            return []
+        try:
+            raw_bytes = bytes.fromhex(str(data_hex)[2:])
+            txt = raw_bytes.decode("utf-8", errors="ignore")
+            return list(dict.fromkeys(_ANC_MARKET_ID_RE.findall(txt)))
+        except Exception:
+            return []
+
+    def process_ws_message(self, raw_msg: Any) -> Optional[Dict[str, Any]]:
+        try:
+            msg = _fast_loads(raw_msg) if isinstance(raw_msg, (str, bytes, bytearray)) else raw_msg
+        except Exception:
+            return None
+        if not isinstance(msg, Mapping):
+            return None
+        with self._lock:
+            self._last_rx_mono = time.monotonic()
+        if msg.get("method") != "eth_subscription":
+            return None
+        params = msg.get("params")
+        log_obj = params.get("result") if isinstance(params, Mapping) else None
+        if not isinstance(log_obj, Mapping):
+            return None
+
+        topics = [str(t).lower() for t in (log_obj.get("topics") or [])]
+        if not topics:
+            return None
+        t0 = topics[0]
+        addr = str(log_obj.get("address") or "").lower()
+        data_hex = str(log_obj.get("data") or "")
+        tx_hash = str(log_obj.get("transactionHash") or "")
+        blk_raw = log_obj.get("blockNumber")
+        block_num = int(blk_raw, 16) if isinstance(blk_raw, str) and blk_raw.startswith("0x") else int(_sf(blk_raw, 0))
+        now_f = time.time()
+
+        event_kind = ""
+        if t0 == TOPIC_OO_PROPOSE_PRICE:
+            event_kind = "OO_PROPOSE_PRICE"
+        elif t0 == TOPIC_OO_DISPUTE_PRICE:
+            event_kind = "OO_DISPUTE_PRICE"
+        elif t0 == TOPIC_OO_SETTLE:
+            event_kind = "OO_SETTLE"
+        elif t0 == TOPIC_CTF_CONDITION_RESOLUTION:
+            event_kind = "CTF_CONDITION_RESOLUTION"
+        elif t0 in (TOPIC_CTF_PAYOUT_REDEMPTION, TOPIC_NEGRISK_PAYOUT_REDEMPTION):
+            event_kind = "CTF_PAYOUT_REDEMPTION"
+        else:
+            return None
+
+        mids = self._extract_market_ids_from_hex_data(data_hex)
+        quarantined = any(m in self._quarantined_ids for m in mids)
+        cond_id = topics[1] if (event_kind == "CTF_CONDITION_RESOLUTION" and len(topics) > 1) else ""
+
+        evt = {
+            "event_kind": event_kind,
+            "address": addr,
+            "block_number": block_num,
+            "tx_hash": tx_hash,
+            "market_ids": mids,
+            "condition_id": cond_id,
+            "quarantined_d001": quarantined,
+            "rx_ts": now_f,
+        }
+
+        with self._lock:
+            if event_kind in ("OO_PROPOSE_PRICE", "OO_DISPUTE_PRICE", "OO_SETTLE"):
+                st = "DISPUTED" if event_kind == "OO_DISPUTE_PRICE" else ("SETTLED" if event_kind == "OO_SETTLE" else "PROPOSED")
+                for mid in mids:
+                    self._oo_status_by_mid[mid] = {
+                        "status": st,
+                        "event_kind": event_kind,
+                        "block_number": block_num,
+                        "tx_hash": tx_hash,
+                        "quarantined_d001": mid in self._quarantined_ids,
+                        "rx_ts": now_f,
+                    }
+                if len(self._oo_status_by_mid) > 512:
+                    oldest = sorted(self._oo_status_by_mid.items(), key=lambda kv: kv[1]["rx_ts"])[:128]
+                    for k_o, _ in oldest:
+                        self._oo_status_by_mid.pop(k_o, None)
+            elif event_kind == "CTF_CONDITION_RESOLUTION" and cond_id:
+                self._condition_resolutions[cond_id] = evt
+                if len(self._condition_resolutions) > 512:
+                    oldest_c = sorted(self._condition_resolutions.items(), key=lambda kv: kv[1]["rx_ts"])[:128]
+                    for k_c, _ in oldest_c:
+                        self._condition_resolutions.pop(k_c, None)
+
+            if not quarantined:
+                self._events.append(evt)
+
+        if not quarantined and self._on_event is not None:
+            try:
+                self._on_event(evt)
+            except Exception:
+                pass
+        return evt
+
+    def drain_events(self, max_items: int = 64) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        with self._lock:
+            while self._events and len(out) < max_items:
+                ev = self._events.popleft()
+                if not ev.get("quarantined_d001"):
+                    out.append(ev)
+        return out
+
+    def get_market_oo_status(self, market_id: str, max_age_sec: float = 3600.0) -> Optional[Dict[str, Any]]:
+        mid = str(market_id or "").strip()
+        if not mid:
+            return None
+        now_f = time.time()
+        with self._lock:
+            row = self._oo_status_by_mid.get(mid)
+            if row is None or (now_f - float(row["rx_ts"])) > max_age_sec:
+                return None
+            return dict(row)
+
+    def get_condition_resolution(self, condition_id: str) -> Optional[Dict[str, Any]]:
+        cid = str(condition_id or "").strip().lower()
+        if not cid:
+            return None
+        with self._lock:
+            row = self._condition_resolutions.get(cid)
+            return dict(row) if row is not None else None
+
+    async def run_forever(self, stop_check: Optional[Callable[[], bool]] = None) -> None:
+        if _websockets is None or not self._wss_urls:
+            return
+        idx = 0
+        backoff = 1.0
+        while not (stop_check and stop_check()) and not self._stop_event.is_set():
+            url = self._wss_urls[idx % len(self._wss_urls)]
+            idx += 1
+            try:
+                async with _websockets.connect(url, ping_interval=20, ping_timeout=15, compression=None) as ws:
+                    for req in self.build_subscribe_payloads():
+                        await ws.send(_fast_dumps(req))
+                    with self._lock:
+                        self._connected = True
+                        self._last_rx_mono = time.monotonic()
+                    backoff = 1.0
+                    while not (stop_check and stop_check()) and not self._stop_event.is_set():
+                        try:
+                            msg = await asyncio.wait_for(ws.recv(), timeout=30.0)
+                        except asyncio.TimeoutError:
+                            await ws.send('{"jsonrpc":"2.0","id":99,"method":"eth_blockNumber","params":[]}')
+                            continue
+                        self.process_ws_message(msg)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.debug(f"PolygonScopedLogsWs reconnect ({url}): {exc}")
+                with self._lock:
+                    self._connected = False
+                await asyncio.sleep(backoff)
+                backoff = min(15.0, backoff * 1.8)
+
+    def start_background(self) -> None:
+        if self._bg_thread is not None and self._bg_thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._bg_thread = threading.Thread(
+            target=lambda: asyncio.run(self.run_forever()),
+            name="PolygonScopedLogsWs",
+            daemon=True,
+        )
+        self._bg_thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+
+
+# ---------------------------------------------------------------------------
+# 3. Hyperliquid + Coinbase Advanced Read-Only Public WS (`$0/mo`, `D-008`)
+# ---------------------------------------------------------------------------
+
+class HyperliquidCoinbaseWs:
+    """
+    Bounded read-only public market data client (`$0/mo`, zero auth/trading):
+      - Hyperliquid `wss://api.hyperliquid.xyz/ws` (`allMids` / `trades` for `HYPE`, `BTC`, `ETH`, `SOL`)
+      - Coinbase Advanced `wss://advanced-trade-ws.coinbase.com` (`ticker` for `BTC-USD`, `ETH-USD`, `SOL-USD`, `ZEC-USD`, `USDT-USD`)
+    """
+
+    def __init__(
+        self,
+        *,
+        hl_coins: Sequence[str] = ("HYPE", "BTC", "ETH", "SOL"),
+        coinbase_products: Sequence[str] = ("BTC-USD", "ETH-USD", "SOL-USD", "ZEC-USD", "USDT-USD"),
+    ) -> None:
+        self._hl_coins = tuple(str(c).upper() for c in hl_coins)
+        self._cb_products = tuple(str(p).upper() for p in coinbase_products)
+        self._lock = threading.RLock()
+        self._hl_prices: Dict[str, Tuple[float, float]] = {}
+        self._cb_prices: Dict[str, Tuple[float, float]] = {}
+        self._stop_event = threading.Event()
+        self._bg_thread: Optional[threading.Thread] = None
+
+    def process_hyperliquid_message(self, raw_msg: Any, rx_ts: Optional[float] = None) -> int:
+        now_f = float(time.time() if rx_ts is None else rx_ts)
+        try:
+            d = _fast_loads(raw_msg) if isinstance(raw_msg, (str, bytes, bytearray)) else raw_msg
+        except Exception:
+            return 0
+        if not isinstance(d, Mapping):
+            return 0
+        ch = str(d.get("channel") or "")
+        data = d.get("data")
+        updates = 0
+        with self._lock:
+            if ch == "allMids" and isinstance(data, Mapping):
+                mids = data.get("mids") if isinstance(data.get("mids"), Mapping) else data
+                for coin in self._hl_coins:
+                    px = _sf(mids.get(coin), 0.0)
+                    if px > 0.0:
+                        self._hl_prices[coin] = (px, now_f)
+                        updates += 1
+            elif ch == "trades" and isinstance(data, list):
+                for tr in data:
+                    if not isinstance(tr, Mapping):
+                        continue
+                    coin = str(tr.get("coin") or "").upper()
+                    px = _sf(tr.get("px"), 0.0)
+                    if coin in self._hl_coins and px > 0.0:
+                        self._hl_prices[coin] = (px, now_f)
+                        updates += 1
+        return updates
+
+    def process_coinbase_message(self, raw_msg: Any, rx_ts: Optional[float] = None) -> int:
+        now_f = float(time.time() if rx_ts is None else rx_ts)
+        try:
+            d = _fast_loads(raw_msg) if isinstance(raw_msg, (str, bytes, bytearray)) else raw_msg
+        except Exception:
+            return 0
+        if not isinstance(d, Mapping):
+            return 0
+        updates = 0
+        if d.get("channel") == "ticker" and isinstance(d.get("events"), list):
+            with self._lock:
+                for ev in d["events"]:
+                    if not isinstance(ev, Mapping):
+                        continue
+                    for tk in ev.get("tickers") or ():
+                        if not isinstance(tk, Mapping):
+                            continue
+                        pid = str(tk.get("product_id") or "").upper()
+                        px = _sf(tk.get("price"), 0.0)
+                        if px > 0.0 and pid:
+                            self._cb_prices[pid] = (px, now_f)
+                            updates += 1
+        elif d.get("type") == "ticker":
+            pid = str(d.get("product_id") or "").upper()
+            px = _sf(d.get("price"), 0.0)
+            if px > 0.0 and pid:
+                with self._lock:
+                    self._cb_prices[pid] = (px, now_f)
+                updates += 1
+        return updates
+
+    def get_price(self, symbol: str, *, venue: Optional[str] = None, max_age_sec: float = 5.0) -> Optional[float]:
+        sym = str(symbol or "").strip().upper()
+        now_f = time.time()
+        with self._lock:
+            if venue == "hyperliquid":
+                row = self._hl_prices.get(sym)
+                return row[0] if (row and (now_f - row[1]) <= max_age_sec) else None
+            if venue == "coinbase":
+                pid = sym if "-" in sym else f"{sym}-USD"
+                row = self._cb_prices.get(pid)
+                return row[0] if (row and (now_f - row[1]) <= max_age_sec) else None
+            pid = sym if "-" in sym else f"{sym}-USD"
+            cb_row = self._cb_prices.get(pid)
+            if cb_row and (now_f - cb_row[1]) <= max_age_sec:
+                return cb_row[0]
+            hl_row = self._hl_prices.get(sym.split("-")[0])
+            if hl_row and (now_f - hl_row[1]) <= max_age_sec:
+                return hl_row[0]
+        return None
+
+    async def _run_hl(self, stop_check: Optional[Callable[[], bool]] = None) -> None:
+        if _websockets is None:
+            return
+        backoff = 1.0
+        while not (stop_check and stop_check()) and not self._stop_event.is_set():
+            try:
+                async with _websockets.connect(HYPERLIQUID_PUBLIC_WS_URL, ping_interval=20, ping_timeout=10, compression=None) as ws:
+                    await ws.send(_fast_dumps({"method": "subscribe", "subscription": {"type": "allMids"}}))
+                    backoff = 1.0
+                    while not (stop_check and stop_check()) and not self._stop_event.is_set():
+                        msg = await asyncio.wait_for(ws.recv(), timeout=25.0)
+                        self.process_hyperliquid_message(msg)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.debug(f"Hyperliquid WS reconnect: {exc}")
+                await asyncio.sleep(backoff)
+                backoff = min(15.0, backoff * 1.8)
+
+    async def _run_cb(self, stop_check: Optional[Callable[[], bool]] = None) -> None:
+        if _websockets is None:
+            return
+        backoff = 1.0
+        while not (stop_check and stop_check()) and not self._stop_event.is_set():
+            try:
+                async with _websockets.connect(COINBASE_ADVANCED_WS_URL, ping_interval=20, ping_timeout=10, compression=None) as ws:
+                    await ws.send(_fast_dumps({"type": "subscribe", "product_ids": list(self._cb_products), "channel": "ticker"}))
+                    backoff = 1.0
+                    while not (stop_check and stop_check()) and not self._stop_event.is_set():
+                        msg = await asyncio.wait_for(ws.recv(), timeout=25.0)
+                        self.process_coinbase_message(msg)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.debug(f"Coinbase Advanced WS reconnect: {exc}")
+                await asyncio.sleep(backoff)
+                backoff = min(15.0, backoff * 1.8)
+
+    async def run_forever(self, stop_check: Optional[Callable[[], bool]] = None) -> None:
+        await asyncio.gather(self._run_hl(stop_check), self._run_cb(stop_check))
+
+    def start_background(self) -> None:
+        if self._bg_thread is not None and self._bg_thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._bg_thread = threading.Thread(
+            target=lambda: asyncio.run(self.run_forever()),
+            name="HyperliquidCoinbaseWs",
+            daemon=True,
+        )
+        self._bg_thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+
+
+# ---------------------------------------------------------------------------
+# 4. Deribit v2 Read-Only Public WebSocket (`$0/mo`, Shadow / Gate G)
+# ---------------------------------------------------------------------------
+
+class DeribitPublicWs:
+    """Bounded read-only Deribit v2 WS quote cache for `DERIBIT_VERTICAL_SUPER_REP`."""
+
+    def __init__(self, instruments: Sequence[str] = (), *, ws_url: str = DERIBIT_PUBLIC_WS_URL) -> None:
+        self._ws_url = ws_url
+        self._lock = threading.RLock()
+        self._instruments: List[str] = list(dict.fromkeys(str(i).strip() for i in instruments if i))[:64]
+        self._quotes: Dict[str, Dict[str, Any]] = {}
+        self._stop_event = threading.Event()
+        self._bg_thread: Optional[threading.Thread] = None
+
+    def set_instruments(self, instruments: Sequence[str]) -> None:
+        clean = list(dict.fromkeys(str(i).strip() for i in instruments if i))[:64]
+        with self._lock:
+            self._instruments = clean
+
+    @staticmethod
+    def build_subscribe_frame(instruments: Sequence[str], *, channel_prefix: str = "ticker", interval: str = "100ms") -> str:
+        channels = [f"{channel_prefix}.{str(inst).strip()}.{interval}" for inst in instruments if inst]
+        return _fast_dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 42,
+                "method": "public/subscribe",
+                "params": {"channels": channels[:64]},
+            }
+        )
+
+    def process_ws_message(self, raw_msg: Any, rx_ts: Optional[float] = None) -> bool:
+        now_f = float(time.time() if rx_ts is None else rx_ts)
+        try:
+            d = _fast_loads(raw_msg) if isinstance(raw_msg, (str, bytes, bytearray)) else raw_msg
+        except Exception:
+            return False
+        if not isinstance(d, Mapping) or d.get("method") != "subscription":
+            return False
+        params = d.get("params")
+        data = params.get("data") if isinstance(params, Mapping) else None
+        if not isinstance(data, Mapping):
+            return False
+        inst = str(data.get("instrument_name") or "").strip()
+        if not inst:
+            return False
+        quote = {
+            "instrument_name": inst,
+            "best_bid_price": _sf(data.get("best_bid_price"), 0.0),
+            "best_bid_amount": _sf(data.get("best_bid_amount"), 0.0),
+            "best_ask_price": _sf(data.get("best_ask_price"), 0.0),
+            "best_ask_amount": _sf(data.get("best_ask_amount"), 0.0),
+            "mark_price": _sf(data.get("mark_price"), 0.0),
+            "underlying_price": _sf(data.get("underlying_price"), 0.0),
+            "rx_ts": now_f,
+        }
+        with self._lock:
+            self._quotes[inst] = quote
+            if len(self._quotes) > 128:
+                oldest = sorted(self._quotes.items(), key=lambda kv: kv[1]["rx_ts"])[:32]
+                for k_o, _ in oldest:
+                    self._quotes.pop(k_o, None)
+        return True
+
+    def get_option_quote(self, instrument_name: str, max_age_sec: float = 5.0) -> Optional[Dict[str, Any]]:
+        now_f = time.time()
+        with self._lock:
+            q = self._quotes.get(str(instrument_name or "").strip())
+            if q is None or (now_f - float(q["rx_ts"])) > max_age_sec:
+                return None
+            return dict(q)
+
+    def get_quotes_by_currency(self, currency: str, max_age_sec: float = 5.0) -> Dict[str, Dict[str, Any]]:
+        prefix = f"{str(currency or '').strip().upper()}-"
+        now_f = time.time()
+        with self._lock:
+            return {
+                k: dict(v)
+                for k, v in self._quotes.items()
+                if k.startswith(prefix) and (now_f - float(v["rx_ts"])) <= max_age_sec
+            }
+
+    async def run_forever(self, stop_check: Optional[Callable[[], bool]] = None) -> None:
+        if _websockets is None:
+            return
+        backoff = 1.0
+        while not (stop_check and stop_check()) and not self._stop_event.is_set():
+            with self._lock:
+                insts = list(self._instruments)
+            if not insts:
+                await asyncio.sleep(2.0)
+                continue
+            try:
+                async with _websockets.connect(self._ws_url, ping_interval=20, ping_timeout=10, compression=None) as ws:
+                    await ws.send(self.build_subscribe_frame(insts))
+                    backoff = 1.0
+                    while not (stop_check and stop_check()) and not self._stop_event.is_set():
+                        msg = await asyncio.wait_for(ws.recv(), timeout=20.0)
+                        self.process_ws_message(msg)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.debug(f"DeribitPublicWs reconnect: {exc}")
+                await asyncio.sleep(backoff)
+                backoff = min(15.0, backoff * 1.8)
+
+    def start_background(self) -> None:
+        if self._bg_thread is not None and self._bg_thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._bg_thread = threading.Thread(
+            target=lambda: asyncio.run(self.run_forever()),
+            name="DeribitPublicWs",
+            daemon=True,
+        )
+        self._bg_thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+
+
+# ---------------------------------------------------------------------------
+# 5. Macro / Official Catalyst Feed Client (`$0/mo`, Window-Gated)
+# ---------------------------------------------------------------------------
+
+class MacroEventFeedClient:
+    """
+    Catalyst-window gated official macro & corporate trigger client (`$0/mo`):
+      - Fed Monetary Policy RSS (`federalreserve.gov/feeds/press_monetary.xml`)
+      - SEC EDGAR Submissions (`data.sec.gov/submissions/CIK{cik10}.json`, compliant `User-Agent`)
+      - Optional BLS Public API v2 (`BLS_API_KEY` env; hard keyless cap `<= 20/day` vs 25/day limit)
+    """
+
+    def __init__(self, *, sec_user_agent: Optional[str] = None, bls_api_key: Optional[str] = None) -> None:
+        self._sec_ua = str(
+            sec_user_agent
+            or os.environ.get("SEC_EDGAR_USER_AGENT")
+            or "DominusRisklessResearch/1.0 contact@dominus-research.local"
+        ).strip()
+        self._bls_key = str(bls_api_key or os.environ.get("BLS_API_KEY") or "").strip()
+        self._lock = threading.RLock()
+        self._etags: Dict[str, str] = {}
+        self._last_modified: Dict[str, str] = {}
+        self._bls_day_str: str = ""
+        self._bls_daily_calls: int = 0
+        self._recent_releases: Deque[Dict[str, str]] = deque(maxlen=64)
+
+    @staticmethod
+    def parse_fed_rss_xml(xml_text: str) -> List[Dict[str, str]]:
+        if not xml_text or not str(xml_text).strip():
+            return []
+        root = ET.fromstring(xml_text)
+        items: List[Dict[str, str]] = []
+        for it in root.findall(".//item")[:20]:
+            title = (it.findtext("title") or "").strip()
+            link = (it.findtext("link") or "").strip()
+            pub = (it.findtext("pubDate") or "").strip()
+            if title:
+                items.append({"title": title, "link": link, "pub_date": pub})
+        return items
+
+    def fetch_fed_rss_sync(self, *, in_window: bool = True, timeout: float = 3.0) -> List[Dict[str, str]]:
+        if not in_window:
+            return []
+        try:
+            sess = _get_sync_session()
+            hdrs = {"User-Agent": self._sec_ua, "Accept": "application/rss+xml, application/xml"}
+            with self._lock:
+                if FED_PRESS_MONETARY_RSS_URL in self._etags:
+                    hdrs["If-None-Match"] = self._etags[FED_PRESS_MONETARY_RSS_URL]
+                if FED_PRESS_MONETARY_RSS_URL in self._last_modified:
+                    hdrs["If-Modified-Since"] = self._last_modified[FED_PRESS_MONETARY_RSS_URL]
+            if sess is not None:
+                resp = sess.get(FED_PRESS_MONETARY_RSS_URL, headers=hdrs, timeout=timeout)
+                if resp.status_code == 304 or resp.status_code != 200:
+                    return []
+                with self._lock:
+                    if resp.headers.get("ETag"):
+                        self._etags[FED_PRESS_MONETARY_RSS_URL] = resp.headers["ETag"]
+                    if resp.headers.get("Last-Modified"):
+                        self._last_modified[FED_PRESS_MONETARY_RSS_URL] = resp.headers["Last-Modified"]
+                xml_txt = resp.text
+            else:
+                req = urllib.request.Request(FED_PRESS_MONETARY_RSS_URL, headers=hdrs)
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    xml_txt = resp.read().decode("utf-8", errors="ignore")
+            items = self.parse_fed_rss_xml(xml_txt)
+            with self._lock:
+                self._recent_releases.extend(items[:5])
+            return items
+        except Exception as exc:
+            logger.debug(f"Fed RSS fetch notice: {exc}")
+            return []
+
+    def fetch_sec_submissions_sync(self, cik: str, *, in_window: bool = True, timeout: float = 3.0) -> Optional[Dict[str, Any]]:
+        if not in_window:
+            return None
+        digits = re.sub(r"\D", "", str(cik or ""))
+        if not digits:
+            return None
+        url = SEC_EDGAR_SUBMISSIONS_TMPL.format(cik10=digits.zfill(10))
+        try:
+            data = _http_get_json_sync(url, timeout=timeout, headers={"User-Agent": self._sec_ua})
+            return dict(data) if isinstance(data, Mapping) else None
+        except Exception as exc:
+            logger.debug(f"SEC EDGAR fetch notice ({cik}): {exc}")
+            return None
+
+    def can_query_bls_today(self) -> bool:
+        today_s = time.strftime("%Y-%m-%d", time.gmtime())
+        with self._lock:
+            if self._bls_day_str != today_s:
+                self._bls_day_str = today_s
+                self._bls_daily_calls = 0
+            cap = 450 if self._bls_key else 20
+            return self._bls_daily_calls < cap
+
+    def fetch_bls_series_sync(
+        self,
+        series_ids: Sequence[str],
+        *,
+        in_window: bool = True,
+        timeout: float = 3.5,
+    ) -> Optional[Dict[str, Any]]:
+        if not in_window or not series_ids or not self.can_query_bls_today():
+            return None
+        body: Dict[str, Any] = {"seriesid": [str(s) for s in series_ids[:10]]}
+        if self._bls_key:
+            body["registrationkey"] = self._bls_key
+        try:
+            with self._lock:
+                self._bls_daily_calls += 1
+            sess = _get_sync_session()
+            if sess is not None:
+                resp = sess.post(BLS_PUBLIC_API_V2_URL, json=body, timeout=timeout)
+                if resp.status_code != 200:
+                    return None
+                return _fast_loads(resp.content)
+            req = urllib.request.Request(
+                BLS_PUBLIC_API_V2_URL,
+                data=_fast_dumps(body).encode("utf-8"),
+                headers={"Content-Type": "application/json", "User-Agent": self._sec_ua},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return _fast_loads(resp.read())
+        except Exception as exc:
+            logger.debug(f"BLS v2 fetch notice: {exc}")
+            return None
+
+
+# ---------------------------------------------------------------------------
+# 6. Live Intraday CAD/USD Rate Resolver (`$0/mo`, Never Daily BoC Rate)
+# ---------------------------------------------------------------------------
+
+def fetch_live_cad_usd_sync(
+    *,
+    ibkr_quote: Optional[Mapping[str, Any]] = None,
+    pyth_stream: Optional[PythHermesStream] = None,
+    timeout: float = 2.5,
+    session: Any = None,
+    fallback_bid: float = 0.7230,
+    fallback_ask: float = 0.7250,
+) -> Dict[str, Any]:
+    """
+    Resolves live intraday `CAD -> USD` FX bid/ask for `XV_FX_INVARIANT_CAD_USD_BOX`:
+      1. Caller-supplied live IBKR `CAD.USD` quote (`ibkr_quote`)
+      2. Live `PythHermesStream` `USDCAD` (or Pyth REST `USDCAD`) inverted cleanly (`1 / USDCAD`)
+      3. Coinbase live `USD-CAD` spot inverted cleanly (`1 / amount`)
+      4. Conservative stale fallback (`stale=True`) — NEVER silently substitutes a daily-only reference!
+    """
+    now_f = time.time()
+    if isinstance(ibkr_quote, Mapping):
+        bid_i = _sf(ibkr_quote.get("bid"), 0.0)
+        ask_i = _sf(ibkr_quote.get("ask"), 0.0)
+        if 0.50 <= bid_i <= ask_i <= 1.10:
+            return {
+                "bid": round(bid_i, 6),
+                "ask": round(ask_i, 6),
+                "mid": round(0.5 * (bid_i + ask_i), 6),
+                "ts": _sf(ibkr_quote.get("ts"), now_f),
+                "source": "ibkr_idealpro",
+                "stale": False,
+                "is_daily_ref": False,
+            }
+
+    pyth_q = pyth_stream.get_latest("USDCAD", max_age_sec=10.0) if pyth_stream is not None else None
+    if pyth_q is None:
+        pyth_rest = fetch_pyth_hermes_latest_sync(["USDCAD"], timeout=timeout, session=session)
+        pyth_q = pyth_rest.get("USDCAD")
+    if isinstance(pyth_q, Mapping):
+        usdcad = _sf(pyth_q.get("price"), 0.0)
+        conf = max(0.0, _sf(pyth_q.get("conf"), 0.0))
+        if 1.0 <= usdcad <= 2.0:
+            cad_bid = 1.0 / (usdcad + max(conf, usdcad * 0.0005))
+            cad_ask = 1.0 / max(1e-6, usdcad - max(conf, usdcad * 0.0005))
+            return {
+                "bid": round(cad_bid, 6),
+                "ask": round(cad_ask, 6),
+                "mid": round(1.0 / usdcad, 6),
+                "ts": _sf(pyth_q.get("publish_time"), now_f),
+                "source": "pyth_usdcad",
+                "stale": False,
+                "is_daily_ref": False,
+            }
+
+    try:
+        cb = _http_get_json_sync(COINBASE_SPOT_USDCAD_URL, timeout=timeout, session=session)
+        amt = _sf(((cb or {}).get("data") or {}).get("amount"), 0.0) if isinstance(cb, Mapping) else 0.0
+        if 1.0 <= amt <= 2.0:
+            mid_c = 1.0 / amt
+            return {
+                "bid": round(mid_c * 0.9993, 6),
+                "ask": round(mid_c * 1.0007, 6),
+                "mid": round(mid_c, 6),
+                "ts": now_f,
+                "source": "coinbase_usdcad_spot",
+                "stale": False,
+                "is_daily_ref": False,
+            }
+    except Exception as exc:
+        logger.debug(f"Coinbase USD-CAD fallback notice: {exc}")
+
+    return {
+        "bid": float(fallback_bid),
+        "ask": float(fallback_ask),
+        "mid": round(0.5 * (float(fallback_bid) + float(fallback_ask)), 6),
+        "ts": now_f,
+        "source": "stale_fallback",
+        "stale": True,
+        "is_daily_ref": False,
+    }
+
+
+__all__ = [
+    "FROZEN_KMIA_MARKET_IDS",
+    "PythHermesStream",
+    "fetch_pyth_hermes_latest_sync",
+    "PolygonScopedLogsWs",
+    "HyperliquidCoinbaseWs",
+    "DeribitPublicWs",
+    "MacroEventFeedClient",
+    "fetch_live_cad_usd_sync",
+    "keccak256_hex",
+    "TOPIC_CTF_CONDITION_RESOLUTION",
+    "TOPIC_CTF_PAYOUT_REDEMPTION",
+    "TOPIC_NEGRISK_PAYOUT_REDEMPTION",
+    "TOPIC_OO_PROPOSE_PRICE",
+    "TOPIC_OO_DISPUTE_PRICE",
+    "TOPIC_OO_SETTLE",
+]
+
+# ======================================================================================
+# [54/68] MODULE: tests/test_alpha_124_oracles.py
 # PURPOSE: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
 # ======================================================================================
 
@@ -108836,7 +114129,7 @@ if __name__ == "__main__":
     print("ALL ALPHA-124 ORACLE & PRICING UNIT TESTS PASSED!")
 
 # ======================================================================================
-# [54/67] MODULE: tests/test_polymarket_wfo_5fixes.py
+# [55/68] MODULE: tests/test_polymarket_wfo_5fixes.py
 # PURPOSE: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
 # ======================================================================================
 
@@ -114568,7 +119861,7 @@ def test_live_6422834_chainlink_basis_anchor_calibration(tmp_path, monkeypatch):
 
 
 # ======================================================================================
-# [55/67] MODULE: tests/test_zero_trust_forensic_audit.py
+# [56/68] MODULE: tests/test_zero_trust_forensic_audit.py
 # PURPOSE: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
 # ======================================================================================
 
@@ -115327,7 +120620,7 @@ def test_v35_bundle_in_sync_with_sources_and_compiles():
     compile(bundle_text, "polymarket_all_in_one.py", "exec")  # must remain valid Python
 
 # ======================================================================================
-# [56/67] MODULE: tests/test_riskless_frontier_v4.py
+# [57/68] MODULE: tests/test_riskless_frontier_v4.py
 # PURPOSE: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
 # ======================================================================================
 
@@ -116170,7 +121463,7 @@ if __name__ == "__main__":
     unittest.main()
 
 # ======================================================================================
-# [57/67] MODULE: tests/test_v530_forensic_plumbing_fixes.py
+# [58/68] MODULE: tests/test_v530_forensic_plumbing_fixes.py
 # PURPOSE: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
 # ======================================================================================
 
@@ -116950,7 +122243,7 @@ def test_p0_11_feed_ipc_lag_quiet_book_refresh_and_pinned_short_circuit(tmp_path
 
 
 # ======================================================================================
-# [58/67] MODULE: tests/test_v531_qa_audit_fixes.py
+# [59/68] MODULE: tests/test_v531_qa_audit_fixes.py
 # PURPOSE: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
 # ======================================================================================
 
@@ -118752,7 +124045,7 @@ def test_v531_harvester_dispute_guard_and_polybolt_mid_session_401_failover(tmp_
 
 
 # ======================================================================================
-# [59/67] MODULE: tests/test_v550_zero_loss_frontier_and_velocity.py
+# [60/68] MODULE: tests/test_v550_zero_loss_frontier_and_velocity.py
 # PURPOSE: Unit Tests: v5.5.0 Zero-Loss Frontier, Relayer V2 Batch Merge, Verified m=1 Convert & Velocity
 # ======================================================================================
 
@@ -119519,7 +124812,7 @@ if __name__ == "__main__":
     unittest.main()
 
 # ======================================================================================
-# [60/67] MODULE: tests/test_v560_fill_rate_and_profit_growth.py
+# [61/68] MODULE: tests/test_v560_fill_rate_and_profit_growth.py
 # PURPOSE: Unit Tests: v5.6.0 Fill-Rate, Profit-Growth, NR_M1 Bridge, WS Clinch Sniper & Sticky FIFO Queue
 # ======================================================================================
 
@@ -122604,7 +127897,7 @@ if __name__ == "__main__":
 
 
 # ======================================================================================
-# [61/67] MODULE: tests/test_v570_ms_velocity_and_ws_sniper.py
+# [62/68] MODULE: tests/test_v570_ms_velocity_and_ws_sniper.py
 # PURPOSE: Unit Tests: v5.7.0 Sub-ms Hot-Path Velocity, 450-Token WS Sniper, 2h UMA Recycle & Dynamic Scaling
 # ======================================================================================
 
@@ -124225,7 +129518,7 @@ if __name__ == "__main__":
     unittest.main()
 
 # ======================================================================================
-# [62/67] MODULE: tests/test_v580_sharded_ws_d1fast_pusd_and_direct_feeds.py
+# [63/68] MODULE: tests/test_v580_sharded_ws_d1fast_pusd_and_direct_feeds.py
 # PURPOSE: Unit Tests: v5.8.0 4-Shard WS, D1FAST IPC, V2 pUSD Redemption/Wrap & Direct Feeds
 # ======================================================================================
 
@@ -125014,7 +130307,7 @@ if __name__ == "__main__":
     unittest.main()
 
 # ======================================================================================
-# [63/67] MODULE: tests/test_stage_b_economic_attribution.py
+# [64/68] MODULE: tests/test_stage_b_economic_attribution.py
 # PURPOSE: Unit Tests: Stage B Opportunity Funnel, Competitor Decay, Markouts & 10 Institutional KPIs
 # ======================================================================================
 
@@ -125457,7 +130750,7 @@ if __name__ == "__main__":
     unittest.main()
 
 # ======================================================================================
-# [64/67] MODULE: tests/test_stage_c_zero_loss_velocity.py
+# [65/68] MODULE: tests/test_stage_c_zero_loss_velocity.py
 # PURPOSE: Unit Tests: Stage C Zero-Loss Velocity Recycler, Pre-Split Lock & Clinched Split-to-Sell
 # ======================================================================================
 
@@ -126797,7 +132090,7 @@ if __name__ == "__main__":
     unittest.main()
 
 # ======================================================================================
-# [65/67] MODULE: tests/test_priority0_live_leak_fixes.py
+# [66/68] MODULE: tests/test_priority0_live_leak_fixes.py
 # PURPOSE: Unit Tests: Priority 0 Live Leaks (Unified Event Cap, UNWRESID Guard, 0%-Fee Plumbing, Stage B & Fast D1 Loop)
 # ======================================================================================
 
@@ -127718,7 +133011,7 @@ if __name__ == "__main__":
     unittest.main()
 
 # ======================================================================================
-# [66/67] MODULE: tests/test_v590_fast_cancel_ws_hedge_and_synthetic_maker.py
+# [67/68] MODULE: tests/test_v590_fast_cancel_ws_hedge_and_synthetic_maker.py
 # PURPOSE: Unit Tests: v5.9.0 1-RTT Fast Cancel, 0-REST WS Fill-to-Hedge, Synthetic Maker Shield & AFF1 Settled Locks
 # ======================================================================================
 
@@ -128424,7 +133717,7 @@ if __name__ == "__main__":
     unittest.main()
 
 # ======================================================================================
-# [67/67] MODULE: tests/test_riskless_remediation_and_8_new_engines.py
+# [68/68] MODULE: tests/test_riskless_remediation_and_8_new_engines.py
 # PURPOSE: Unit Tests: v6.0 Riskless Remediation, Honest Backtester, CompactCandidateL2Recorder & All 8 New Engines
 # ======================================================================================
 

@@ -81,7 +81,7 @@ class TestAllSixConnectorsAndWebSocketStateMachines(unittest.TestCase):
         # 1. Polymarket WS (`book` snapshot + `price_change` delta + level deletion + `tick_size_change` + `market_resolved`)
         pm_ws = PolymarketMarketWsState()
         sub = json.loads(pm_ws.build_subscribe_frame(["tok_y", "tok_n"]))
-        self.assertEqual(sub, {"assets_ids": ["tok_y", "tok_n"], "type": "market"})
+        self.assertEqual(sub, {"assets_ids": ["tok_y", "tok_n"], "type": "market", "custom_feature_enabled": True})
         self.assertEqual(pm_ws.build_heartbeat_frame(), "{}")
         self.assertEqual(pm_ws.apply_frame("{}"), 0)
 

@@ -39,6 +39,14 @@ import math
 import time
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
+try:
+    import orjson as _orjson  # type: ignore
+except ImportError:  # pragma: no cover
+    _orjson = None
+
+_E6_SCALE: int = 1_000_000
+_E8_SCALE: int = 100_000_000
+
 
 # ---------------------------------------------------------------------------
 # Safety Constants (`D-001`, `D-007`, Microstructure Floors)
@@ -135,11 +143,23 @@ def quantize_polymarket_price(
     """
     p_clamped = min(0.9999, max(0.0001, float(price)))
     tick = infer_polymarket_tick_size(p_clamped, explicit_tick_size)
+    side_u = str(side or "BUY").strip().upper()
+    round_down = (side_u == "BUY" and is_maker) or (side_u == "SELL" and not is_maker)
+
+    t_e8 = int(round(round(tick, 8) * _E8_SCALE))
+    if t_e8 > 0 and abs(tick - (t_e8 / _E8_SCALE)) <= 1e-12:
+        p_e8 = int(round(round(p_clamped, 8) * _E8_SCALE))
+        steps_i = (p_e8 // t_e8) if round_down else ((p_e8 + t_e8 - 1) // t_e8)
+        q_e8 = steps_i * t_e8
+        max_e8 = _E8_SCALE - t_e8
+        if q_e8 < t_e8:
+            q_e8 = t_e8
+        elif q_e8 > max_e8:
+            q_e8 = max_e8
+        return round(q_e8 / _E8_SCALE, 8), round(t_e8 / _E8_SCALE, 8)
+
     d_t = Decimal(str(tick))
     d_p = Decimal(str(round(p_clamped, 8)))
-    side_u = str(side or "BUY").strip().upper()
-
-    round_down = (side_u == "BUY" and is_maker) or (side_u == "SELL" and not is_maker)
     mode = ROUND_FLOOR if round_down else ROUND_CEILING
     steps = (d_p / d_t).to_integral_value(rounding=mode)
     q_dec = steps * d_t
@@ -303,18 +323,19 @@ def quantize_clob_fok_order(
     if side_u == "BUY":
         h = compute_v2_buy_share_haircut_frac(q_px, fee_rate_bps=fee_rate_bps, fee_exponent=fee_exponent)
         req_gross = float(target_net_shares) / max(0.50, 1.0 - h)
-        cand_gross = float(
-            (Decimal(str(round(req_gross, 6))) / Decimal("0.01")).to_integral_value(rounding=ROUND_CEILING)
-            * Decimal("0.01")
-        )
-        raw_usdc = Decimal(str(round(cand_gross * q_px, 6)))
-        if raw_usdc != raw_usdc.quantize(Decimal("0.01")):
-            lot_step = Decimal("1") if abs(tick - 0.01) < 1e-9 else Decimal("10")
-            cand_gross = float(
-                (Decimal(str(round(req_gross, 6))) / lot_step).to_integral_value(rounding=ROUND_CEILING) * lot_step
-            )
-            raw_usdc = (Decimal(str(cand_gross)) * Decimal(str(q_px))).quantize(Decimal("0.01"), rounding=ROUND_CEILING)
-        usdc_amt = float(raw_usdc)
+        req_e6 = int(round(round(req_gross, 6) * _E6_SCALE))
+        cand_e2 = (req_e6 + 9_999) // 10_000
+        cand_gross = cand_e2 / 100.0
+        raw_usdc_e6 = int(round(round(cand_gross * q_px, 6) * _E6_SCALE))
+        if raw_usdc_e6 % 10_000 != 0:
+            lot_step_int = 1 if abs(tick - 0.01) < 1e-9 else 10
+            step_e6 = lot_step_int * _E6_SCALE
+            cand_gross_int = ((req_e6 + step_e6 - 1) // step_e6) * lot_step_int
+            cand_gross = float(cand_gross_int)
+            q_px_e8 = int(round(round(q_px, 8) * _E8_SCALE))
+            usdc_amt = ((cand_gross_int * q_px_e8 + 999_999) // 1_000_000) / 100.0
+        else:
+            usdc_amt = raw_usdc_e6 / _E6_SCALE
         delivered = cand_gross * max(0.50, 1.0 - h)
         min_sh_ok = cand_gross >= min_sh - 1e-9 and delivered >= min_sh - 1e-9
         notional_ok = usdc_amt >= float(min_marketable_buy_usd) - 1e-9
@@ -331,10 +352,8 @@ def quantize_clob_fok_order(
             "maker_amount_usd": round(usdc_amt, 2),
         }
 
-    cand_sell = float(
-        (Decimal(str(round(float(target_net_shares), 6))) / Decimal("0.01")).to_integral_value(rounding=ROUND_FLOOR)
-        * Decimal("0.01")
-    )
+    sell_e6 = int(round(round(float(target_net_shares), 6) * _E6_SCALE))
+    cand_sell = (sell_e6 // 10_000) / 100.0
     gross_proceeds = round(cand_sell * q_px, 6)
     min_sh_ok = cand_sell >= min_sh - 1e-9
     return {
@@ -1056,6 +1075,15 @@ class UniversalArbVerifier:
 
     @staticmethod
     def _compute_canonical_sha256(payload: Mapping[str, Any]) -> str:
+        if _orjson is not None:
+            try:
+                raw_b = _orjson.dumps(
+                    payload if isinstance(payload, dict) else dict(payload),
+                    option=_orjson.OPT_SORT_KEYS,
+                )
+                return hashlib.sha256(raw_b).hexdigest()
+            except Exception:
+                pass
         blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
@@ -1661,16 +1689,25 @@ class UniversalArbVerifier:
         Returns `(min_q, max_depth_q, sorted_candidate_q_grid)`.
         """
         cfg = self.config
-        lot = Decimal(str(cfg.lot_step_shares if cfg.lot_step_shares > 0 else 0.01))
+        lot_f = float(cfg.lot_step_shares if cfg.lot_step_shares > 0 else 0.01)
+        lot_e8 = int(round(round(lot_f, 8) * _E8_SCALE))
 
         def _q_floor(val: float) -> float:
             if val <= 0.0:
                 return 0.0
+            if lot_e8 > 0:
+                v_e8 = int(round(round(val, 8) * _E8_SCALE))
+                return round(((v_e8 // lot_e8) * lot_e8) / _E8_SCALE, 8)
+            lot = Decimal(str(lot_f))
             return float((Decimal(str(round(val, 8))) / lot).to_integral_value(rounding=ROUND_FLOOR) * lot)
 
         def _q_ceil(val: float) -> float:
             if val <= 0.0:
                 return 0.0
+            if lot_e8 > 0:
+                v_e8 = int(round(round(val, 8) * _E8_SCALE))
+                return round((((v_e8 + lot_e8 - 1) // lot_e8) * lot_e8) / _E8_SCALE, 8)
+            lot = Decimal(str(lot_f))
             return float((Decimal(str(round(val, 8))) / lot).to_integral_value(rounding=ROUND_CEILING) * lot)
 
         if fixed_gas_usd > cfg.max_budget_usd + 1e-9:

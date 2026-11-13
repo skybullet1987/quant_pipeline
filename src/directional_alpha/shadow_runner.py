@@ -1035,7 +1035,13 @@ class ForwardShadowRunner:
                     ).fetchone()
                     if cutoff_row is not None:
                         self._conn.execute("DELETE FROM shadow_book_observations WHERE obs_id <= ?", (int(cutoff_row[0]),))
-            self._conn.execute("PRAGMA wal_checkpoint(PASSIVE);")
+            # Commit open writes before passive WAL checkpoint so SQLite doesn't raise
+            # OperationalError("database table is locked") on the active transaction.
+            self._conn.commit()
+            try:
+                self._conn.execute("PRAGMA wal_checkpoint(PASSIVE);")
+            except sqlite3.OperationalError:
+                pass
 
         reclaim_unused_heap()
         rss_now = measure_process_rss_mib()

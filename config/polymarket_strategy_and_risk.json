@@ -237,7 +237,7 @@
     "ipc_subhourly_d1_max_age_sec": 15.0,
     "bond1_postonly_requote_delay_sec": 1.0,
     "enable_inventory_backed_maker_completion": true,
-    "ft_funnel_persist_interval_sec": 5.0
+    "ft_funnel_persist_interval_sec": 60.0
   },
   "shadow_governance": {
     "enable_btc_5m_sniper_shadow": false,

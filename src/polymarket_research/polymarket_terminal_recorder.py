@@ -139,6 +139,13 @@ try:
 except Exception:  # pragma: no cover - graceful fallback
     _orjson = None
 
+
+async def _fast_resp_json(resp: Any) -> Any:
+    raw = await resp.read()
+    if _orjson is not None:
+        return _orjson.loads(raw)
+    return json.loads(raw.decode("utf-8", errors="ignore"))
+
 try:
     from src.polymarket_research.polymarket_ws_streams import (
         get_shared_chainlink_stream as _get_shared_cl_stream,
@@ -653,6 +660,10 @@ class L2OrderBook:
         # v3.4 sorted-level cache: deltas only mark the book dirty; sorting happens lazily, at most
         # once per book change, when get_metrics() is called (never on every WebSocket delta).
         self._dirty: bool = True
+        self._best_bid_dirty: bool = True
+        self._best_ask_dirty: bool = True
+        self._cached_best_bid: float = 0.0
+        self._cached_best_ask: float = 1.0
         self._sorted_bids: List[Tuple[float, float]] = []
         self._sorted_asks: List[Tuple[float, float]] = []
         self._bid_birth_ts: Dict[float, float] = {}
@@ -669,10 +680,12 @@ class L2OrderBook:
         return self._sorted_bids, self._sorted_asks
 
     def _check_top_changes(self, now_ts: float):
-        # O(n) best-level detection with per-price-level birth timestamps (immune to micro-flicker resets,
-        # while resetting birth age whenever best_ask jumps upward or best_bid drops downward on a sweep/pull)
+        # O(1) cached best-level lookup on interior deltas; falls back to max/min only when best level is popped.
         if self.bids:
-            bb = max(self.bids)
+            if self._best_bid_dirty or self._cached_best_bid not in self.bids:
+                self._cached_best_bid = max(self.bids)
+                self._best_bid_dirty = False
+            bb = self._cached_best_bid
             curr_best_bid = (bb, self.bids[bb])
             prev_bb = self.prev_best_bid[0]
             if prev_bb > 0.0 and bb < prev_bb - 1e-9:
@@ -681,10 +694,15 @@ class L2OrderBook:
             else:
                 self.last_best_bid_change_ts = self._bid_birth_ts.get(bb, now_ts)
         else:
+            self._cached_best_bid = 0.0
+            self._best_bid_dirty = False
             curr_best_bid = (0.0, 0.0)
             self.last_best_bid_change_ts = 0.0
         if self.asks:
-            ba = min(self.asks)
+            if self._best_ask_dirty or self._cached_best_ask not in self.asks:
+                self._cached_best_ask = min(self.asks)
+                self._best_ask_dirty = False
+            ba = self._cached_best_ask
             curr_best_ask = (ba, self.asks[ba])
             prev_ba = self.prev_best_ask[0]
             if 0.0 < prev_ba < 1.0 and ba > prev_ba + 1e-9:
@@ -694,6 +712,8 @@ class L2OrderBook:
                 self.last_best_ask_change_ts = self._ask_birth_ts.get(ba, now_ts)
             self._empty_ask_since_ts = 0.0
         else:
+            self._cached_best_ask = 1.0
+            self._best_ask_dirty = False
             curr_best_ask = (1.0, 0.0)
             if self._empty_ask_since_ts <= 0.0:
                 self._empty_ask_since_ts = now_ts
@@ -734,6 +754,8 @@ class L2OrderBook:
         self.last_book_update_ts = now_ts
         self.book_sequence_id += 1
         self._dirty = True
+        self._best_bid_dirty = True
+        self._best_ask_dirty = True
         self._check_top_changes(now_ts)
 
     def apply_price_changes(self, changes: List[Dict[str, str]]):
@@ -746,20 +768,30 @@ class L2OrderBook:
                 if sz <= 0:
                     self.bids.pop(px, None)
                     self._bid_birth_ts.pop(px, None)
+                    if abs(px - self._cached_best_bid) < 1e-9:
+                        self._best_bid_dirty = True
                 else:
                     old_b = self.bids.get(px, 0.0)
                     if old_b <= 0.0 or sz >= old_b * 1.25:
                         self._bid_birth_ts[px] = now_ts
                     self.bids[px] = sz
+                    if px > self._cached_best_bid:
+                        self._cached_best_bid = px
+                        self._best_bid_dirty = False
             elif side == "SELL":
                 if sz <= 0:
                     self.asks.pop(px, None)
                     self._ask_birth_ts.pop(px, None)
+                    if abs(px - self._cached_best_ask) < 1e-9:
+                        self._best_ask_dirty = True
                 else:
                     old_a = self.asks.get(px, 0.0)
                     if old_a <= 0.0 or sz >= old_a * 1.25:
                         self._ask_birth_ts[px] = now_ts
                     self.asks[px] = sz
+                    if px < self._cached_best_ask:
+                        self._cached_best_ask = px
+                        self._best_ask_dirty = False
         self._prune_deep_levels()
         self.last_book_update_ts = now_ts
         self.book_sequence_id += 1
@@ -1232,7 +1264,7 @@ class PolymarketDualFeed1HRecorder:
             }
             async with session.post(rpc_url, json=payload, timeout=1.5) as resp:
                 if resp.status == 200:
-                    res = await resp.json()
+                    res = await _fast_resp_json(resp)
                     hex_str = str(res.get("result") or "")
                     if hex_str.startswith("0x") and len(hex_str) >= 2 + 64 * 4:
                         ans = int(hex_str[2 + 64 : 2 + 128], 16)
@@ -1606,7 +1638,7 @@ class PolymarketDualFeed1HRecorder:
             t0 = time.time() * 1000.0
             async with session.get(f"{BINANCE_REST_URL}/api/v3/time") as resp:
                 if resp.status == 200:
-                    data = await resp.json()
+                    data = await _fast_resp_json(resp)
                     server_time_ms = float(data["serverTime"])
                     t1 = time.time() * 1000.0
                     rtt = t1 - t0
@@ -1631,7 +1663,7 @@ class PolymarketDualFeed1HRecorder:
             )
             async with session.get(url) as resp:
                 if resp.status == 200:
-                    events = await resp.json()
+                    events = await _fast_resp_json(resp)
                     now = datetime.now(timezone.utc)
                     candidates = []
                     for event in events:
@@ -1689,13 +1721,13 @@ class PolymarketDualFeed1HRecorder:
                         if not self.futures_only_ref:
                             async with session.get(url_spot) as resp_spot:
                                 if resp_spot.status == 200:
-                                    data_spot = await resp_spot.json()
+                                    data_spot = await _fast_resp_json(resp_spot)
                                     self.spot_price = float(data_spot["price"])
                                     if self.spot_price > 0:
                                         self.spot_price_ts = time.time()
                         async with session.get(url_fut) as resp_fut:
                             if resp_fut.status == 200:
-                                data_fut = await resp_fut.json()
+                                data_fut = await _fast_resp_json(resp_fut)
                                 self.futures_price = float(data_fut["price"])
                                 if self.futures_only_ref and self.futures_price > 0:
                                     self.spot_price = self.futures_price
@@ -1763,7 +1795,7 @@ class PolymarketDualFeed1HRecorder:
                 async with session.get(url) as resp:
                     if resp.status != 200:
                         continue
-                    events = await resp.json()
+                    events = await _fast_resp_json(resp)
                     candidates = []
                     for event in events:
                         markets = event.get("markets", [])
@@ -1876,7 +1908,7 @@ class PolymarketDualFeed1HRecorder:
                     kl_url = f"{base_rest}{ep_path}?symbol={self.binance_symbol}&interval=1m&startTime={t0_c * 1000}&limit=1"
                     async with session.get(kl_url, timeout=aiohttp.ClientTimeout(total=2.5)) as resp:
                         if resp.status == 200:
-                            rows = await resp.json() or ()
+                            rows = await _fast_resp_json(resp) or ()
                             if isinstance(rows, list) and rows and isinstance(rows[0], list) and len(rows[0]) >= 5:
                                 peg_px = self.coinbase_spot if (0.98 <= self.coinbase_spot <= 1.02) else 1.0
                                 raw_twap = 0.25 * (
@@ -1887,7 +1919,7 @@ class PolymarketDualFeed1HRecorder:
                     cb_url = f"https://api.exchange.coinbase.com/products/{self.coinbase_product}/candles?granularity=60&start={fmt(t0_c)}&end={fmt(open_i)}"
                     async with session.get(cb_url, timeout=aiohttp.ClientTimeout(total=2.5)) as resp:
                         if resp.status == 200:
-                            for row in (await resp.json() or ()):
+                            for row in (await _fast_resp_json(resp) or ()):
                                 if isinstance(row, list) and len(row) >= 5 and int(row[0]) == t0_c:
                                     raw_twap = 0.25 * (float(row[1]) + float(row[2]) + float(row[3]) + float(row[4]))
                                     break
@@ -1927,7 +1959,7 @@ class PolymarketDualFeed1HRecorder:
         try:
             async with session.get(twap_url, timeout=aiohttp.ClientTimeout(total=3.5)) as resp:
                 if resp.status == 200:
-                    payload = await resp.json()
+                    payload = await _fast_resp_json(resp)
                     if isinstance(payload, dict) and (payload.get("cached") is True or payload.get("completed") is True):
                         if payload.get("openPrice") is not None:
                             val = float(payload["openPrice"])
@@ -1941,7 +1973,7 @@ class PolymarketDualFeed1HRecorder:
                 g_url = f"{GAMMA_API_URL}/events?slug={self.asset.lower()}-updown-5m-{int(candle_open_ts) - 300}"
                 async with session.get(g_url, timeout=aiohttp.ClientTimeout(total=3.5)) as resp:
                     if resp.status == 200:
-                        payload = await resp.json()
+                        payload = await _fast_resp_json(resp)
                         ev = payload[0] if isinstance(payload, list) and payload else payload
                         if isinstance(ev, dict) and ev.get("closed") is True:
                             meta = ev.get("eventMetadata")
@@ -1974,7 +2006,7 @@ class PolymarketDualFeed1HRecorder:
                 )
                 async with session.get(url_1s) as resp_1s:
                     if resp_1s.status == 200:
-                        data_1s = await resp_1s.json()
+                        data_1s = await _fast_resp_json(resp_1s)
                         if isinstance(data_1s, list) and len(data_1s) >= 30:
                             twap = sum((float(k[1]) + float(k[4])) / 2.0 for k in data_1s) / len(data_1s)
                             return round(twap, 4)
@@ -1988,7 +2020,7 @@ class PolymarketDualFeed1HRecorder:
             )
             async with session.get(url) as resp:
                 if resp.status == 200:
-                    data = await resp.json()
+                    data = await _fast_resp_json(resp)
                     if data:
                         o_px = float(data[0][1])
                         h_px = float(data[0][2])
@@ -2022,7 +2054,7 @@ class PolymarketDualFeed1HRecorder:
             )
             async with session.get(url) as resp:
                 if resp.status == 200:
-                    data = await resp.json()
+                    data = await _fast_resp_json(resp)
                     if data:
                         open_px = float(data[0][1])
                         close_px = float(data[0][4])
@@ -2068,7 +2100,7 @@ class PolymarketDualFeed1HRecorder:
                 session = await self.get_session()
                 async with session.get(f"{GAMMA_API_URL}/markets/{m_id_str}") as g_resp:
                     if g_resp.status == 200:
-                        g_data = await g_resp.json()
+                        g_data = await _fast_resp_json(g_resp)
                         if isinstance(g_data, dict):
                             if not res_source and g_data.get("resolutionSource"):
                                 res_source = str(g_data.get("resolutionSource"))
@@ -2897,7 +2929,7 @@ class PolymarketDualFeed1HRecorder:
             payload = [{"token_id": str(t)} for t in dict.fromkeys(token_ids) if t]
             async with session.post(f"{CLOB_API_URL}/books", json=payload, timeout=1.5) as resp:
                 if resp.status == 200:
-                    items = await resp.json()
+                    items = await _fast_resp_json(resp)
                     if isinstance(items, list):
                         for item in items:
                             if not isinstance(item, dict):
@@ -2989,7 +3021,7 @@ class PolymarketDualFeed1HRecorder:
 
                 async with websockets.connect(CLOB_WS_URL, ping_interval=20, ping_timeout=10, max_queue=512, compression=None) as ws:
                     _enable_ws_nodelay(ws)
-                    sub_msg = {"assets_ids": sub_assets, "type": "market"}
+                    sub_msg = {"assets_ids": sub_assets, "type": "market", "custom_feature_enabled": True}
                     await ws.send(json.dumps(sub_msg))
                     logger.info(f"[+] Subscribed to Polymarket L2 orderbooks for market {sub_lbl}.")
                     self._reconnect_clob = False
@@ -3030,7 +3062,7 @@ class PolymarketDualFeed1HRecorder:
                                 subscribed_market = cur_1h
                                 subscribed_market_id = cur_1h_id
                                 subscribed_end_dt = cur_1h["end_dt"]
-                                await ws.send(json.dumps({"assets_ids": [up_1h, dn_1h], "operation": "subscribe"}))
+                                await ws.send(json.dumps({"assets_ids": [up_1h, dn_1h], "operation": "subscribe", "custom_feature_enabled": True}))
                                 now_sub_1h = time.time()
                                 pending_sub_toks[up_1h] = now_sub_1h
                                 pending_sub_toks[dn_1h] = now_sub_1h
@@ -3088,7 +3120,7 @@ class PolymarketDualFeed1HRecorder:
                                         subscribed_tokens[tok_n] = role_n
                                         added_toks.append(tok_n)
                             if added_toks:
-                                await ws.send(json.dumps({"assets_ids": added_toks, "operation": "subscribe"}))
+                                await ws.send(json.dumps({"assets_ids": added_toks, "operation": "subscribe", "custom_feature_enabled": True}))
                                 now_sub = time.time()
                                 for tok_n in added_toks:
                                     pending_sub_toks[tok_n] = now_sub
