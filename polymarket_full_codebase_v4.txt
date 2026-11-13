@@ -1,7 +1,7 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET COMPLETE UNIFIED CODEBASE (v4.0 FULL LIVE + ALPHA-124 11-SLEEVE EDITION)
-Generated: 2026-11-13 15:06:24 UTC
+Generated: 2026-11-13 15:33:50 UTC
 100% Un-Truncated Source Code, Mathematical Oracles, Execution Stack, Systemd Units & Unit Tests
 Repository: C:/Users/Anton/source/repos/Dominus
 ========================================================================================
@@ -51,30 +51,30 @@ TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
   [42] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 77,198 - 79,026 | 87,117 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
   [43] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 79,027 - 81,324 | 111,459 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
   [44] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 81,325 - 83,701 | 119,757 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
-  [45] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 83,702 - 99,375 | 876,007 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
-  [46] scripts/backtest_alpha_124.py (Lines 99,376 - 100,238 | 40,201 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
-  [47] scripts/polymarket_daily_projections.py (Lines 100,239 - 102,021 | 75,445 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
-  [48] scripts/alpha124_status.py (Lines 102,022 - 102,100 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
-  [49] scripts/polymarket_scorecard_snapshot.py (Lines 102,101 - 102,250 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
-  [50] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 102,251 - 104,145 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
-  [51] src/polymarket_research/honest_riskless_backtester.py (Lines 104,146 - 105,045 | 42,478 B) :: v6.0 Honest CLOB L2 Execution Kernel, Zero-Lookahead Harness & CompactCandidateL2Recorder
-  [52] src/polymarket_research/riskless_expansion_v6_engines.py (Lines 105,046 - 108,716 | 175,952 B) :: v6.0 8-Sleeve Riskless Expansion Engine (XV Subset-NO, 0.001 Tail, BOND3, CAD/USD FX, Deribit USDC, Halftime, PreConv NR3, Yield Box)
-  [53] src/polymarket_research/riskless_fast_feeds.py (Lines 108,717 - 110,049 | 56,861 B) :: v6.2 $0/mo Fast Feeds: Pyth Hermes, Scoped Polygon Logs WS, Hyperliquid/Coinbase/Deribit WS, Macro RSS/EDGAR & Live CAD/USD FX
-  [54] tests/test_alpha_124_oracles.py (Lines 110,050 - 114,130 | 216,226 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
-  [55] tests/test_polymarket_wfo_5fixes.py (Lines 114,131 - 119,862 | 293,910 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
-  [56] tests/test_zero_trust_forensic_audit.py (Lines 119,863 - 120,621 | 33,478 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
-  [57] tests/test_riskless_frontier_v4.py (Lines 120,622 - 121,464 | 44,264 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
-  [58] tests/test_v530_forensic_plumbing_fixes.py (Lines 121,465 - 122,244 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
-  [59] tests/test_v531_qa_audit_fixes.py (Lines 122,245 - 124,046 | 95,568 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
-  [60] tests/test_v550_zero_loss_frontier_and_velocity.py (Lines 124,047 - 124,813 | 37,480 B) :: Unit Tests: v5.5.0 Zero-Loss Frontier, Relayer V2 Batch Merge, Verified m=1 Convert & Velocity
-  [61] tests/test_v560_fill_rate_and_profit_growth.py (Lines 124,814 - 127,898 | 158,467 B) :: Unit Tests: v5.6.0 Fill-Rate, Profit-Growth, NR_M1 Bridge, WS Clinch Sniper & Sticky FIFO Queue
-  [62] tests/test_v570_ms_velocity_and_ws_sniper.py (Lines 127,899 - 129,519 | 82,028 B) :: Unit Tests: v5.7.0 Sub-ms Hot-Path Velocity, 450-Token WS Sniper, 2h UMA Recycle & Dynamic Scaling
-  [63] tests/test_v580_sharded_ws_d1fast_pusd_and_direct_feeds.py (Lines 129,520 - 130,308 | 34,863 B) :: Unit Tests: v5.8.0 4-Shard WS, D1FAST IPC, V2 pUSD Redemption/Wrap & Direct Feeds
-  [64] tests/test_stage_b_economic_attribution.py (Lines 130,309 - 130,751 | 19,968 B) :: Unit Tests: Stage B Opportunity Funnel, Competitor Decay, Markouts & 10 Institutional KPIs
-  [65] tests/test_stage_c_zero_loss_velocity.py (Lines 130,752 - 132,091 | 61,447 B) :: Unit Tests: Stage C Zero-Loss Velocity Recycler, Pre-Split Lock & Clinched Split-to-Sell
-  [66] tests/test_priority0_live_leak_fixes.py (Lines 132,092 - 133,012 | 46,004 B) :: Unit Tests: Priority 0 Live Leaks (Unified Event Cap, UNWRESID Guard, 0%-Fee Plumbing, Stage B & Fast D1 Loop)
-  [67] tests/test_v590_fast_cancel_ws_hedge_and_synthetic_maker.py (Lines 133,013 - 133,718 | 36,015 B) :: Unit Tests: v5.9.0 1-RTT Fast Cancel, 0-REST WS Fill-to-Hedge, Synthetic Maker Shield & AFF1 Settled Locks
-  [68] tests/test_riskless_remediation_and_8_new_engines.py (Lines 133,719 - 134,884 | 47,955 B) :: Unit Tests: v6.0 Riskless Remediation, Honest Backtester, CompactCandidateL2Recorder & All 8 New Engines
+  [45] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 83,702 - 99,380 | 876,182 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
+  [46] scripts/backtest_alpha_124.py (Lines 99,381 - 100,243 | 40,201 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
+  [47] scripts/polymarket_daily_projections.py (Lines 100,244 - 102,026 | 75,445 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
+  [48] scripts/alpha124_status.py (Lines 102,027 - 102,105 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
+  [49] scripts/polymarket_scorecard_snapshot.py (Lines 102,106 - 102,255 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
+  [50] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 102,256 - 104,150 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
+  [51] src/polymarket_research/honest_riskless_backtester.py (Lines 104,151 - 105,050 | 42,478 B) :: v6.0 Honest CLOB L2 Execution Kernel, Zero-Lookahead Harness & CompactCandidateL2Recorder
+  [52] src/polymarket_research/riskless_expansion_v6_engines.py (Lines 105,051 - 108,721 | 175,952 B) :: v6.0 8-Sleeve Riskless Expansion Engine (XV Subset-NO, 0.001 Tail, BOND3, CAD/USD FX, Deribit USDC, Halftime, PreConv NR3, Yield Box)
+  [53] src/polymarket_research/riskless_fast_feeds.py (Lines 108,722 - 110,054 | 56,861 B) :: v6.2 $0/mo Fast Feeds: Pyth Hermes, Scoped Polygon Logs WS, Hyperliquid/Coinbase/Deribit WS, Macro RSS/EDGAR & Live CAD/USD FX
+  [54] tests/test_alpha_124_oracles.py (Lines 110,055 - 114,135 | 216,226 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
+  [55] tests/test_polymarket_wfo_5fixes.py (Lines 114,136 - 119,867 | 293,910 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
+  [56] tests/test_zero_trust_forensic_audit.py (Lines 119,868 - 120,626 | 33,478 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
+  [57] tests/test_riskless_frontier_v4.py (Lines 120,627 - 121,469 | 44,264 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
+  [58] tests/test_v530_forensic_plumbing_fixes.py (Lines 121,470 - 122,249 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
+  [59] tests/test_v531_qa_audit_fixes.py (Lines 122,250 - 124,051 | 95,568 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
+  [60] tests/test_v550_zero_loss_frontier_and_velocity.py (Lines 124,052 - 124,818 | 37,480 B) :: Unit Tests: v5.5.0 Zero-Loss Frontier, Relayer V2 Batch Merge, Verified m=1 Convert & Velocity
+  [61] tests/test_v560_fill_rate_and_profit_growth.py (Lines 124,819 - 127,903 | 158,467 B) :: Unit Tests: v5.6.0 Fill-Rate, Profit-Growth, NR_M1 Bridge, WS Clinch Sniper & Sticky FIFO Queue
+  [62] tests/test_v570_ms_velocity_and_ws_sniper.py (Lines 127,904 - 129,524 | 82,028 B) :: Unit Tests: v5.7.0 Sub-ms Hot-Path Velocity, 450-Token WS Sniper, 2h UMA Recycle & Dynamic Scaling
+  [63] tests/test_v580_sharded_ws_d1fast_pusd_and_direct_feeds.py (Lines 129,525 - 130,313 | 34,863 B) :: Unit Tests: v5.8.0 4-Shard WS, D1FAST IPC, V2 pUSD Redemption/Wrap & Direct Feeds
+  [64] tests/test_stage_b_economic_attribution.py (Lines 130,314 - 130,756 | 19,968 B) :: Unit Tests: Stage B Opportunity Funnel, Competitor Decay, Markouts & 10 Institutional KPIs
+  [65] tests/test_stage_c_zero_loss_velocity.py (Lines 130,757 - 132,096 | 61,447 B) :: Unit Tests: Stage C Zero-Loss Velocity Recycler, Pre-Split Lock & Clinched Split-to-Sell
+  [66] tests/test_priority0_live_leak_fixes.py (Lines 132,097 - 133,017 | 46,004 B) :: Unit Tests: Priority 0 Live Leaks (Unified Event Cap, UNWRESID Guard, 0%-Fee Plumbing, Stage B & Fast D1 Loop)
+  [67] tests/test_v590_fast_cancel_ws_hedge_and_synthetic_maker.py (Lines 133,018 - 133,723 | 36,015 B) :: Unit Tests: v5.9.0 1-RTT Fast Cancel, 0-REST WS Fill-to-Hedge, Synthetic Maker Shield & AFF1 Settled Locks
+  [68] tests/test_riskless_remediation_and_8_new_engines.py (Lines 133,724 - 134,889 | 47,955 B) :: Unit Tests: v6.0 Riskless Remediation, Honest Backtester, CompactCandidateL2Recorder & All 8 New Engines
 """
 
 from __future__ import annotations
@@ -85766,26 +85766,29 @@ class Alpha124ShadowDaemon:
                 _add_tok(b.yes_token)
                 _add_tok(b.no_token)
 
+        def _br_tok(br: Any, attr: str) -> Any:
+            return br.get(attr) if isinstance(br, dict) else getattr(br, attr, None)
+
         # Priority 2: Active Zero-Fee NegRisk Slates (`NR0`), Closed Convert Slates (`NR2`/`NR3`), Counting Slates (`CM`), & `BOND1`/`BOND2` UMA
-        for sp_nr in sorted(self.negrisk_zero_slates.values(), key=lambda s: float(s.end_ts)):
+        for sp_nr in sorted(list(self.negrisk_zero_slates.values()), key=lambda s: float(s.end_ts)):
             if float(sp_nr.end_ts) <= now_ts + 60.0 or len(sp_nr.brackets) > 15:
                 continue
             for b_z in sp_nr.brackets:
-                _add_tok(b_z.get("no_token"), is_nr=True)
-                _add_tok(b_z.get("yes_token"), is_nr=True)
-        for sp_nrc in sorted(self.negrisk_convert_slates.values(), key=lambda s: (not bool(s.is_closed_convert_safe), float(s.end_ts))):
+                _add_tok(_br_tok(b_z, "no_token"), is_nr=True)
+                _add_tok(_br_tok(b_z, "yes_token"), is_nr=True)
+        for sp_nrc in sorted(list(self.negrisk_convert_slates.values()), key=lambda s: (not bool(s.is_closed_convert_safe), float(s.end_ts))):
             if float(sp_nrc.end_ts) <= now_ts + 60.0 or len(sp_nrc.brackets) > 15:
                 continue
             for b_c in sp_nrc.brackets:
-                _add_tok(b_c.get("no_token"), is_nr=True)
+                _add_tok(_br_tok(b_c, "no_token"), is_nr=True)
                 if sp_nrc.is_closed_convert_safe:
-                    _add_tok(b_c.get("yes_token"), is_nr=True)
-        for sp_cm in sorted(self.counting_slates.values(), key=lambda s: float(getattr(s, "window_end_ts", None) or getattr(s, "end_ts", 0.0) or 0.0)):
+                    _add_tok(_br_tok(b_c, "yes_token"), is_nr=True)
+        for sp_cm in sorted(list(self.counting_slates.values()), key=lambda s: float(getattr(s, "window_end_ts", None) or getattr(s, "end_ts", 0.0) or 0.0)):
             if float(getattr(sp_cm, "window_end_ts", None) or getattr(sp_cm, "end_ts", 0.0) or 0.0) <= now_ts + 60.0 or len(sp_cm.brackets) > 15:
                 continue
             for b_m in sp_cm.brackets:
-                _add_tok(b_m.get("no_token"), is_nr=True)
-                _add_tok(b_m.get("yes_token"), is_nr=True)
+                _add_tok(_br_tok(b_m, "no_token"), is_nr=True)
+                _add_tok(_br_tok(b_m, "yes_token"), is_nr=True)
         for uma_m in list(self.uma_proposed_markets.values())[:150]:
             if isinstance(uma_m, dict):
                 uma_tks = _parse_clob_tokens(uma_m)
@@ -94103,8 +94106,10 @@ class Alpha124ShadowDaemon:
         if len(getattr(self, "authoritative_strike_cache", {})) > 2000:
             for _k in list(self.authoritative_strike_cache.keys())[:-1500]:
                 self.authoritative_strike_cache.pop(_k, None)
+        open_snapshot = list(self.open_positions.values())
+        closed_snapshot = list(self.closed_positions)
         if len(self.entered_keys) > 5000:
-            _open_dk = {str(p.get("dedupe_key") or "") for p in self.open_positions.values()}
+            _open_dk = {str(p.get("dedupe_key") or "") for p in open_snapshot}
             self.entered_keys = _open_dk | set(list(self.entered_keys)[-3000:])
         global_bus = read_global_positions_shm()
         ext_positions = [
@@ -94114,10 +94119,10 @@ class Alpha124ShadowDaemon:
             for p in (d_rec.get("positions") or [])
         ]
         opps_sorted = rank_opportunities_capital_auction(
-            opps_in, active_global_positions=list(self.open_positions.values()) + ext_positions
+            opps_in, active_global_positions=open_snapshot + ext_positions
         )[:25]
         self.top_opportunities = opps_sorted
-        publish_global_positions_shm("alpha124_shadow", self.open_positions.values())
+        publish_global_positions_shm("alpha124_shadow", open_snapshot)
 
         by_sleeve: Dict[str, Dict[str, Any]] = {}
         tier_totals = {"T100": 0.0, "T1000": 0.0, "T5000": 0.0}
@@ -94125,7 +94130,7 @@ class Alpha124ShadowDaemon:
         for sl in BANKROLL_TICKETS["T1000"].keys():
             is_d1_sl = str(sl).startswith("D1_")
             all_closed_sl = _filter_epoch_closed_positions(
-                str(sl), [p for p in self.closed_positions if p.get("sleeve") == sl]
+                str(sl), [p for p in closed_snapshot if p.get("sleeve") == sl]
             )
             # Graduation stats must never count pre-fix inverted anti-box entries (net < $0.900): lucky wins there are not validation
             # Maker-anchor unhedged scratches record a single-leg bid (~$0.40) as entry_eff_px: they are real losses,
@@ -94139,7 +94144,7 @@ class Alpha124ShadowDaemon:
                 )
             ]
             excluded_anti = len(all_closed_sl) - len(closed_sl)
-            open_sl = [p for p in self.open_positions.values() if p.get("sleeve") == sl]
+            open_sl = [p for p in open_snapshot if p.get("sleeve") == sl]
             wins = sum(1 for p in closed_sl if p.get("won"))
             pnl_1k = sum(float(p.get("tier_pnls_usd", {}).get("T1000", 0.0)) for p in closed_sl)
             adj_pnl_1k = sum(
@@ -94195,7 +94200,7 @@ class Alpha124ShadowDaemon:
         by_d1_asset: Dict[str, Dict[str, Any]] = {}
         for a_dom in DOMINANCE_ASSETS:
             cl_a = [
-                p for p in self.closed_positions
+                p for p in closed_snapshot
                 if str(p.get("sleeve") or "") in D1_GRAD_SLEEVES
                 and str(p.get("asset_or_city") or "").upper() == a_dom
                 and (
@@ -94204,7 +94209,7 @@ class Alpha124ShadowDaemon:
                 )
             ]
             op_a = [
-                p for p in self.open_positions.values()
+                p for p in open_snapshot
                 if str(p.get("sleeve") or "") in D1_GRAD_SLEEVES
                 and str(p.get("asset_or_city") or "").upper() == a_dom
             ]
@@ -94229,7 +94234,7 @@ class Alpha124ShadowDaemon:
         dorm_cnt = len(dorm_cached[2]) if (isinstance(dorm_cached, tuple) and len(dorm_cached) == 3) else 0
         uma_hot_cnt = sum(
             1
-            for _um in self.uma_proposed_markets.values()
+            for _um in list(self.uma_proposed_markets.values())
             if isinstance(_um, dict)
             and (0.90 <= float(_um.get("bestBid") or 0.0) <= 0.9985 or 0.002 <= float(_um.get("bestAsk") or 1.0) <= 0.10)
         )
@@ -94263,7 +94268,7 @@ class Alpha124ShadowDaemon:
                 "weather_sigma_c": self.weather_sigma_c,
                 "barrier_wick_mult": self.barrier_wick_mult,
             },
-            "spots": self.spots,
+            "spots": dict(self.spots),
             "catalog_counts": catalog_counts,
             "live_bridge_telemetry": live_bridge_telemetry,
             "markets_monitored": {
@@ -94299,14 +94304,14 @@ class Alpha124ShadowDaemon:
             "by_sleeve": by_sleeve,
             "per_strategy": by_sleeve,
             "by_d1_asset": by_d1_asset,
-            "open_positions_count": len(self.open_positions),
+            "open_positions_count": len(open_snapshot),
             "pending_maker_orders_count": len(self.pending_maker_orders),
             "pending_maker_anchors_count": len(self.pending_maker_anchors),
             "pending_zero_fee_maker_anchors_count": len(self.pending_zero_fee_maker_anchors),
             "pending_preopen_straddles_count": len(self.pending_preopen_straddles),
             "pending_maker_orders": list(self.pending_maker_orders.values()),
-            "open_positions": list(self.open_positions.values()),
-            "recent_closed_positions": self.closed_positions[-30:],
+            "open_positions": open_snapshot,
+            "recent_closed_positions": closed_snapshot[-30:],
             "v6_expansion": getattr(self, "_v6_expansion_stats", None),
         }
 
@@ -94326,7 +94331,7 @@ class Alpha124ShadowDaemon:
                             "updated_ts": now_st,
                             "started_at": self.started_at,
                             "cycle_count": self.cycle_count,
-                            "open_positions_count": len(self.open_positions),
+                            "open_positions_count": len(open_snapshot),
                             "pending_maker_orders_count": len(self.pending_maker_orders),
                             "catalog_counts": catalog_counts,
                             "live_bridge_telemetry": live_bridge_telemetry,

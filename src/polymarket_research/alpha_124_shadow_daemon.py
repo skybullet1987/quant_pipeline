@@ -2060,26 +2060,29 @@ class Alpha124ShadowDaemon:
                 _add_tok(b.yes_token)
                 _add_tok(b.no_token)
 
+        def _br_tok(br: Any, attr: str) -> Any:
+            return br.get(attr) if isinstance(br, dict) else getattr(br, attr, None)
+
         # Priority 2: Active Zero-Fee NegRisk Slates (`NR0`), Closed Convert Slates (`NR2`/`NR3`), Counting Slates (`CM`), & `BOND1`/`BOND2` UMA
-        for sp_nr in sorted(self.negrisk_zero_slates.values(), key=lambda s: float(s.end_ts)):
+        for sp_nr in sorted(list(self.negrisk_zero_slates.values()), key=lambda s: float(s.end_ts)):
             if float(sp_nr.end_ts) <= now_ts + 60.0 or len(sp_nr.brackets) > 15:
                 continue
             for b_z in sp_nr.brackets:
-                _add_tok(b_z.get("no_token"), is_nr=True)
-                _add_tok(b_z.get("yes_token"), is_nr=True)
-        for sp_nrc in sorted(self.negrisk_convert_slates.values(), key=lambda s: (not bool(s.is_closed_convert_safe), float(s.end_ts))):
+                _add_tok(_br_tok(b_z, "no_token"), is_nr=True)
+                _add_tok(_br_tok(b_z, "yes_token"), is_nr=True)
+        for sp_nrc in sorted(list(self.negrisk_convert_slates.values()), key=lambda s: (not bool(s.is_closed_convert_safe), float(s.end_ts))):
             if float(sp_nrc.end_ts) <= now_ts + 60.0 or len(sp_nrc.brackets) > 15:
                 continue
             for b_c in sp_nrc.brackets:
-                _add_tok(b_c.get("no_token"), is_nr=True)
+                _add_tok(_br_tok(b_c, "no_token"), is_nr=True)
                 if sp_nrc.is_closed_convert_safe:
-                    _add_tok(b_c.get("yes_token"), is_nr=True)
-        for sp_cm in sorted(self.counting_slates.values(), key=lambda s: float(getattr(s, "window_end_ts", None) or getattr(s, "end_ts", 0.0) or 0.0)):
+                    _add_tok(_br_tok(b_c, "yes_token"), is_nr=True)
+        for sp_cm in sorted(list(self.counting_slates.values()), key=lambda s: float(getattr(s, "window_end_ts", None) or getattr(s, "end_ts", 0.0) or 0.0)):
             if float(getattr(sp_cm, "window_end_ts", None) or getattr(sp_cm, "end_ts", 0.0) or 0.0) <= now_ts + 60.0 or len(sp_cm.brackets) > 15:
                 continue
             for b_m in sp_cm.brackets:
-                _add_tok(b_m.get("no_token"), is_nr=True)
-                _add_tok(b_m.get("yes_token"), is_nr=True)
+                _add_tok(_br_tok(b_m, "no_token"), is_nr=True)
+                _add_tok(_br_tok(b_m, "yes_token"), is_nr=True)
         for uma_m in list(self.uma_proposed_markets.values())[:150]:
             if isinstance(uma_m, dict):
                 uma_tks = _parse_clob_tokens(uma_m)
@@ -10397,8 +10400,10 @@ class Alpha124ShadowDaemon:
         if len(getattr(self, "authoritative_strike_cache", {})) > 2000:
             for _k in list(self.authoritative_strike_cache.keys())[:-1500]:
                 self.authoritative_strike_cache.pop(_k, None)
+        open_snapshot = list(self.open_positions.values())
+        closed_snapshot = list(self.closed_positions)
         if len(self.entered_keys) > 5000:
-            _open_dk = {str(p.get("dedupe_key") or "") for p in self.open_positions.values()}
+            _open_dk = {str(p.get("dedupe_key") or "") for p in open_snapshot}
             self.entered_keys = _open_dk | set(list(self.entered_keys)[-3000:])
         global_bus = read_global_positions_shm()
         ext_positions = [
@@ -10408,10 +10413,10 @@ class Alpha124ShadowDaemon:
             for p in (d_rec.get("positions") or [])
         ]
         opps_sorted = rank_opportunities_capital_auction(
-            opps_in, active_global_positions=list(self.open_positions.values()) + ext_positions
+            opps_in, active_global_positions=open_snapshot + ext_positions
         )[:25]
         self.top_opportunities = opps_sorted
-        publish_global_positions_shm("alpha124_shadow", self.open_positions.values())
+        publish_global_positions_shm("alpha124_shadow", open_snapshot)
 
         by_sleeve: Dict[str, Dict[str, Any]] = {}
         tier_totals = {"T100": 0.0, "T1000": 0.0, "T5000": 0.0}
@@ -10419,7 +10424,7 @@ class Alpha124ShadowDaemon:
         for sl in BANKROLL_TICKETS["T1000"].keys():
             is_d1_sl = str(sl).startswith("D1_")
             all_closed_sl = _filter_epoch_closed_positions(
-                str(sl), [p for p in self.closed_positions if p.get("sleeve") == sl]
+                str(sl), [p for p in closed_snapshot if p.get("sleeve") == sl]
             )
             # Graduation stats must never count pre-fix inverted anti-box entries (net < $0.900): lucky wins there are not validation
             # Maker-anchor unhedged scratches record a single-leg bid (~$0.40) as entry_eff_px: they are real losses,
@@ -10433,7 +10438,7 @@ class Alpha124ShadowDaemon:
                 )
             ]
             excluded_anti = len(all_closed_sl) - len(closed_sl)
-            open_sl = [p for p in self.open_positions.values() if p.get("sleeve") == sl]
+            open_sl = [p for p in open_snapshot if p.get("sleeve") == sl]
             wins = sum(1 for p in closed_sl if p.get("won"))
             pnl_1k = sum(float(p.get("tier_pnls_usd", {}).get("T1000", 0.0)) for p in closed_sl)
             adj_pnl_1k = sum(
@@ -10489,7 +10494,7 @@ class Alpha124ShadowDaemon:
         by_d1_asset: Dict[str, Dict[str, Any]] = {}
         for a_dom in DOMINANCE_ASSETS:
             cl_a = [
-                p for p in self.closed_positions
+                p for p in closed_snapshot
                 if str(p.get("sleeve") or "") in D1_GRAD_SLEEVES
                 and str(p.get("asset_or_city") or "").upper() == a_dom
                 and (
@@ -10498,7 +10503,7 @@ class Alpha124ShadowDaemon:
                 )
             ]
             op_a = [
-                p for p in self.open_positions.values()
+                p for p in open_snapshot
                 if str(p.get("sleeve") or "") in D1_GRAD_SLEEVES
                 and str(p.get("asset_or_city") or "").upper() == a_dom
             ]
@@ -10523,7 +10528,7 @@ class Alpha124ShadowDaemon:
         dorm_cnt = len(dorm_cached[2]) if (isinstance(dorm_cached, tuple) and len(dorm_cached) == 3) else 0
         uma_hot_cnt = sum(
             1
-            for _um in self.uma_proposed_markets.values()
+            for _um in list(self.uma_proposed_markets.values())
             if isinstance(_um, dict)
             and (0.90 <= float(_um.get("bestBid") or 0.0) <= 0.9985 or 0.002 <= float(_um.get("bestAsk") or 1.0) <= 0.10)
         )
@@ -10557,7 +10562,7 @@ class Alpha124ShadowDaemon:
                 "weather_sigma_c": self.weather_sigma_c,
                 "barrier_wick_mult": self.barrier_wick_mult,
             },
-            "spots": self.spots,
+            "spots": dict(self.spots),
             "catalog_counts": catalog_counts,
             "live_bridge_telemetry": live_bridge_telemetry,
             "markets_monitored": {
@@ -10593,14 +10598,14 @@ class Alpha124ShadowDaemon:
             "by_sleeve": by_sleeve,
             "per_strategy": by_sleeve,
             "by_d1_asset": by_d1_asset,
-            "open_positions_count": len(self.open_positions),
+            "open_positions_count": len(open_snapshot),
             "pending_maker_orders_count": len(self.pending_maker_orders),
             "pending_maker_anchors_count": len(self.pending_maker_anchors),
             "pending_zero_fee_maker_anchors_count": len(self.pending_zero_fee_maker_anchors),
             "pending_preopen_straddles_count": len(self.pending_preopen_straddles),
             "pending_maker_orders": list(self.pending_maker_orders.values()),
-            "open_positions": list(self.open_positions.values()),
-            "recent_closed_positions": self.closed_positions[-30:],
+            "open_positions": open_snapshot,
+            "recent_closed_positions": closed_snapshot[-30:],
             "v6_expansion": getattr(self, "_v6_expansion_stats", None),
         }
 
@@ -10620,7 +10625,7 @@ class Alpha124ShadowDaemon:
                             "updated_ts": now_st,
                             "started_at": self.started_at,
                             "cycle_count": self.cycle_count,
-                            "open_positions_count": len(self.open_positions),
+                            "open_positions_count": len(open_snapshot),
                             "pending_maker_orders_count": len(self.pending_maker_orders),
                             "catalog_counts": catalog_counts,
                             "live_bridge_telemetry": live_bridge_telemetry,

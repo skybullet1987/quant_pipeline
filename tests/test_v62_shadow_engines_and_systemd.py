@@ -649,6 +649,38 @@ class TestAlpha124Grad8AndFeedWiring(unittest.TestCase):
         self.assertAlmostEqual(res["spot"], 602.5, places=4)
         self.assertAlmostEqual(res["sigma_session"], 0.28, places=4)
 
+    def test_desired_d1_ws_tokens_accepts_counting_bracket_dataclasses(self) -> None:
+        from src.polymarket_research.alpha_124_shadow_daemon import Alpha124ShadowDaemon
+        from src.polymarket_research.macro_counting_ctf_engine import CountingBracket, CountingSlateSpec
+
+        d = Alpha124ShadowDaemon(single_scan=True)
+        now = time.time()
+        cb = CountingBracket(
+            market_id="m_cnt_1",
+            condition_id="0xcnt1",
+            label="100-119",
+            low_count=100,
+            high_count=119,
+            yes_token="tok_cnt_yes",
+            no_token="tok_cnt_no",
+        )
+        d.counting_slates = {
+            "ev_cnt_1": CountingSlateSpec(
+                event_id="ev_cnt_1",
+                slug="cnt-1",
+                series_slug="cnt-series",
+                handle="@elonmusk",
+                title="Count?",
+                window_start_ts=now - 3600.0,
+                window_end_ts=now + 3600.0,
+                gamma_closed_floor=0,
+                brackets=[cb],
+            )
+        }
+        toks = d._desired_d1_ws_tokens(now, max_cap=100)
+        self.assertIn("tok_cnt_no", toks)
+        self.assertIn("tok_cnt_yes", toks)
+
     def test_permission_gate_zero_violations_across_all_owned_files(self) -> None:
         from src.paa_os.permissions import PermissionGate
 
