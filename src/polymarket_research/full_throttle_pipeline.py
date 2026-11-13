@@ -3325,8 +3325,6 @@ class HarvesterCandidateBridge:
         # the full 375k-market universe, JIT re-verifies `/books`, and emits up to `max_maker_locks_per_cycle`
         # verified `postOnly=True` maker locks for `polymarket-live-harvester.service`!
         if enable_passive_maker_bridge and events and max_maker_locks_per_cycle > 0:
-            from src.polymarket_research.uma_nba_endgame_engine import is_objective_uma_market
-
             uma_candidates_ranked: List[Tuple[float, Dict[str, Any]]] = []
             for ev in events:
                 ev_id_u = str(ev.get("id") or "").strip()
@@ -3344,14 +3342,11 @@ class HarvesterCandidateBridge:
                     ust_u = str(m.get("umaResolutionStatus") or "").strip().lower()
                     if ust_u != "proposed" or m.get("enableOrderBook") is False:
                         continue
-                    ok_uma_obj, _uma_obj_rsn = is_objective_uma_market(
-                        {
-                            **dict(m),
-                            "acceptingOrders": m.get("acceptingOrders", True),
-                            "_ev_slug": ev_slug_u,
-                            "_ev_title": ev_title_raw_u,
-                            "_eval_now_ts": now_f,
-                        }
+                    ok_uma_obj, _uma_obj_rsn = _is_objective_uma_market_light(
+                        m,
+                        ev_slug=ev_slug_u,
+                        eval_now_ts=now_f,
+                        default_accepting_orders=True,
                     )
                     if not ok_uma_obj:
                         skipped_reasons["UMA_NON_OBJECTIVE_VETOED"] += 1
@@ -3679,6 +3674,132 @@ def _parse_json_list_safe(val: Any) -> List[Any]:
     return []
 
 
+# Swapless `D-010` zero-dependency mirror of `uma_nba_endgame_engine.is_objective_uma_market`:
+# avoids importing `tradfi_sports_zero_fee_engine` (`scipy`/`numpy`, +83.4 MiB RSS in 220M cgroup).
+_UMA_VERIFIED_ADAPTERS = frozenset(
+    {
+        "0x65070be91477460d8a7aeeb94ef92fe056c2f2a7",
+        "0x69c47de9d4d3dad79590d61b9e05918e03775f24",
+        "0x2f5e3684cb1f318ec51b00edba38d79ac2c0aa9d",
+        "0x6a9d222616c90fca5754cd1333cfd9b7fb6a4f74",
+        "0x157ce2d672854c848c9b79c49a8cc6cc89176a49",
+    }
+)
+_UMA_NEGRISK_ADAPTERS = frozenset({"0x69c47de9d4d3dad79590d61b9e05918e03775f24"})
+_UMA_HEX32_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
+_UMA_SUBJECTIVE_VETO_RE = re.compile(
+    r'(\bsay\b.{0,30}["“]|\bmention\b|\btweet\b|\btruth social\b|\bceasefire\b'
+    r'|\binvade\b|\bstrike on\b|\bpardon\b|\bresign\b|\bnominate\b'
+    r'|\bsole discretion\b|\bplaceholder\b)',
+    re.IGNORECASE,
+)
+_UMA_OBJECTIVE_ORACLE_RE = re.compile(
+    r"(aviationweather\.gov|weather\.gov\.hk|wunderground\.com|binance\.com|chain\.link"
+    r"|pyth\.network|federalreserve\.gov|bls\.gov|bea\.gov|census\.gov|eia\.gov|treasury\.gov"
+    r"|gasprices\.aaa\.com|boxofficemojo\.com|xtracker"
+    r"|nba\.com|wnba\.com|nhl\.com|mlb\.com|nfl\.com|ncaa\.com|espn\.com"
+    r"|premierleague\.com|uefa\.com|fifa\.com|fiba\.basketball|atptour\.com|wtatennis\.com"
+    r"|ufc\.com|pgatour\.com|formula1\.com|vlr\.gg|liquipedia\.net|lolesports\.com|hlTV|lol\s*esports)",
+    re.IGNORECASE,
+)
+_UMA_OFFICIAL_SPORTS_OR_ROSTER_RE = re.compile(
+    r"(?:\bnext\s+team\s+.+?\s+officially\s+joins\s+by\b"
+    r"|\bofficially\s+(?:signs?\s+with|traded\s+to|joins)\b"
+    r"|\bmake\s+the\s+(?:20\d{2}(?:-\d{2})?\s+)?(?:nfl|nba|mlb|nhl|mls|cfb|college\s+football)\s+playoffs\b"
+    r"|\bwin\s+the\s+(?:20\d{2}(?:-\d{2})?\s+)?(?:super\s+bowl|nba\s+finals|world\s+series|stanley\s+cup"
+    r"|premier\s+league|champions\s+league|la\s+liga|serie\s+a|bundesliga|ligue\s+1"
+    r"|cfb\s+national\s+championship|college\s+football\s+playoff|heisman\s+trophy"
+    r"|afc|nfc|eastern\s+conference|western\s+conference"
+    r"|(?:afc|nfc)\s+(?:east|north|south|west))\b"
+    r"|\b(?:nfl|nba|mlb|nhl|premier\s+league|champions\s+league|ufc|formula\s+1|f1|valorant\s+champions\s+tour|vct|pro[\s\-]+football)\b"
+    r".*\b(?:regular\s+season|clean\s+sheet|relegated|top\s+4|playoffs?|championship|division|roster|offseason|next[\s\-]+team|transaction\s+wire|trade\s+deadline)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_UMA_NON_LEAGUE_VETO_RE = re.compile(
+    r"\b(?:election|presidential|senate|congress|house\s+of\s+representatives|governor|mayor|parliament|prime\s+minister"
+    r"|dancing\s+with\s+the\s+stars|bachelor|bachelorette|survivor|love\s+island|big\s+brother"
+    r"|oscar|academy\s+awards?|grammy|emmy|golden\s+globe|eurovision"
+    r"|gta\s+marathon|subathon|twitch|youtuber|streamer|tiktok|podcast)\b",
+    re.IGNORECASE,
+)
+_UMA_SPORTS_TITLE_RE = re.compile(
+    r"(\bvs\.?\s+|\bwin on 20\d{2}-\d{2}-\d{2}\b|\bo/u\s+\d+|\bspread:\s+|\bgame\s+[1-7]\s+winner\b|\bmap\s+[1-5]\s+winner\b)",
+    re.IGNORECASE,
+)
+
+
+def _is_objective_uma_market_light(
+    m: Mapping[str, Any],
+    *,
+    ev_slug: str = "",
+    eval_now_ts: Optional[float] = None,
+    default_accepting_orders: bool = False,
+) -> Tuple[bool, str]:
+    acc = m.get("acceptingOrders", default_accepting_orders)
+    if m.get("closed") or m.get("archived") or not acc:
+        return False, "NOT_OPEN_CLOB"
+    ust = str(m.get("umaResolutionStatus") or "").strip().lower()
+    if ust != "proposed":
+        return False, f"STATUS_{ust.upper() or 'NONE'}"
+    hist = [str(x).strip().lower() for x in _parse_json_list_safe(m.get("umaResolutionStatuses"))]
+    if any(x in ("disputed", "flagged", "reset") for x in hist):
+        return False, "PRIOR_DISPUTE_HISTORY"
+    if hist.count("proposed") > 2:
+        return False, "EXCESS_PROPOSAL_CYCLES"
+    adapter = str(m.get("resolvedBy") or "").strip().lower()
+    if adapter not in _UMA_VERIFIED_ADAPTERS:
+        return False, "UNVERIFIED_ADAPTER"
+    is_nr = bool(m.get("negRisk")) or (adapter in _UMA_NEGRISK_ADAPTERS)
+    req_hex = str(m.get("negRiskRequestID") if is_nr else m.get("questionID") or "").strip()
+    if not _UMA_HEX32_RE.match(req_hex):
+        return False, "MISSING_REQUEST_ID"
+    toks_raw = _parse_json_list_safe(m.get("clobTokenIds"))
+    outs = [str(o).strip() for o in _parse_json_list_safe(m.get("outcomes"))]
+    if len(toks_raw) < 2 or not toks_raw[0] or not toks_raw[1] or len(outs) != 2:
+        return False, "NON_BINARY_OUTCOMES"
+    if any(o.lower() in ("other", "placeholder", "unknown") for o in outs):
+        return False, "PLACEHOLDER_OUTCOME"
+    q = str(m.get("question") or "")
+    desc = str(m.get("description") or "")
+    blob = f"{q}\n{desc}"
+    if _UMA_SUBJECTIVE_VETO_RE.search(blob):
+        return False, "SUBJECTIVE_OR_SPEECH_VETO"
+    smt = str(m.get("sportsMarketType") or "").strip().lower()
+    if smt:
+        return True, f"SPORTS_{smt.upper()}"
+    if _UMA_OBJECTIVE_ORACLE_RE.search(blob):
+        return True, "VERIFIED_PRIMARY_ORACLE"
+    if _UMA_SPORTS_TITLE_RE.search(q):
+        return True, "SPORTS_MATCH_RULE"
+    ev_slug_eff = ev_slug or str(m.get("_ev_slug") or "")
+    slug_blob = f"{m.get('slug') or ''} {ev_slug_eff}\n{blob}"
+    if hist.count("proposed") <= 1 and not _UMA_NON_LEAGUE_VETO_RE.search(slug_blob):
+        if _UMA_OFFICIAL_SPORTS_OR_ROSTER_RE.search(slug_blob):
+            now_chk = float(eval_now_ts if eval_now_ts is not None else (m.get("_eval_now_ts") or time.time()))
+            end_s = str(m.get("endDate") or "").strip()
+            end_ts_m = 0.0
+            if end_s:
+                try:
+                    dt_e = datetime.fromisoformat(end_s.replace("Z", "+00:00"))
+                    if dt_e.tzinfo is None:
+                        dt_e = dt_e.replace(tzinfo=timezone.utc)
+                    end_ts_m = dt_e.timestamp()
+                except Exception:
+                    end_ts_m = 0.0
+            if 0.0 < end_ts_m <= now_chk:
+                return True, "OFFICIAL_LEAGUE_POST_DEADLINE"
+            op_raw = _parse_json_list_safe(m.get("outcomePrices"))
+            if len(outs) == 2 and outs[0].lower() == "yes" and outs[1].lower() == "no" and len(op_raw) == 2:
+                try:
+                    p_yes = float(op_raw[0])
+                    p_no = float(op_raw[1])
+                    if p_no >= 0.94 and p_yes <= 0.06:
+                        return True, "OFFICIAL_LEAGUE_ELIMINATED_NO"
+                except (TypeError, ValueError):
+                    pass
+    return False, "NO_OBJECTIVE_DOMAIN_MATCH"
+
+
 def _extract_market_fee_spec(mkt: Mapping[str, Any], raw_book: Optional[Mapping[str, Any]] = None) -> Tuple[float, float]:
     """
     Extracts `(fee_rate_bps, fee_exponent)` honoring Polymarket `feeSchedule.{rate, exponent}` first
@@ -3746,7 +3867,9 @@ class PublicPolymarketScannerClient:
             del comp
         else:
             raw = comp
-        big_payload = len(raw) > 1_500_000
+        big_payload = len(raw) > 1_200_000
+        if big_payload:
+            _reclaim_process_memory()
         parsed = _loads_json_bytes(raw)
         del raw
         if big_payload and _LIBC_MALLOC_TRIM is not None:
@@ -3807,23 +3930,21 @@ class PublicPolymarketScannerClient:
     def sweep_gamma_events_keyset(
         self,
         *,
-        page_limit: int = 30,
+        page_limit: int = 32,
         max_pages: int = 950,
         compact_fields: bool = True,
-        max_retained_active_markets: int = 1_450,
+        max_retained_active_markets: int = 1_400,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """
         Enumerates 100% of observable active unclosed events via `/events/keyset?after_cursor=...`.
         Streams exact full-universe census counters across 100% of all events/markets (`~19,257` events,
         `~375,963` child markets, `~201,218` active unclosed markets) while maintaining a generalized
-        structural-priority bounded min-heap (`<= 660` events / `<= 1,450` active markets) covering
+        structural-priority bounded min-heap (`<= 630` events / `<= 1,400` active markets) covering
         all 14 Opportunity Families (`A..N`, including `Family D` logical hierarchies, `Family G`
         multi-line sports & tournament advancement, `Family H` weather/ICAO brackets, `Family I`
         cross-event duplicate stems, and `Family K` UMA `proposed` carry) strictly `< 180 MiB` RSS (`D-010`)!
         """
         t0 = time.perf_counter()
-        from src.polymarket_research.uma_nba_endgame_engine import is_objective_uma_market
-
         now_epoch_s = time.time()
         ctx = ssl.create_default_context()
         conn = http.client.HTTPSConnection("gamma-api.polymarket.com", timeout=self.timeout_sec, context=ctx)
@@ -3837,7 +3958,7 @@ class PublicPolymarketScannerClient:
         events_out: List[Dict[str, Any]] = []
         retained_heap: List[Tuple[float, int, int, Dict[str, Any]]] = []
         retained_eids_in_heap: Set[str] = set()
-        max_heap_events = 660
+        max_heap_events = 630
         heap_seq = 0
         seen_event_ids: Set[str] = set()
         seen_stem_first_eid: Dict[str, str] = {}
@@ -3951,7 +4072,7 @@ class PublicPolymarketScannerClient:
                 cm_loc = {k: m_loc[k] for k in keep_mkt_keys if k in m_loc}
                 if "description" in cm_loc and isinstance(cm_loc["description"], str):
                     is_prop_d = str(cm_loc.get("umaResolutionStatus") or "").strip().lower() == "proposed"
-                    d_cap = 1100 if is_prop_d else 220
+                    d_cap = 800 if is_prop_d else 200
                     d_s = cm_loc["description"][:d_cap] if len(cm_loc["description"]) > d_cap else cm_loc["description"]
                     cm_loc["description"] = d_s
                 for sk in ("outcomes", "feeType", "resolutionSource", "comboStatus", "sportsMarketType"):
@@ -4210,14 +4331,11 @@ class PublicPolymarketScannerClient:
                                         except Exception:
                                             pass
                                     if end_pm_ok:
-                                        ok_pm_obj, _ = is_objective_uma_market(
-                                            {
-                                                **m,
-                                                "acceptingOrders": m.get("acceptingOrders", True),
-                                                "_ev_slug": slug_lower,
-                                                "_ev_title": title_raw,
-                                                "_eval_now_ts": now_epoch_s,
-                                            }
+                                        ok_pm_obj, _ = _is_objective_uma_market_light(
+                                            m,
+                                            ev_slug=slug_lower,
+                                            eval_now_ts=now_epoch_s,
+                                            default_accepting_orders=True,
                                         )
                                         if ok_pm_obj:
                                             ev_has_uma_proposed_clean = True
@@ -4394,10 +4512,10 @@ class PublicPolymarketScannerClient:
                         events_out.append(ev)
 
                 nxt = payload.get("next_cursor")
-                had_dense_page = len(batch) > 0 and sum(len(e.get("markets") or ()) for e in batch if isinstance(e, dict)) > 650
+                had_dense_page = len(batch) > 0 and sum(len(e.get("markets") or ()) for e in batch if isinstance(e, dict)) > 600
                 del payload, batch
-                if had_dense_page or pages_fetched % 30 == 0:
-                    if len(str_dedup_pool) > 1_000:
+                if had_dense_page or pages_fetched % 15 == 0:
+                    if len(str_dedup_pool) > 2_000:
                         str_dedup_pool.clear()
                     _reclaim_process_memory()
 
@@ -4429,9 +4547,9 @@ class PublicPolymarketScannerClient:
                         return None
 
                 supp_uma_groups: Dict[str, Tuple[Dict[str, Any], List[Dict[str, Any]]]] = {}
-                for offset_p in (0, 60):
+                for offset_p in (0, 50):
                     supp_mkts = _fetch_supp_json_list(
-                        f"/markets?uma_resolution_status=proposed&closed=false&order=id&ascending=false&limit=60&offset={offset_p}"
+                        f"/markets?uma_resolution_status=proposed&closed=false&order=id&ascending=false&limit=50&offset={offset_p}"
                     )
                     if not supp_mkts:
                         break
@@ -4465,14 +4583,11 @@ class PublicPolymarketScannerClient:
                                     continue
                             except Exception:
                                 pass
-                        ok_pm_obj, _ = is_objective_uma_market(
-                            {
-                                **pm,
-                                "acceptingOrders": pm.get("acceptingOrders", True),
-                                "_ev_slug": ev_slug_pm.lower(),
-                                "_ev_title": ev_title_pm,
-                                "_eval_now_ts": now_epoch_s,
-                            }
+                        ok_pm_obj, _ = _is_objective_uma_market_light(
+                            pm,
+                            ev_slug=ev_slug_pm.lower(),
+                            eval_now_ts=now_epoch_s,
+                            default_accepting_orders=True,
                         )
                         if not ok_pm_obj:
                             continue
@@ -4490,7 +4605,7 @@ class PublicPolymarketScannerClient:
                             }
                             supp_uma_groups[eid_pm] = (stub_ev, [])
                         supp_uma_groups[eid_pm][1].append(pm)
-                    if len(supp_mkts) < 60:
+                    if len(supp_mkts) < 50:
                         del supp_mkts
                         break
                     del supp_mkts
@@ -4503,7 +4618,7 @@ class PublicPolymarketScannerClient:
                         for x in kv[1][1]
                     ),
                 ):
-                    if added_uma_supp >= 60:
+                    if added_uma_supp >= 50:
                         break
                     if eid_pm in retained_eids_in_heap:
                         continue
@@ -4521,12 +4636,12 @@ class PublicPolymarketScannerClient:
                 _reclaim_process_memory()
 
                 supp_vol_evs = _fetch_supp_json_list(
-                    "/events?closed=false&active=true&order=volume24hr&ascending=false&limit=8"
+                    "/events?closed=false&active=true&order=volume24hr&ascending=false&limit=5"
                 )
                 if supp_vol_evs:
                     added_vol_supp = 0
                     for ev_v in supp_vol_evs:
-                        if added_vol_supp >= 8:
+                        if added_vol_supp >= 5:
                             break
                         if not isinstance(ev_v, dict):
                             continue
@@ -5656,10 +5771,12 @@ class FullThrottlePipeline:
             if isinstance(doc.get("last_universe_census"), dict):
                 self.last_universe_census = dict(doc["last_universe_census"])
             if isinstance(doc.get("cycle_reports"), list):
-                self.cycle_reports = list(doc["cycle_reports"])[-25:]
+                self.cycle_reports = list(doc["cycle_reports"])[-8:]
             if isinstance(doc.get("hedged_maker_quoter"), Mapping):
                 self.hedged_maker_quoter.load_checkpoint_dict(doc["hedged_maker_quoter"])
             self.dormant_store.load()
+            del doc
+            _reclaim_process_memory()
             return True
         except Exception:
             return False
@@ -5678,7 +5795,7 @@ class FullThrottlePipeline:
             "persistence_summary": self.forward_tracker.persistence_summary(current_cycle=self.cycle_counter),
             "hedged_maker_quoter": self.hedged_maker_quoter.to_checkpoint_dict(),
             "harvester_candidate_bridge": self.last_harvester_bridge_report,
-            "cycle_reports": self.cycle_reports[-15:],
+            "cycle_reports": self.cycle_reports[-8:],
         }
         _atomic_write_json(self.checkpoint_path, payload)
 
@@ -5952,8 +6069,6 @@ class FullThrottlePipeline:
             pending_val_tokens.extend(tkt.instrument_ids)
 
         if cycle_type == OperatingCycleType.DISCOVERY_CYCLE or not self.hot_priority_tokens:
-            from src.polymarket_research.uma_nba_endgame_engine import is_objective_uma_market
-
             sel_now_f = float(time.time() if now_ts is None else now_ts)
             # Tier (i): 100% of `OFFICIAL_CONTRACTUAL` & `VERIFIED_MATHEMATICAL` cross-market graph edges + `D..I` pairs
             graph_edge_tokens = self._collect_graph_cross_market_edge_tokens(max_tokens=max(900, int(max_budget * 0.45)))
@@ -6019,14 +6134,11 @@ class FullThrottlePipeline:
                                     is_stale_past = 1
                             except Exception:
                                 pass
-                        ok_u_obj, _ = is_objective_uma_market(
-                            {
-                                **dict(m),
-                                "acceptingOrders": m.get("acceptingOrders", True),
-                                "_ev_slug": ev_slug_sel,
-                                "_ev_title": ev_title_sel,
-                                "_eval_now_ts": sel_now_f,
-                            }
+                        ok_u_obj, _ = _is_objective_uma_market_light(
+                            m,
+                            ev_slug=ev_slug_sel,
+                            eval_now_ts=sel_now_f,
+                            default_accepting_orders=True,
                         )
                         if live_s <= 7200.0 and is_stale_past == 0:
                             uma_fast_ranked.append(((0 if ok_u_obj else 1, 0 if is_zf_u else 1, live_s, -liq), t0, t1))
