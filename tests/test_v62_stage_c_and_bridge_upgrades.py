@@ -601,6 +601,213 @@ class TestV62StageCAndBridgeUpgrades(unittest.TestCase):
         cfg = json.loads((REPO_ROOT / "config" / "polymarket_strategy_and_risk.json").read_text(encoding="utf-8"))
         self.assertEqual(float(cfg["riskless_boxes"]["ft_funnel_persist_interval_sec"]), 60.0)
 
+    def test_stage_c_sp1_nba_zero_fee_and_nr2_free_tail_pure_cash_gates(self) -> None:
+        from src.polymarket_research.stage_c_zero_loss_velocity import is_verified_full_throttle_2leg_box
+
+        harv = _live_harvester_stub()
+        rb = {"strict_pure_riskless_mode": True}
+        sp1_ok = {
+            "sleeve_source": "SP1_NBA_ZERO_FEE_BOX",
+            "box_type": "NBA_DOMINANCE",
+            "leg_a_market_id": "m_nba_ml",
+            "leg_b_market_id": "m_nba_sp",
+            "leg_a_token_id": "t_ml",
+            "leg_b_token_id": "t_sp",
+            "leg_a_fee_rate": 0.0,
+            "leg_b_fee_rate": 0.0,
+            "box_cost_net": 0.991,
+        }
+        self.assertIsNone(check_strict_pure_riskless_candidate_gate(harv, sp1_ok, rb))
+        self.assertTrue(is_verified_full_throttle_2leg_box({**sp1_ok, "rule_verified": True, "min_state_net_payoff_usd": 0.09}))
+
+        sp1_fee_bad = {**sp1_ok, "leg_a_fee_rate": 0.02}
+        self.assertFalse(is_verified_full_throttle_2leg_box({**sp1_fee_bad, "rule_verified": True, "min_state_net_payoff_usd": 0.09}))
+        self.assertIn("PURE_RISKLESS_SP1_REQUIRES_ZERO_FEE", str(check_strict_pure_riskless_candidate_gate(harv, sp1_fee_bad, rb)))
+
+        nr2_pure_tail = {
+            "sleeve_source": "NR2_CONVERT_NO_SUBSET_ARB",
+            "box_type": "NEGRISK_CONVERT",
+            "convert_mode": "NR2_SUBSET_CONVERT_FREE_TAIL",
+            "no_legs": [{"token_id": "n1"}, {"token_id": "n2"}],
+            "liquid_yes_sells": [],
+            "box_cost_net": 0.991,
+            "fee_bips": 0.0,
+        }
+        self.assertIsNone(check_strict_pure_riskless_candidate_gate(harv, nr2_pure_tail, rb))
+        self.assertTrue(is_verified_full_throttle_2leg_box({**nr2_pure_tail, "rule_verified": True, "min_state_net_payoff_usd": 0.09}))
+
+        nr2_risky_sell = {**nr2_pure_tail, "liquid_yes_sells": [{"token_id": "y3"}]}
+        self.assertFalse(is_verified_full_throttle_2leg_box({**nr2_risky_sell, "rule_verified": True, "min_state_net_payoff_usd": 0.09}))
+        self.assertIn("PURE_RISKLESS", str(check_strict_pure_riskless_candidate_gate(harv, nr2_risky_sell, rb)))
+
+    def test_alpha124_d1_parity_antibox_depth_fallback_and_quiet_book_cap(self) -> None:
+        import asyncio
+        from unittest import mock
+        from src.polymarket_research import alpha_124_shadow_daemon as a124
+
+        d = a124.Alpha124ShadowDaemon(single_scan=True)
+        d.closed_positions = [
+            {
+                "sleeve": "D1_QUIET_BOOK_BOX",
+                "won": True,
+                "entry_eff_px_t1000": 0.985,
+                "tier_pnls_usd": {"T1000": 1.0},
+                "legging_adjusted_tier_pnls_usd": {"T1000": 0.8},
+            }
+            for _ in range(8)
+        ]
+        self.assertTrue(d.is_sleeve_grad8_ready("D1_QUIET_BOOK_BOX"))
+
+        # Empty opp_b bid + valid primary bk_tb & opp_a bid (e.g. 15M_UP + 4H_DOWN) passes parity check
+        leg_a = {"token_id": "ta", "opp_token_id": "oa", "label": "15M_UP", "side": "YES", "horizon": "15m", "market_id": "m15", "condition_id": "c15", "strike": 100.0, "fee_rate": 0.0, "fee_exponent": 1.0, "neg_risk": False}
+        leg_b = {"token_id": "tb", "opp_token_id": "ob", "label": "4H_DOWN", "side": "NO", "horizon": "4h", "market_id": "m4h", "condition_id": "c4h", "strike": 102.0, "fee_rate": 0.0, "fee_exponent": 1.0, "neg_risk": False}
+        bks_pass = {
+            "ta": {"bids": [{"price": "0.35", "size": "50"}], "asks": [{"price": "0.36", "size": "50"}]},
+            "tb": {"bids": [{"price": "0.58", "size": "50"}], "asks": [{"price": "0.59", "size": "50"}]},
+            "oa": {"bids": [{"price": "0.64", "size": "50"}], "asks": [{"price": "0.65", "size": "50"}]},
+            "ob": {"bids": [], "asks": [{"price": "0.99", "size": "50"}]},
+        }
+        self.assertTrue(asyncio.run(d._passes_complement_anti_box_check(leg_a, leg_b, prefetched_books=bks_pass)))
+
+        # Inverted OTM+OTM anti-box MUST remain vetoed even with primary books present
+        bks_bad = {
+            **bks_pass,
+            "tb": {"bids": [{"price": "0.20", "size": "50"}], "asks": [{"price": "0.21", "size": "50"}]},
+        }
+        self.assertFalse(asyncio.run(d._passes_complement_anti_box_check(leg_a, leg_b, prefetched_books=bks_bad)))
+
+        # Thin depth on fee-bearing D1: $24 takes 20 sh at 1.0x depth ratio (drag <= 0), $10 fallback takes 10 sh at 2.0x (> 0)
+        leg_a_fee = {**leg_a, "fee_rate": 0.0625}
+        leg_b_fee = {**leg_b, "fee_rate": 0.0625}
+        bk_a_thin = {"bids": [{"price": "0.45", "size": "30"}], "asks": [{"price": "0.478", "size": "20"}]}
+        bk_b_thin = {"bids": [{"price": "0.45", "size": "30"}], "asks": [{"price": "0.478", "size": "20"}]}
+        w_fb = d._walk_d1_live_clip_with_fallback(
+            bk_a_thin, bk_b_thin, leg_a_fee, leg_b_fee,
+            primary_budget_usd=24.0, max_box_cost_net=0.989, is_4h_mixed=True,
+        )
+        self.assertTrue(w_fb.get("filled"))
+        self.assertLessEqual(int(w_fb["shares"]), 12)
+
+        with tempfile.TemporaryDirectory() as td:
+            cand_p = Path(td) / "cands.jsonl"
+            now_ts = 1794500000.0
+            m15 = SimpleNamespace(asset="BTC", horizon="15m", market_id="m15", end_ts=now_ts + 300.0)
+            m5 = SimpleNamespace(asset="BTC", horizon="5m", market_id="m5", end_ts=now_ts + 120.0)
+            dom_info = {"regime": "15M_UP+4H_DOWN", "k_low": 100.0, "k_high": 102.0, "corridor_bps": 200.0, "leg_a": leg_a_fee, "leg_b": leg_b_fee}
+            with mock.patch.object(a124, "D1_LIVE_CANDIDATES_FILE", cand_p):
+                ok_emit = d.emit_live_d1_box_candidate(
+                    m15, m5, dom_info, w_fb, now_ts, is_quiet_book=True, sleeve_source="D1_QUIET_BOOK_BOX"
+                )
+            self.assertTrue(ok_emit)
+            row = json.loads(cand_p.read_text(encoding="utf-8").strip())
+            self.assertGreaterEqual(float(row["max_box_cost_net"]), 0.989)
+            self.assertEqual(row["sleeve_source"], "D1_QUIET_BOOK_BOX")
+
+    def test_alpha124_two_leg_emissions_and_restart_state_persistence(self) -> None:
+        from unittest import mock
+        from src.polymarket_research import alpha_124_shadow_daemon as a124
+
+        harv = _live_harvester_stub()
+        rb = {"strict_pure_riskless_mode": True}
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            cand_p = tmp / "cands.jsonl"
+            state_p = tmp / "state.json"
+            mirror_p = tmp / "mirror.json"
+            ledger_p = tmp / "ledger.jsonl"
+            now_ts = 1794500000.0
+
+            d = a124.Alpha124ShadowDaemon(single_scan=True)
+            d.closed_positions = [
+                {
+                    "sleeve": sl_g,
+                    "won": True,
+                    "entry_eff_px_t1000": 0.985,
+                    "tier_pnls_usd": {"T1000": 1.0},
+                    "legging_adjusted_tier_pnls_usd": {"T1000": 1.0},
+                }
+                for sl_g in ("COND1_MACRO_PARTITION_BOX", "D1_SAME_ORACLE_DOMINANCE_BOX", "SP1_NBA_ZERO_FEE_BOX")
+                for _ in range(8)
+            ]
+            # Inject 2 pre-fix anti-box D1 rows (<0.900) and verify is_sleeve_grad8_ready keeps parity with write_state_files
+            d.closed_positions.extend([
+                {"sleeve": "D1_SAME_ORACLE_DOMINANCE_BOX", "won": True, "entry_eff_px_t1000": 0.45, "tier_pnls_usd": {"T1000": 2.0}}
+                for _ in range(2)
+            ])
+            self.assertTrue(d.is_sleeve_grad8_ready("D1_SAME_ORACLE_DOMINANCE_BOX"))
+
+            with mock.patch.object(a124, "D1_LIVE_CANDIDATES_FILE", cand_p), \
+                 mock.patch.object(a124, "STATE_FILE", state_p), \
+                 mock.patch.object(a124, "LIVE_ALPHA124_STATE_MIRROR_FILE", mirror_p), \
+                 mock.patch.object(a124, "LEDGER_FILE", ledger_p):
+                # 1) Fee-bearing CAL1 with k_low=0.0 (gross 0.92 + 0.04 fee_rate < 0.992)
+                la_cal = {"token_id": "cal_a", "opp_token_id": "cal_oa", "market_id": "m_cal_a", "condition_id": "c_cal_a", "side": "YES", "label": "CAL_A", "fee_rate": 0.04, "fee_exponent": 1.0, "neg_risk": False, "strike": 0.0}
+                lb_cal = {"token_id": "cal_b", "opp_token_id": "cal_ob", "market_id": "m_cal_b", "condition_id": "c_cal_b", "side": "NO", "label": "CAL_B", "fee_rate": 0.04, "fee_exponent": 1.0, "neg_risk": False, "strike": 100.0}
+                bk_46 = {"bids": [{"price": "0.45", "size": "50"}], "asks": [{"price": "0.46", "size": "50"}]}
+                bk_49 = {"bids": [{"price": "0.48", "size": "50"}], "asks": [{"price": "0.49", "size": "50"}]}
+                bk_48 = {"bids": [{"price": "0.47", "size": "50"}], "asks": [{"price": "0.48", "size": "50"}]}
+                self.assertTrue(d.emit_live_two_leg_box_candidate(
+                    sleeve_source="CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
+                    box_type="MACRO_DOMINANCE", asset="MACRO", dedupe_key="CAL_0_TEST",
+                    leg_a=la_cal, leg_b=lb_cal, bk_a=bk_46, bk_b=bk_46,
+                    close_ts=now_ts + 86400.0, now_ts=now_ts, k_low=0.0, k_high=100.0,
+                ))
+                # 2) COND1 72h (<= 7d at <= 0.988)
+                la_cnd = {**la_cal, "token_id": "cnd_a", "market_id": "m_cnd_a", "fee_rate": 0.0, "strike": 100.0}
+                lb_cnd = {**lb_cal, "token_id": "cnd_b", "market_id": "m_cnd_b", "fee_rate": 0.0, "strike": 101.0}
+                self.assertTrue(d.emit_live_two_leg_box_candidate(
+                    sleeve_source="COND1_MACRO_PARTITION_BOX",
+                    box_type="MACRO_DOMINANCE", asset="MACRO", dedupe_key="COND_72H_TEST",
+                    leg_a=la_cnd, leg_b=lb_cnd, bk_a=bk_49, bk_b=bk_48,
+                    close_ts=now_ts + 72.0 * 3600.0, now_ts=now_ts, k_low=100.0, k_high=101.0,
+                ))
+                # 3) SP1_NBA_ZERO_FEE_BOX at <= 0.992
+                bk_495 = {"bids": [{"price": "0.49", "size": "50"}], "asks": [{"price": "0.495", "size": "50"}]}
+                bk_496 = {"bids": [{"price": "0.49", "size": "50"}], "asks": [{"price": "0.496", "size": "50"}]}
+                self.assertTrue(d.emit_live_two_leg_box_candidate(
+                    sleeve_source="SP1_NBA_ZERO_FEE_BOX",
+                    box_type="NBA_DOMINANCE", asset="NBA", dedupe_key="SP1_TEST",
+                    leg_a={**la_cnd, "token_id": "nba_a", "market_id": "m_nba_a"},
+                    leg_b={**lb_cnd, "token_id": "nba_b", "market_id": "m_nba_b"},
+                    bk_a=bk_495, bk_b=bk_496, close_ts=now_ts + 7200.0, now_ts=now_ts, max_box_cost_override=0.992,
+                ))
+                # 4) C1_BINARY_COMPLETE_SET 0% fee at <= 0.996
+                la_c1 = {**la_cnd, "token_id": "c1_y", "market_id": "m_c1", "condition_id": "cid_c1", "side": "YES", "label": "YES"}
+                lb_c1 = {**lb_cnd, "token_id": "c1_n", "market_id": "m_c1", "condition_id": "cid_c1", "side": "NO", "label": "NO"}
+                self.assertTrue(d.emit_live_two_leg_box_candidate(
+                    sleeve_source="C1_BINARY_COMPLETE_SET",
+                    box_type="COMPLETE_SET", asset="WEATHER", dedupe_key="C1_TEST",
+                    leg_a=la_c1, leg_b=lb_c1, bk_a=bk_495, bk_b=bk_496,
+                    close_ts=now_ts + 7200.0, now_ts=now_ts, max_box_cost_override=0.996,
+                ))
+                d.cycle_count = 39
+                d.write_state_files([])
+
+                rows = [json.loads(ln) for ln in cand_p.read_text(encoding="utf-8").splitlines() if ln.strip()]
+                self.assertEqual(len(rows), 4)
+                for r in rows:
+                    self.assertIsNone(check_strict_pure_riskless_candidate_gate(harv, r, rb), msg=r.get("sleeve_source"))
+                self.assertTrue(rows[0]["rule_verified"])
+                self.assertGreater(rows[0]["min_state_net_payoff_usd"], 0.0)
+
+                st_saved = json.loads(state_p.read_text(encoding="utf-8"))
+                self.assertEqual(st_saved["by_sleeve"]["D1_SAME_ORACLE_DOMINANCE_BOX"]["settled"], 8)
+                self.assertEqual(st_saved["by_sleeve"]["D1_SAME_ORACLE_DOMINANCE_BOX"]["excluded_anti_box"], 2)
+                self.assertEqual(st_saved["live_bridge_telemetry"]["emitted_total"], 4)
+
+                # Restart onto fresh daemon without ledger file: __init__ runs _hydrate_state() automatically
+                d2 = a124.Alpha124ShadowDaemon(single_scan=True)
+                self.assertEqual(d2.cycle_count, 39)
+                self.assertEqual(d2._live_bridge_emits_total, 4)
+                self.assertEqual(d2._live_bridge_emits_by_sleeve.get("SP1_NBA_ZERO_FEE_BOX"), 1)
+                self.assertTrue(d2.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX"))
+                self.assertTrue(d2.is_sleeve_grad8_ready("D1_SAME_ORACLE_DOMINANCE_BOX"))
+                d2.write_state_files([])
+                st_after = json.loads(state_p.read_text(encoding="utf-8"))
+                self.assertEqual(st_after["by_sleeve"]["COND1_MACRO_PARTITION_BOX"]["closed"], 8)
+                self.assertEqual(st_after["by_sleeve"]["COND1_MACRO_PARTITION_BOX"]["settled"], 8)
+                self.assertTrue(st_after["by_sleeve"]["COND1_MACRO_PARTITION_BOX"]["grad8_live_promoted"])
+
 
 if __name__ == "__main__":
     unittest.main()

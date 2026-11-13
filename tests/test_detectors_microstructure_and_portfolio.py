@@ -1158,6 +1158,27 @@ class TestDetectorsMicrostructureAndPortfolio(unittest.TestCase):
                 "k_low": 90000.0,
                 "k_high": 90500.0,
             },
+            "D1_4H_DOMINANCE_BOX": {
+                **base_2l,
+                "box_type": "DOMINANCE",
+                "sleeve_source": "D1_4H_DOMINANCE_BOX",
+                "k_low": 90000.0,
+                "k_high": 90500.0,
+            },
+            "D1_QUIET_BOOK_BOX": {
+                **base_2l,
+                "box_type": "DOMINANCE",
+                "sleeve_source": "D1_QUIET_BOOK_BOX",
+                "k_low": 90000.0,
+                "k_high": 90500.0,
+            },
+            "SP1_NBA_ZERO_FEE_BOX": {
+                **base_2l,
+                "box_type": "NBA_DOMINANCE",
+                "sleeve_source": "SP1_NBA_ZERO_FEE_BOX",
+                "leg_a_fee_rate": 0.0,
+                "leg_b_fee_rate": 0.0,
+            },
             "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX": {
                 **base_2l,
                 "box_type": "LADDER_MONO",
@@ -1185,6 +1206,19 @@ class TestDetectorsMicrostructureAndPortfolio(unittest.TestCase):
                 "box_cost_net": 0.978,
                 "neg_risk_market_id": "0x" + "d" * 64,
                 "no_legs": [{"market_id": "900201", "token_id": tok1}, {"market_id": "900202", "token_id": tok2}],
+            },
+            "NR2_CONVERT_NO_SUBSET_ARB": {
+                "box_type": "NEGRISK_CONVERT",
+                "convert_mode": "NR2_SUBSET_CONVERT_FREE_TAIL",
+                "sleeve_source": "NR2_CONVERT_NO_SUBSET_ARB",
+                "opportunity_class": "CLASS_A",
+                "rule_verified": True,
+                "min_state_net_payoff_usd": 0.22,
+                "leg_count": 2,
+                "box_cost_net": 0.978,
+                "neg_risk_market_id": "0x" + "e" * 64,
+                "no_legs": [{"market_id": "900203", "token_id": tok1}, {"market_id": "900204", "token_id": tok2}],
+                "liquid_yes_sells": [],
             },
             "FT_DUP1_EXACT_CROSS_EVENT_BOX": {
                 **base_2l,
@@ -1238,6 +1272,23 @@ class TestDetectorsMicrostructureAndPortfolio(unittest.TestCase):
             rb_cfg,
         )
         self.assertIn("BELOW_500_NAV", str(veto_3l))
+        nr2_3leg = {
+            **sample_by_sleeve["NR2_CONVERT_NO_SUBSET_ARB"],
+            "leg_count": 3,
+            "no_legs": [
+                {"market_id": "900203", "token_id": tok1},
+                {"market_id": "900204", "token_id": tok2},
+                {"market_id": "900205", "token_id": opp1},
+            ],
+        }
+        self.assertFalse(is_verified_full_throttle_2leg_box(nr2_3leg))
+        self.assertIsNotNone(check_strict_pure_riskless_candidate_gate(harv, nr2_3leg, rb_cfg))
+        nr2_yes_sell = {
+            **sample_by_sleeve["NR2_CONVERT_NO_SUBSET_ARB"],
+            "yes_sell_legs": [{"market_id": "900206", "token_id": opp2}],
+        }
+        self.assertFalse(is_verified_full_throttle_2leg_box(nr2_yes_sell))
+        self.assertIsNotNone(check_strict_pure_riskless_candidate_gate(harv, nr2_yes_sell, rb_cfg))
         for kmia_mid in ("6707503", "6707502"):
             veto_k = check_strict_pure_riskless_candidate_gate(
                 harv, {**sample_by_sleeve["FT_DUP1_EXACT_CROSS_EVENT_BOX"], "leg_a_market_id": kmia_mid}, rb_cfg

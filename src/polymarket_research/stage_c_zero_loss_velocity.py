@@ -185,9 +185,13 @@ FULL_THROTTLE_CERTIFIED_2LEG_SLEEVES = frozenset(
         "C1_BINARY_COMPLETE_SET",
         "C1_SPLIT_AND_SELL_OVERROUND",
         "D1_SAME_ORACLE_DOMINANCE_BOX",
+        "D1_4H_DOMINANCE_BOX",
+        "D1_QUIET_BOOK_BOX",
+        "SP1_NBA_ZERO_FEE_BOX",
         "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
         "COND1_MACRO_PARTITION_BOX",
         "NR2_2LEG_CONVERT_NO_SUBSET_ARB",
+        "NR2_CONVERT_NO_SUBSET_ARB",
         "FT_DUP1_EXACT_CROSS_EVENT_BOX",
         "FT_STRIKE1_VERIFIED_DOMINANCE_BOX",
         "XV_SUBSET_NO_2LEG_BOX",
@@ -277,10 +281,16 @@ def is_verified_full_throttle_2leg_box(candidate_box: Mapping[str, Any]) -> bool
             and nt
             and yt != nt
         )
-    if sl_src == "NR2_2LEG_CONVERT_NO_SUBSET_ARB" or btype == "NEGRISK_CONVERT":
+    if sl_src in {"NR2_2LEG_CONVERT_NO_SUBSET_ARB", "NR2_CONVERT_NO_SUBSET_ARB"} or btype == "NEGRISK_CONVERT":
         cm = str(candidate_box.get("convert_mode") or "NR2_PURE_CASH_CONVERT").strip().upper()
         no_legs = candidate_box.get("no_legs") or ()
-        return bool(btype == "NEGRISK_CONVERT" and cm == "NR2_PURE_CASH_CONVERT" and len(no_legs) == 2)
+        yes_sells = candidate_box.get("liquid_yes_sells") or candidate_box.get("yes_sell_legs") or ()
+        pure_free_tail = (
+            cm == "NR2_SUBSET_CONVERT_FREE_TAIL"
+            and not yes_sells
+            and (1.0 - _sf(candidate_box.get("fee_bips"), 0.0) / 10000.0) - _sf(candidate_box.get("box_cost_net"), 1.0) > 1e-6
+        )
+        return bool(btype == "NEGRISK_CONVERT" and len(no_legs) == 2 and (cm == "NR2_PURE_CASH_CONVERT" or pure_free_tail))
     mid_a = str(candidate_box.get("leg_a_market_id") or "").strip()
     mid_b = str(candidate_box.get("leg_b_market_id") or "").strip()
     tok_a = str(candidate_box.get("leg_a_token_id") or "").strip()
@@ -335,10 +345,20 @@ def is_verified_full_throttle_2leg_box(candidate_box: Mapping[str, Any]) -> bool
         "LADDER_MONO",
         "BARRIER_MONO",
         "NEGRISK_2LEG",
+        "NBA_DOMINANCE",
         "CROSS_BASIS_DOMINANCE",
         "EXACT_EQUIVALENCE",
     }:
         return False
+    if btype == "NBA_DOMINANCE":
+        if sl_src != "SP1_NBA_ZERO_FEE_BOX":
+            return False
+        if max(_sf(candidate_box.get("leg_a_fee_rate"), 0.0), _sf(candidate_box.get("leg_b_fee_rate"), 0.0)) > 1e-9:
+            return False
+        if not (mid_a and mid_b and mid_a != mid_b and tok_a and tok_b and tok_a != tok_b):
+            return False
+        if _sf(candidate_box.get("box_cost_net"), 0.0) >= 1.0:
+            return False
     if mid_a and mid_b and mid_a == mid_b:
         return False
     k_lo = _sf(candidate_box.get("k_low", candidate_box.get("leg_a_strike")), 0.0)
@@ -702,7 +722,12 @@ def check_strict_pure_riskless_candidate_gate(
         cm = str(candidate_box.get("convert_mode") or "").strip().upper()
         no_legs = candidate_box.get("no_legs") or ()
         yes_sells = candidate_box.get("liquid_yes_sells") or candidate_box.get("yes_sell_legs") or ()
-        if cm == "NR2_PURE_CASH_CONVERT" and sl_src in {"", "NR2_CONVERT_NO_SUBSET_ARB"} and len(no_legs) == 2:
+        pure_free_tail = (
+            cm == "NR2_SUBSET_CONVERT_FREE_TAIL"
+            and not yes_sells
+            and (1.0 - _sf(candidate_box.get("fee_bips"), 0.0) / 10000.0) - _sf(candidate_box.get("box_cost_net"), 1.0) > 1e-6
+        )
+        if (cm == "NR2_PURE_CASH_CONVERT" or pure_free_tail) and sl_src in {"", "NR2_CONVERT_NO_SUBSET_ARB", "NR2_2LEG_CONVERT_NO_SUBSET_ARB"} and len(no_legs) == 2:
             return None
         if cm == "NR_M1_DEAD_SEED_OVERROUND" and sl_src in {"", "NR_M1_DEAD_SEED_OVERROUND"} and len(no_legs) == 1:
             return None
@@ -799,25 +824,36 @@ def check_strict_pure_riskless_candidate_gate(
         "D1_4H_DOMINANCE_BOX",
         "D1_QUIET_BOOK_BOX",
         "C1_BINARY_COMPLETE_SET",
+        "SP1_NBA_ZERO_FEE_BOX",
         "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",
     }:
         return f"PURE_RISKLESS_SLEEVE_NOT_ALLOWLISTED:{sl_src or 'UNKNOWN'}"
-    if btype not in {"DOMINANCE", "DOMINANCE_BOX", "COMPLETE_SET", "C1_BINARY_COMPLETE_SET"}:
+    if btype not in {"DOMINANCE", "DOMINANCE_BOX", "COMPLETE_SET", "C1_BINARY_COMPLETE_SET", "NBA_DOMINANCE"}:
         return f"PURE_RISKLESS_BOX_TYPE_NOT_ALLOWLISTED:{btype or 'UNKNOWN'}"
 
     # 3. Structural invariants per allowlisted box class
+    mid_a = str(candidate_box.get("leg_a_market_id") or "").strip()
+    mid_b = str(candidate_box.get("leg_b_market_id") or "").strip()
+    tok_a = str(candidate_box.get("leg_a_token_id") or "").strip()
+    tok_b = str(candidate_box.get("leg_b_token_id") or "").strip()
     if sl_src == "C1_BINARY_COMPLETE_SET" or btype in {"COMPLETE_SET", "C1_BINARY_COMPLETE_SET"}:
         cid_a = str(candidate_box.get("leg_a_condition_id") or "").strip().lower()
         cid_b = str(candidate_box.get("leg_b_condition_id") or "").strip().lower()
-        mid_a = str(candidate_box.get("leg_a_market_id") or "").strip()
-        mid_b = str(candidate_box.get("leg_b_market_id") or "").strip()
-        tok_a = str(candidate_box.get("leg_a_token_id") or "").strip()
-        tok_b = str(candidate_box.get("leg_b_token_id") or "").strip()
         if (cid_a and cid_b and cid_a != cid_b) or (mid_a and mid_b and mid_a != mid_b) or (tok_a and tok_b and tok_a == tok_b):
             return "PURE_RISKLESS_C1_CONDITION_MISMATCH"
     else:
         k_lo = _sf(candidate_box.get("k_low", candidate_box.get("leg_a_strike")), 0.0)
         k_hi = _sf(candidate_box.get("k_high", candidate_box.get("leg_b_strike")), 0.0)
+        if sl_src == "SP1_NBA_ZERO_FEE_BOX" or btype == "NBA_DOMINANCE":
+            if sl_src != "SP1_NBA_ZERO_FEE_BOX" or btype != "NBA_DOMINANCE":
+                return f"PURE_RISKLESS_BOX_TYPE_NOT_ALLOWLISTED:{sl_src}:{btype}"
+            fr_nba = max(_sf(candidate_box.get("leg_a_fee_rate"), 0.0), _sf(candidate_box.get("leg_b_fee_rate"), 0.0))
+            if fr_nba > 1e-9:
+                return f"PURE_RISKLESS_SP1_REQUIRES_ZERO_FEE:{fr_nba:.4f}"
+            if (mid_a and mid_b and mid_a == mid_b) or (tok_a and tok_b and tok_a == tok_b):
+                return "PURE_RISKLESS_DUPLICATE_TOKEN_LEGS"
+            if _sf(candidate_box.get("box_cost_net"), 0.0) >= 1.0:
+                return "PURE_RISKLESS_NONPOSITIVE_BOX_EDGE"
         if sl_src == "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION":
             # Require explicit .5-hook strict corridor L < U so ties/stat adjustments never double-zero
             if k_hi <= k_lo + 1e-9 or abs((k_lo * 2.0) - round(k_lo * 2.0)) > 1e-6 or abs(k_lo - round(k_lo)) < 1e-6:

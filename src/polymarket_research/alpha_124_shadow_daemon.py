@@ -1022,9 +1022,17 @@ class Alpha124ShadowDaemon:
         """
         if is_shadow_sleeve_quarantined(sleeve):
             return False
-        closed_sl = _filter_epoch_closed_positions(
-            sleeve, [p for p in self.closed_positions if p.get("sleeve") == sleeve]
-        )
+        is_d1_sl = str(sleeve).startswith("D1_")
+        closed_sl = [
+            p for p in _filter_epoch_closed_positions(
+                sleeve, [p for p in self.closed_positions if p.get("sleeve") == sleeve]
+            )
+            if not (
+                is_d1_sl
+                and p.get("status") != "MAKER_ANCHOR_UNHEDGED_SCRATCH"
+                and float(p.get("entry_eff_px_t1000") or 1.0) < 0.900
+            )
+        ]
         n_cl = len(closed_sl)
         wins = sum(1 for p in closed_sl if p.get("won"))
         losses = n_cl - wins
@@ -1037,13 +1045,23 @@ class Alpha124ShadowDaemon:
                 )
             return False
         if n_cl < 8:
-            return False
+            _hbs = (getattr(self, "_hydrated_by_sleeve_snapshot", None) or {}).get(sleeve)
+            return bool(
+                n_cl == 0
+                and not getattr(self, "_ledger_hydrated_clean", True)
+                and isinstance(_hbs, dict)
+                and _hbs.get("grad8_live_promoted")
+                and int(_hbs.get("closed") or 0) >= 8
+                and int(_hbs.get("losses") or 0) == 0
+                and round(float(_hbs.get("realized_pnl_t1000_usd") or 0.0), 2) > 0.0
+                and round(float(_hbs.get("legging_adjusted_pnl_t1000_usd") or 0.0), 2) > 0.0
+            )
         pnl_1k = sum(float(p.get("tier_pnls_usd", {}).get("T1000", 0.0)) for p in closed_sl)
         adj_1k = sum(
             float(p.get("legging_adjusted_tier_pnls_usd", p.get("tier_pnls_usd", {})).get("T1000", 0.0))
             for p in closed_sl
         )
-        if pnl_1k <= 0.0 or adj_1k <= 0.0:
+        if round(pnl_1k, 2) <= 0.0 or round(adj_1k, 2) <= 0.0:
             return False
         if sleeve not in promoted:
             promoted.add(sleeve)
@@ -1544,39 +1562,49 @@ class Alpha124ShadowDaemon:
         except Exception:
             _loads = json.loads
 
+        self._ledger_hydrated_clean = False
         if STATE_FILE.exists():
             try:
                 st = _loads(STATE_FILE.read_bytes())
                 self.started_at = st.get("started_at", self.started_at)
+                self.cycle_count = int(st.get("cycle_count", self.cycle_count) or 0)
+                _lbt = st.get("live_bridge_telemetry")
+                if isinstance(_lbt, dict):
+                    self._live_bridge_emits_total = int(_lbt.get("emitted_total") or 0)
+                    _ebs = _lbt.get("emitted_by_sleeve")
+                    if isinstance(_ebs, dict):
+                        self._live_bridge_emits_by_sleeve = {str(k): int(v or 0) for k, v in _ebs.items()}
+                    self._live_bridge_last_emit_ts = float(_lbt.get("last_emit_ts") or 0.0)
+                _hbs = st.get("by_sleeve")
+                if isinstance(_hbs, dict):
+                    self._hydrated_by_sleeve_snapshot = {
+                        str(k): dict(v) for k, v in _hbs.items() if isinstance(v, dict)
+                    }
+                def _add_ev_keys(rec: Dict[str, Any]) -> None:
+                    dk_r = rec.get("dedupe_key")
+                    if dk_r:
+                        self.entered_keys.add(str(dk_r))
+                    ev_r = (rec.get("extra") or {}).get("event_id")
+                    if ev_r:
+                        sl_r = rec.get("sleeve")
+                        if sl_r == "W2_ENSEMBLE_VALUE":
+                            self.entered_keys.add(f"W2_EVENT_{ev_r}")
+                        elif sl_r == "W2_MAKER_OVERROUND":
+                            self.entered_keys.add(f"W2M_EVENT_{ev_r}")
+
                 for p in st.get("open_positions", []):
                     if isinstance(p, dict) and p.get("position_id") and not self._is_leaked_unit_test_artifact(p):
                         self.open_positions[p["position_id"]] = p
                         self.entered_keys.add(str(p.get("dedupe_key") or p["position_id"]))
-                        ev_id = (p.get("extra") or {}).get("event_id")
-                        if ev_id:
-                            if p.get("sleeve") == "W2_ENSEMBLE_VALUE":
-                                self.entered_keys.add(f"W2_EVENT_{ev_id}")
-                            elif p.get("sleeve") == "W2_MAKER_OVERROUND":
-                                self.entered_keys.add(f"W2M_EVENT_{ev_id}")
+                        _add_ev_keys(p)
                 for m_ord in st.get("pending_maker_orders", []):
                     if isinstance(m_ord, dict) and m_ord.get("order_id") and not self._is_leaked_unit_test_artifact(m_ord):
                         self.pending_maker_orders[m_ord["order_id"]] = m_ord
-                        if m_ord.get("dedupe_key"):
-                            self.entered_keys.add(str(m_ord["dedupe_key"]))
-                        ev_id = (m_ord.get("extra") or {}).get("event_id")
-                        if ev_id and m_ord.get("sleeve") == "W2_MAKER_OVERROUND":
-                            self.entered_keys.add(f"W2M_EVENT_{ev_id}")
+                        _add_ev_keys(m_ord)
                 for p in st.get("recent_closed_positions", []):
                     if isinstance(p, dict) and not self._is_leaked_unit_test_artifact(p):
                         self.closed_positions.append(p)
-                        if p.get("dedupe_key"):
-                            self.entered_keys.add(str(p["dedupe_key"]))
-                        ev_id = (p.get("extra") or {}).get("event_id")
-                        if ev_id:
-                            if p.get("sleeve") == "W2_ENSEMBLE_VALUE":
-                                self.entered_keys.add(f"W2_EVENT_{ev_id}")
-                            elif p.get("sleeve") == "W2_MAKER_OVERROUND":
-                                self.entered_keys.add(f"W2M_EVENT_{ev_id}")
+                        _add_ev_keys(p)
             except Exception as exc:
                 logger.warning(f"State hydrate notice: {exc}")
 
@@ -1700,8 +1728,16 @@ class Alpha124ShadowDaemon:
                 for oid, m_rec in ledger_maker.items():
                     if oid not in self.pending_maker_orders or float(m_rec.get("last_repeg_ts") or 0.0) > float(self.pending_maker_orders[oid].get("last_repeg_ts") or 0.0):
                         self.pending_maker_orders[oid] = m_rec
+                self._ledger_hydrated_clean = True
             except Exception as exc:
                 logger.warning(f"Ledger hydrate notice: {exc}")
+
+        promoted_seed = self.__dict__.setdefault("_grad8_promoted_logged", set())
+        for _sl_h, _rec_h in (getattr(self, "_hydrated_by_sleeve_snapshot", None) or {}).items():
+            if isinstance(_rec_h, dict) and bool(_rec_h.get("grad8_live_promoted")) and not is_shadow_sleeve_quarantined(_sl_h):
+                _cl_h = _filter_epoch_closed_positions(_sl_h, [p for p in self.closed_positions if p.get("sleeve") == _sl_h])
+                if not any(not p.get("won") for p in _cl_h):
+                    promoted_seed.add(_sl_h)
 
         if self.closed_positions:
             self.closed_positions.sort(key=lambda p: float(p.get("closed_ts") or 0.0))
@@ -1754,6 +1790,10 @@ class Alpha124ShadowDaemon:
             return  # out-of-order (older) tick: never append behind newer samples (keeps history time-monotonic)
         else:
             dq.append((ts_sec, price_usd))
+
+    async def _fetch_series(self, slug: str, limit: int = 5, timeout: float = 5.0, end_date_min: str = "") -> Any:
+        q = f"&end_date_min={end_date_min}&order=endDate&ascending=true" if end_date_min else ""
+        return await self.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false{q}&limit={limit}", timeout=timeout)
 
     async def fetch_json(self, url: str, timeout: float = 5.0) -> Any:
         is_clob_book = (not self.single_scan) and ("/book?token_id=" in str(url))
@@ -2767,7 +2807,7 @@ class Alpha124ShadowDaemon:
         for w_slug in HIGH_VOLUME_WEATHER_SERIES:
             if w_slug in seen_w_series:
                 continue
-            evts_w = await self.fetch_json(f"{GAMMA_URL}/events?series_slug={w_slug}&closed=false&limit=3", timeout=5.0)
+            evts_w = await self._fetch_series(w_slug, 3, 5.0)
             if isinstance(evts_w, list):
                 for ev in evts_w:
                     sp = parse_weather_event(ev, series_slug_hint=w_slug)
@@ -2779,7 +2819,7 @@ class Alpha124ShadowDaemon:
         # 2. Discover active Hit/Barrier series (#2)
         barrier_found: Dict[str, BarrierRungSpec] = {}
         for asset, h_grp, slug in HIT_SERIES:
-            evts = await self.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=5", timeout=6.0)
+            evts = await self._fetch_series(slug, 5, 6.0)
             if isinstance(evts, list):
                 for ev in evts:
                     for r in parse_hit_event(ev, asset, h_grp, slug):
@@ -2791,7 +2831,7 @@ class Alpha124ShadowDaemon:
         strike_found: Dict[str, List[StrikeRungSpec]] = {}
         raw_strike_evts: List[Dict[str, Any]] = []
         for asset, slug in STRIKE_SERIES:
-            evts = await self.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=5", timeout=6.0)
+            evts = await self._fetch_series(slug, 5, 6.0)
             if isinstance(evts, list):
                 raw_strike_evts.extend(evts)
                 for ev in evts:
@@ -2802,7 +2842,7 @@ class Alpha124ShadowDaemon:
 
         negrisk_found: Dict[str, List[NegRiskBracketSpec]] = {}
         for asset, slug in NEGRISK_SERIES:
-            evts_nr = await self.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=4", timeout=6.0)
+            evts_nr = await self._fetch_series(slug, 4, 6.0)
             if isinstance(evts_nr, list):
                 for ev in evts_nr:
                     brs = parse_negrisk_bracket_event(ev, asset, slug)
@@ -2813,7 +2853,7 @@ class Alpha124ShadowDaemon:
         # 4. Discover active Daily Up/Down series (`U1_DAILY_UPDOWN_LOCK` + `0%`-fee Pyth FX/Metals `C1_BINARY_COMPLETE_SET`)
         updown_found: Dict[str, DailyUpDownSpec] = {}
         for asset, slug in DAILY_UPDOWN_SERIES:
-            evts_ud = await self.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=3", timeout=5.0)
+            evts_ud = await self._fetch_series(slug, 3, 5.0)
             if isinstance(evts_ud, list):
                 for ev in evts_ud:
                     sp_ud = parse_daily_updown_event(ev, asset, slug)
@@ -2823,7 +2863,7 @@ class Alpha124ShadowDaemon:
 
         pyth_found: Dict[str, DailyUpDownSpec] = {}
         for asset, slug in ZERO_FEE_PYTH_DAILY_SERIES:
-            evts_py = await self.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=2", timeout=5.0)
+            evts_py = await self._fetch_series(slug, 2, 5.0)
             if isinstance(evts_py, list):
                 for ev in evts_py:
                     sp_py = parse_daily_updown_event(ev, asset, slug)
@@ -2833,7 +2873,7 @@ class Alpha124ShadowDaemon:
 
         # 5. Discover Zero-Fee Pyth Commodities/Metals/Equities Hit & Close Ladders, NBA Games, and Zero-Fee NegRisk Slates
         pyth_hit_res = await asyncio.gather(
-            *(self.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=3", timeout=5.0) for _, _, slug in PYTH_HIT_SERIES)
+            *(self._fetch_series(slug, 3, 5.0) for _, _, slug in PYTH_HIT_SERIES)
         )
         pyth_hit_found: Dict[str, PythBarrierRungSpec] = {}
         now_disc = time.time()
@@ -2846,7 +2886,7 @@ class Alpha124ShadowDaemon:
         self.pyth_barrier_rungs = pyth_hit_found
 
         pyth_cl_res = await asyncio.gather(
-            *(self.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=3", timeout=5.0) for _, slug in PYTH_CLOSE_SERIES)
+            *(self._fetch_series(slug, 3, 5.0) for _, slug in PYTH_CLOSE_SERIES)
         )
         pyth_cl_found: Dict[str, List[PythCloseRungSpec]] = {}
         for (asset_c, slug_c), evts_pc in zip(PYTH_CLOSE_SERIES, pyth_cl_res):
@@ -2864,7 +2904,7 @@ class Alpha124ShadowDaemon:
         raw_nba_parents: Dict[str, Dict[str, Any]] = {}
         raw_nba_em: Dict[str, Dict[str, Any]] = {}
         for nba_slug in NBA_SERIES_SLUGS:
-            evts_nba = await self.fetch_json(f"{GAMMA_URL}/events?series_slug={nba_slug}&closed=false&limit=40", timeout=6.5)
+            evts_nba = await self._fetch_series(nba_slug, 40, 6.5)
             if isinstance(evts_nba, list):
                 for ev in evts_nba:
                     sl_ev = str(ev.get("slug") or "").lower()
@@ -2906,7 +2946,7 @@ class Alpha124ShadowDaemon:
 
         non_nba_sport_series = [(sl_s, sp_t) for sp_t, sl_s in MULTI_SPORT_CORRIDOR_SERIES if sl_s not in NBA_SERIES_SLUGS]
         ms_res = await asyncio.gather(
-            *(self.fetch_json(f"{GAMMA_URL}/events?series_slug={sl_s}&closed=false&limit=25", timeout=5.5) for sl_s, _ in non_nba_sport_series),
+            *(self._fetch_series(sl_s, 25, 5.5) for sl_s, _ in non_nba_sport_series),
             self.fetch_json(f"{GAMMA_URL}/events?tag_slug=sports&closed=false&order=volume24hr&ascending=false&limit=40", timeout=6.0),
         )
         nfl_em_found: Dict[str, Dict[str, Any]] = {}
@@ -2938,7 +2978,7 @@ class Alpha124ShadowDaemon:
         self.multi_sport_games = ms_found
 
         nr0_res = await asyncio.gather(
-            *(self.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=4", timeout=5.0) for slug in ZERO_FEE_NEGRISK_SERIES)
+            *(self._fetch_series(slug, 4, 5.0) for slug in ZERO_FEE_NEGRISK_SERIES)
         )
         nr0_found: Dict[str, ZeroFeeNegRiskSlateSpec] = {}
         raw_by_series: Dict[str, List[Dict[str, Any]]] = {}
@@ -2994,7 +3034,7 @@ class Alpha124ShadowDaemon:
 
         os_res = await asyncio.gather(
             *(self.fetch_json(f"{GAMMA_URL}/events?slug={sl_os}", timeout=5.0) for sl_os in OIL_SENATE_SLUGS),
-            self.fetch_json(f"{GAMMA_URL}/events?series_slug=gas-price-hits-weekly&closed=false&limit=2", timeout=5.0),
+            self._fetch_series("gas-price-hits-weekly", 2, 5.0),
         )
         os_by_slug: Dict[str, Dict[str, Any]] = {}
         for sl_os, res_os in zip(OIL_SENATE_SLUGS, os_res[:len(OIL_SENATE_SLUGS)]):
@@ -3016,7 +3056,7 @@ class Alpha124ShadowDaemon:
             int(round(rgs[0].end_ts)) for rgs in self.strike_ladders.values() if rgs
         }
         hr_res = await asyncio.gather(
-            *(self.fetch_json(f"{GAMMA_URL}/events?series_slug={h_slug}&closed=false&limit=6", timeout=4.5) for h_slug in HOURLY_BINANCE_SERIES.values())
+            *(self._fetch_series(h_slug, 6, 4.5) for h_slug in HOURLY_BINANCE_SERIES.values())
         )
         h12_found: Dict[str, DailyUpDownSpec] = {}
         for (h_asset, h_slug), evts_h in zip(HOURLY_BINANCE_SERIES.items(), hr_res):
@@ -4655,8 +4695,8 @@ class Alpha124ShadowDaemon:
                                 "close_ts": end_ts,
                             })
                             w_neg_risk = getattr(b_i, "neg_risk", None)
-                            leg_w_y = {"token_id": b_i.yes_token, "opp_token_id": b_i.no_token, "condition_id": b_i.condition_id, "side": "YES", "label": "YES", "market_id": b_i.market_id, "fee_rate": 0.0, "strike": 100.0, "neg_risk": bool(w_neg_risk)}
-                            leg_w_n = {"token_id": b_i.no_token, "opp_token_id": b_i.yes_token, "condition_id": b_i.condition_id, "side": "NO", "label": "NO", "market_id": b_i.market_id, "fee_rate": 0.0, "strike": 100.0, "neg_risk": bool(w_neg_risk)}
+                            leg_w_y = {"token_id": b_i.yes_token, "opp_token_id": b_i.no_token, "condition_id": b_i.condition_id, "side": "YES", "label": "YES", "market_id": b_i.market_id, "fee_rate": 0.0, "fee_exponent": 1.0, "strike": 100.0, "neg_risk": bool(w_neg_risk)}
+                            leg_w_n = {"token_id": b_i.no_token, "opp_token_id": b_i.yes_token, "condition_id": b_i.condition_id, "side": "NO", "label": "NO", "market_id": b_i.market_id, "fee_rate": 0.0, "fee_exponent": 1.0, "strike": 100.0, "neg_risk": bool(w_neg_risk)}
                             await self.open_shadow_two_leg_box(
                                 sleeve="C1_BINARY_COMPLETE_SET",
                                 dedupe_key=f"C1_W_{b_i.market_id}",
@@ -4671,7 +4711,9 @@ class Alpha124ShadowDaemon:
                                 extra={"is_complete_set": True, "market_id": b_i.market_id, "condition_id": b_i.condition_id},
                             )
                             # LIVE only when Gamma `negRisk` is known (wrong neg_risk -> wrong exchange contract / order signing)
-                            if w_neg_risk is not None and (end_ts - now_s) <= 86400.0 and float(c1_w["box_cost_net"]) <= 0.990:
+                            _c1w_cap = 0.996 if not w_neg_risk else 0.992
+                            _c1w_rem = 172800.0 if not w_neg_risk else 86400.0
+                            if w_neg_risk is not None and (end_ts - now_s) <= _c1w_rem and float(c1_w["box_cost_net"]) <= _c1w_cap:
                                 self.emit_live_two_leg_box_candidate(
                                     sleeve_source="C1_BINARY_COMPLETE_SET",
                                     box_type="COMPLETE_SET",
@@ -4683,6 +4725,7 @@ class Alpha124ShadowDaemon:
                                     bk_b=bk_n_i,
                                     close_ts=float(end_ts),
                                     now_ts=now_s,
+                                    max_box_cost_override=_c1w_cap,
                                 )
                 slate_ev = evaluate_weather_event_slate(
                     sp, probs, bucket_book_map, target_budget_usd=BANKROLL_TICKETS["T1000"]["W3_WEATHER_SLATE_ARB"]
@@ -5788,6 +5831,23 @@ class Alpha124ShadowDaemon:
         finally:
             self._release_inflight_keys(acq)
 
+    async def _nr_eval_books(self, spec: NegRiskConvertSlateSpec, books_by_token: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        req_toks = [b["no_token"] for b in spec.brackets] + [b["yes_token"] for b in spec.brackets]
+        fresh_bks = await self.fetch_books_batch(req_toks, timeout=3.0)
+        return fresh_bks if all(t in fresh_bks for t in req_toks) else books_by_token
+
+    @staticmethod
+    def _nr_fill_rec(hit_t: Dict[str, Any]) -> Dict[str, Any]:
+        sh_t = float(hit_t["shares"])
+        cost_ps = float(hit_t["no_cost_per_share"])
+        return {"filled": True, "vwap": cost_ps, "eff_px": cost_ps, "spent_usd": round(sh_t * cost_ps, 2), "fee_usd": float(hit_t.get("total_fee_usd", 0.0)), "shares": sh_t, "l1_usd": hit_t["l1_usd"]}
+
+    def _acquire_instant_arb_probe(self, sleeve: str, market_label: str, ask_vwap: float, arb_probe: Dict[str, Any], close_ts: float, dedupe_key: str, opps_out: List[Dict[str, Any]]) -> Any:
+        opps_out.append({"sleeve": sleeve, "market": market_label, "ask_vwap": ask_vwap, "p_model": 1.0, "net_edge": arb_probe["net_edge_per_share"], "l1_usd": arb_probe["l1_usd"], "close_ts": close_ts})
+        if float(self._instant_arb_cooldown_until.get(dedupe_key, 0.0) or 0.0) > time.time():
+            return None
+        return self._try_acquire_keys(dedupe_key)
+
     async def execute_negrisk_convert_positions_arb(
         self,
         spec: NegRiskConvertSlateSpec,
@@ -5805,24 +5865,19 @@ class Alpha124ShadowDaemon:
         m_cnt = int(arb_probe["m_no_legs"])
         idx_sig = "_".join(str(i) for i in arb_probe["question_indices"])
         dedupe_key = f"NRCONV_M{m_cnt}_{spec.event_id}_{idx_sig}"
-        opps_out.append({
-            "sleeve": "NR_CONV_NO_BASKET_ARB",
-            "market": f"{spec.title} [convertPositions {m_cnt}/{spec.total_market_count} NO -> {m_cnt - 1} USDC + YES bids]",
-            "ask_vwap": round(1.0 - float(arb_probe["net_edge_per_share"]), 4),
-            "p_model": 1.0,
-            "net_edge": arb_probe["net_edge_per_share"],
-            "l1_usd": arb_probe["l1_usd"],
-            "close_ts": spec.end_ts,
-        })
-        if float(self._instant_arb_cooldown_until.get(dedupe_key, 0.0) or 0.0) > time.time():
-            return False
-        acq = self._try_acquire_keys(dedupe_key)
+        acq = self._acquire_instant_arb_probe(
+            "NR_CONV_NO_BASKET_ARB",
+            f"{spec.title} [convertPositions {m_cnt}/{spec.total_market_count} NO -> {m_cnt - 1} USDC + YES bids]",
+            round(1.0 - float(arb_probe["net_edge_per_share"]), 4),
+            arb_probe,
+            spec.end_ts,
+            dedupe_key,
+            opps_out,
+        )
         if not acq:
             return False
         try:
-            req_toks = [b["no_token"] for b in spec.brackets] + [b["yes_token"] for b in spec.brackets]
-            fresh_bks = await self.fetch_books_batch(req_toks, timeout=3.0)
-            eval_bks = fresh_bks if all(t in fresh_bks for t in req_toks) else books_by_token
+            eval_bks = await self._nr_eval_books(spec, books_by_token)
             tier_fills: Dict[str, Dict[str, Any]] = {}
             tier_pnls: Dict[str, float] = {}
             best_t1000: Optional[Dict[str, Any]] = None
@@ -5836,18 +5891,8 @@ class Alpha124ShadowDaemon:
                 )
                 hit_t = next((c for c in cands_t if c["question_indices"] == arb_probe["question_indices"]), None)
                 if hit_t is not None:
-                    sh_t = float(hit_t["shares"])
-                    cost_ps = float(hit_t["no_cost_per_share"])
-                    tier_fills[t_name] = {
-                        "filled": True,
-                        "vwap": cost_ps,
-                        "eff_px": cost_ps,
-                        "spent_usd": round(sh_t * cost_ps, 2),
-                        "fee_usd": float(hit_t.get("total_fee_usd", 0.0)),
-                        "shares": sh_t,
-                        "l1_usd": hit_t["l1_usd"],
-                    }
-                    tier_pnls[t_name] = round(sh_t * float(hit_t["net_edge_per_share"]), 2)
+                    tier_fills[t_name] = self._nr_fill_rec(hit_t)
+                    tier_pnls[t_name] = round(float(hit_t["shares"]) * float(hit_t["net_edge_per_share"]), 2)
                     if t_name == "T1000":
                         best_t1000 = hit_t
             if best_t1000 is None:
@@ -5930,18 +5975,15 @@ class Alpha124ShadowDaemon:
         m_cnt = int(arb_probe["m_no_legs"])
         idx_sig = "_".join(str(i) for i in arb_probe["no_question_indices"])
         dedupe_key = f"NR2_M{m_cnt}_{spec.event_id}_{idx_sig}"
-        opps_out.append({
-            "sleeve": "NR2_CONVERT_NO_SUBSET_ARB",
-            "market": f"{spec.title[:52]} [{arb_probe['label']}]",
-            "ask_vwap": round(max(0.01, 1.0 - float(arb_probe["net_edge_per_share"])), 4),
-            "p_model": 1.0,
-            "net_edge": arb_probe["net_edge_per_share"],
-            "l1_usd": arb_probe["l1_usd"],
-            "close_ts": spec.end_ts,
-        })
-        if float(self._instant_arb_cooldown_until.get(dedupe_key, 0.0) or 0.0) > time.time():
-            return False
-        acq = self._try_acquire_keys(dedupe_key)
+        acq = self._acquire_instant_arb_probe(
+            "NR2_CONVERT_NO_SUBSET_ARB",
+            f"{spec.title[:52]} [{arb_probe['label']}]",
+            round(max(0.01, 1.0 - float(arb_probe["net_edge_per_share"])), 4),
+            arb_probe,
+            spec.end_ts,
+            dedupe_key,
+            opps_out,
+        )
         if not acq:
             return False
         try:
@@ -5950,39 +5992,51 @@ class Alpha124ShadowDaemon:
             )
             if not ok_nr:
                 return False
-            req_toks = [b["no_token"] for b in spec.brackets] + [b["yes_token"] for b in spec.brackets]
-            fresh_bks = await self.fetch_books_batch(req_toks, timeout=3.0)
-            eval_bks = fresh_bks if all(t in fresh_bks for t in req_toks) else books_by_token
+            eval_bks = await self._nr_eval_books(spec, books_by_token)
             tier_fills: Dict[str, Dict[str, Any]] = {}
             tier_pnls: Dict[str, float] = {}
             best_t1000: Optional[Dict[str, Any]] = None
+            best_t100: Optional[Dict[str, Any]] = None
             for t_name, t_map in BANKROLL_TICKETS.items():
                 cands_t = detect_nr2_convert_no_subset_arbs(
                     spec,
                     eval_bks,
                     target_budget_usd=t_map["NR2_CONVERT_NO_SUBSET_ARB"],
-                    min_edge_pure_cash=0.010,
-                    min_edge_with_yes_sell=0.012,
-                    min_shares=5 if t_name == "T100" else 6,
+                    min_edge_pure_cash=0.006,
+                    min_edge_with_yes_sell=0.0085,
+                    min_shares=5,
                     fee_bips=fee_bips,
                 )
                 hit_t = next((c for c in cands_t if c["no_question_indices"] == arb_probe["no_question_indices"]), None)
                 if hit_t is not None:
-                    sh_t = float(hit_t["shares"])
-                    cost_ps = float(hit_t["no_cost_per_share"])
-                    tier_fills[t_name] = {
-                        "filled": True,
-                        "vwap": cost_ps,
-                        "eff_px": cost_ps,
-                        "spent_usd": round(sh_t * cost_ps, 2),
-                        "fee_usd": hit_t["total_fee_usd"],
-                        "shares": sh_t,
-                        "l1_usd": hit_t["l1_usd"],
-                    }
+                    tier_fills[t_name] = self._nr_fill_rec(hit_t)
                     tier_pnls[t_name] = float(hit_t["total_net_profit_usd"])
                     if t_name == "T1000":
                         best_t1000 = hit_t
+                    elif t_name == "T100":
+                        best_t100 = hit_t
             if best_t1000 is None:
+                if (
+                    best_t100 is not None
+                    and int(m_cnt) == 2
+                    and not (best_t100.get("liquid_yes_sells") or ())
+                    and float(best_t100.get("net_edge_per_share") or 0.0) > 0.0
+                ):
+                    now_fb = time.time()
+                    if self.single_scan and not getattr(self, "_enable_multiclip_instant_arb", False):
+                        for k_acq in acq:
+                            self.entered_keys.add(k_acq)
+                    else:
+                        self._instant_arb_cooldown_until[dedupe_key] = now_fb + 3.0
+                    return self.emit_live_negrisk_convert_candidate(
+                        sleeve_source="NR2_CONVERT_NO_SUBSET_ARB",
+                        spec=spec,
+                        dedupe_key=dedupe_key,
+                        arb_hit=best_t100,
+                        books_by_token=eval_bks,
+                        now_ts=now_fb,
+                        fee_bips=fee_bips,
+                    )
                 return False
             now = time.time()
             pos_id = f"NR2_CONVERT_NO_SUBSET_ARB_{int(now)}_{dedupe_key[-10:]}"
@@ -6113,8 +6167,10 @@ class Alpha124ShadowDaemon:
                         "l1_usd": c1_res["l1_usd"],
                         "close_ts": sp_c1.end_ts,
                     })
-                    leg_u = {"token_id": sp_c1.up_token, "opp_token_id": sp_c1.down_token, "condition_id": sp_c1.condition_id, "side": "UP", "label": "UP", "market_id": sp_c1.market_id, "fee_rate": sp_c1.fee_rate, "strike": 100.0}
-                    leg_d = {"token_id": sp_c1.down_token, "opp_token_id": sp_c1.up_token, "condition_id": sp_c1.condition_id, "side": "DOWN", "label": "DOWN", "market_id": sp_c1.market_id, "fee_rate": sp_c1.fee_rate, "strike": 100.0}
+                    _c1d_nr = bool(getattr(sp_c1, "neg_risk", False))
+                    _c1d_fe = float(getattr(sp_c1, "fee_exponent", 1.0) or 1.0)
+                    leg_u = {"token_id": sp_c1.up_token, "opp_token_id": sp_c1.down_token, "condition_id": sp_c1.condition_id, "side": "UP", "label": "UP", "market_id": sp_c1.market_id, "fee_rate": sp_c1.fee_rate, "fee_exponent": _c1d_fe, "neg_risk": _c1d_nr, "strike": 100.0}
+                    leg_d = {"token_id": sp_c1.down_token, "opp_token_id": sp_c1.up_token, "condition_id": sp_c1.condition_id, "side": "DOWN", "label": "DOWN", "market_id": sp_c1.market_id, "fee_rate": sp_c1.fee_rate, "fee_exponent": _c1d_fe, "neg_risk": _c1d_nr, "strike": 100.0}
                     await self.open_shadow_two_leg_box(
                         sleeve="C1_BINARY_COMPLETE_SET",
                         dedupe_key=f"C1_D_{sp_c1.market_id}",
@@ -6128,7 +6184,9 @@ class Alpha124ShadowDaemon:
                         max_box_cost_net=cap_c1,
                         extra={"is_complete_set": True, "market_id": sp_c1.market_id, "condition_id": sp_c1.condition_id},
                     )
-                    if (sp_c1.end_ts - now) <= 86400.0 and float(c1_res["box_cost_net"]) <= (0.990 if sp_c1.fee_rate == 0.0 else 0.988):
+                    _c1d_cap = 0.995 if sp_c1.fee_rate == 0.0 else 0.988
+                    _c1d_rem = 172800.0 if sp_c1.fee_rate == 0.0 else 86400.0
+                    if (sp_c1.end_ts - now) <= _c1d_rem and float(c1_res["box_cost_net"]) <= _c1d_cap:
                         self.emit_live_two_leg_box_candidate(
                             sleeve_source="C1_BINARY_COMPLETE_SET",
                             box_type="COMPLETE_SET",
@@ -6140,6 +6198,7 @@ class Alpha124ShadowDaemon:
                             bk_b=bk_d,
                             close_ts=float(sp_c1.end_ts),
                             now_ts=now,
+                            max_box_cost_override=_c1d_cap,
                         )
                 await self.execute_ctf_overround_mint_sell(
                     dedupe_key=f"CTF_OVR_D_{sp_c1.market_id}",
@@ -6420,14 +6479,8 @@ class Alpha124ShadowDaemon:
                 return
             slugs = DOMINANCE_SERIES_SLUGS[asset]
             ev15_raw, ev5_raw = await asyncio.gather(
-                self.fetch_json(
-                    f"{GAMMA_URL}/events?series_slug={slugs['15m']}&closed=false&end_date_min={now_iso}&order=endDate&ascending=true&limit=3",
-                    timeout=4.0,
-                ),
-                self.fetch_json(
-                    f"{GAMMA_URL}/events?series_slug={slugs['5m']}&closed=false&end_date_min={now_iso}&order=endDate&ascending=true&limit=3",
-                    timeout=4.0,
-                ),
+                self._fetch_series(slugs["15m"], 3, 4.0, now_iso),
+                self._fetch_series(slugs["5m"], 3, 4.0, now_iso),
             )
             m15_match: Optional[TwapCandleMarketSpec] = None
             m5_match: Optional[TwapCandleMarketSpec] = None
@@ -6469,14 +6522,8 @@ class Alpha124ShadowDaemon:
                 return
             slugs_m = METAL_DOMINANCE_SERIES_SLUGS[metal]
             ev1h_raw, ev15_raw = await asyncio.gather(
-                self.fetch_json(
-                    f"{GAMMA_URL}/events?series_slug={slugs_m['1h']}&closed=false&end_date_min={now_iso}&order=endDate&ascending=true&limit=3",
-                    timeout=4.0,
-                ),
-                self.fetch_json(
-                    f"{GAMMA_URL}/events?series_slug={slugs_m['15m']}&closed=false&end_date_min={now_iso}&order=endDate&ascending=true&limit=3",
-                    timeout=4.0,
-                ),
+                self._fetch_series(slugs_m["1h"], 3, 4.0, now_iso),
+                self._fetch_series(slugs_m["15m"], 3, 4.0, now_iso),
             )
             m1h_m: Optional[TwapCandleMarketSpec] = None
             m15_m: Optional[TwapCandleMarketSpec] = None
@@ -6651,20 +6698,15 @@ class Alpha124ShadowDaemon:
         # its dead complement (4H_UP) frequently has 0 resting bids and a stale 0.99 ask. By CTF parity,
         # fair complement value is bounded above by (1.0 - bid_primary) <= 0.12, whereas true OTM+OTM
         # anti-boxes have bid_ta < 0.15 and bid_tb < 0.15 and remain 100% blocked.
-        ta_deep_itm = isinstance(bk_ta, dict) and bid_ta >= 0.88 and (0.0 < ask_ta <= 0.999)
-        tb_deep_itm = isinstance(bk_tb, dict) and bid_tb >= 0.88 and (0.0 < ask_tb <= 0.999)
-        oa_ok = bid_oa > 0.0 or (0.0 < ask_oa <= 0.12) or ta_deep_itm
-        ob_ok = bid_ob > 0.0 or (0.0 < ask_ob <= 0.12) or tb_deep_itm
-        ub_oa = (
-            bid_oa
-            if bid_oa > 0.0
-            else (min(ask_oa, round(1.0 - bid_ta, 4)) if (ta_deep_itm and ask_oa > 0.0) else (round(1.0 - bid_ta, 4) if ta_deep_itm else ask_oa))
-        )
-        ub_ob = (
-            bid_ob
-            if bid_ob > 0.0
-            else (min(ask_ob, round(1.0 - bid_tb, 4)) if (tb_deep_itm and ask_ob > 0.0) else (round(1.0 - bid_tb, 4) if tb_deep_itm else ask_ob))
-        )
+        ta_p = isinstance(bk_ta, dict) and 0.0 < ask_ta <= 0.999
+        tb_p = isinstance(bk_tb, dict) and 0.0 < ask_tb <= 0.999
+        ta_deep_itm, tb_deep_itm = ta_p and bid_ta >= 0.88, tb_p and bid_tb >= 0.88
+        ta_bnd = ta_deep_itm or (ta_p and bid_ta >= 0.15 and bid_ob > 0.0)
+        tb_bnd = tb_deep_itm or (tb_p and bid_tb >= 0.15 and bid_oa > 0.0)
+        oa_ok = bid_oa > 0.0 or (0.0 < ask_oa <= 0.12) or ta_bnd
+        ob_ok = bid_ob > 0.0 or (0.0 < ask_ob <= 0.12) or tb_bnd
+        _ub = lambda bo, ao, bt, bnd: bo if bo > 0.0 else (min(ao, round(1.0 - bt, 4)) if (bnd and ao > 0.0) else (round(1.0 - bt, 4) if bnd else ao))
+        ub_oa, ub_ob = _ub(bid_oa, ask_oa, bid_ta, ta_bnd), _ub(bid_ob, ask_ob, bid_tb, tb_bnd)
         opp_ub_sum = ub_oa + ub_ob
         if isinstance(bk_ta, dict) and isinstance(bk_tb, dict):
             # True CTF binary mirror parity: on Polymarket CLOB, bid(opp_A) == 1.00 - ask(A),
@@ -7136,6 +7178,42 @@ class Alpha124ShadowDaemon:
             return max(base, 0.992)
         return base
 
+    def _live_emit_preflight(self, key: str, close_ts: float, now_ts: float, *, min_rem: float = 0.0, cooldown: float = 15.0) -> Optional[Tuple[float, float, Path]]:
+        def_p = LIVE_POLYMARKET_DIR / "d1_live_box_candidates.jsonl"
+        if STATE_FILE != (DATA_DIR / "alpha124_shadow_state.json") and D1_LIVE_CANDIDATES_FILE == def_p:
+            return None
+        if not (self.single_scan or ("fetch_json" in self.__dict__)):
+            now_ts = time.time()
+            if min_rem > 0.0 and float(close_ts - now_ts) < min_rem:
+                return None
+        elif min_rem >= 25.0 and float(close_ts - now_ts) < min_rem:
+            return None
+        if (now_ts - float(self._last_d1_live_emit_ts.get(key, 0.0) or 0.0)) < cooldown:
+            return None
+        return now_ts, float(close_ts - now_ts), def_p
+
+    def _walk_d1_live_clip_with_fallback(
+        self, bk_a: Dict[str, Any], bk_b: Dict[str, Any], leg_a: Dict[str, Any], leg_b: Dict[str, Any],
+        *, primary_budget_usd: float, max_box_cost_net: float, is_4h_mixed: bool,
+    ) -> Dict[str, Any]:
+        asks_a, asks_b = bk_a.get("asks") or [], bk_b.get("asks") or []
+        fr_a, fr_b = float(leg_a["fee_rate"]), float(leg_b["fee_rate"])
+        fe_a, fe_b = float(leg_a["fee_exponent"]), float(leg_b["fee_exponent"])
+        for b_try in (float(primary_budget_usd), 10.00):
+            w = walk_equal_shares_dominance_box(
+                asks_a, asks_b, b_try, fr_a, fr_b,
+                fee_exponent_a=fe_a, fee_exponent_b=fe_b,
+                max_box_cost_net=max_box_cost_net, min_shares=5, min_box_notional_usd=4.85, min_box_cost_net=0.860,
+            )
+            if w.get("filled") and float(compute_d1_legging_drag_haircut(
+                shares=float(w["shares"]), box_cost_net=float(w["box_cost_net"]),
+                avail_a_shares=float(w["avail_a_shares"]), avail_b_shares=float(w["avail_b_shares"]),
+                px_a=float(w["leg_a_walk"]["worst_px"]), px_b=float(w["leg_b_walk"]["worst_px"]),
+                fee_rate_a=fr_a, fee_rate_b=fr_b, is_4h_mixed=is_4h_mixed,
+            ).get("legging_adjusted_net_ev_per_pair") or 0.0) > 0.0:
+                return w
+        return {"filled": False}
+
     def emit_live_d1_box_candidate(
         self,
         m15: TwapCandleMarketSpec,
@@ -7147,19 +7225,11 @@ class Alpha124ShadowDaemon:
         is_quiet_book: bool = False,
         sleeve_source: str = "D1_SAME_ORACLE_DOMINANCE_BOX",
     ) -> bool:
-        """Emits a verified D1 Same-Oracle Dominance Box candidate (15m/5m, QuietBook, or 4h/15m) to the live IPC stream."""
-        default_cand_path = LIVE_POLYMARKET_DIR / "d1_live_box_candidates.jsonl"
-        if STATE_FILE != (DATA_DIR / "alpha124_shadow_state.json") and D1_LIVE_CANDIDATES_FILE == default_cand_path:
-            return False
-        if not (self.single_scan or ("fetch_json" in self.__dict__)):
-            # Live mode: stamp with emit-time wall clock (caller's value may be stale after awaited book fetches)
-            now_ts = time.time()
-            if float(m5.end_ts - now_ts) < 16.0:
-                return False
         pair_key = f"{m15.asset}_{m15.market_id}_{m5.market_id}"
-        last_emit = float(self._last_d1_live_emit_ts.get(pair_key, 0.0) or 0.0)
-        if (now_ts - last_emit) < 10.0:
+        pre = self._live_emit_preflight(pair_key, m5.end_ts, now_ts, min_rem=16.0, cooldown=10.0)
+        if pre is None:
             return False
+        now_ts, _rem_emit, default_cand_path = pre
 
         leg_a = dom_info["leg_a"]
         leg_b = dom_info["leg_b"]
@@ -7190,6 +7260,9 @@ class Alpha124ShadowDaemon:
         id_pfx = "D1_4H_LIVE" if str(m15.horizon).lower() == "4h" else "D1_LIVE"
         _zf_emit = max(float(leg_a["fee_rate"]), float(leg_b["fee_rate"])) == 0.0
         _rem_emit = float(m5.end_ts - now_ts)
+        _max_d1_emit = self._d1_live_max_box_cost(zero_fee=_zf_emit, rem_tte_sec=_rem_emit)
+        if is_quiet_book and self.is_sleeve_grad8_ready("D1_QUIET_BOOK_BOX"):
+            _max_d1_emit = max(_max_d1_emit, 0.989)
         cand = {
             "box_id": f"{id_pfx}_{m15.asset}_{int(m5.end_ts)}_{m5.market_id[-5:]}",
             "dedupe_key": f"D1_{m15.asset}_{m15.market_id}_{m5.market_id}",
@@ -7211,7 +7284,7 @@ class Alpha124ShadowDaemon:
             "box_cost_net": float(w_live["box_cost_net"]),
             "legging_drag_per_pair": drag_live["legging_drag_per_pair"],
             "legging_adjusted_net_ev_per_pair": drag_live["legging_adjusted_net_ev_per_pair"],
-            "max_box_cost_net": self._d1_live_max_box_cost(zero_fee=_zf_emit, rem_tte_sec=_rem_emit),
+            "max_box_cost_net": _max_d1_emit,
             "leg_a_token_id": str(leg_a["token_id"]),
             "leg_a_opp_token_id": str(leg_a.get("opp_token_id") or ""),
             "leg_a_label": str(leg_a["label"]),
@@ -7254,6 +7327,15 @@ class Alpha124ShadowDaemon:
             self._live_bridge_last_emit_ts = round(time.time(), 3)
         return bool(ok)
 
+    @staticmethod
+    def _walk_2l_live_clip(bk_a: Dict[str, Any], bk_b: Dict[str, Any], leg_a: Dict[str, Any], leg_b: Dict[str, Any], max_cap: float, min_box_cost_net: float = 0.0) -> Dict[str, Any]:
+        return walk_equal_shares_dominance_box(
+            bk_a.get("asks") or [], bk_b.get("asks") or [], 20.0,
+            float(leg_a.get("fee_rate", CRYPTO_FEE_RATE)), float(leg_b.get("fee_rate", CRYPTO_FEE_RATE)),
+            fee_exponent_a=float(leg_a.get("fee_exponent", 1.0)), fee_exponent_b=float(leg_b.get("fee_exponent", 1.0)),
+            max_box_cost_net=max_cap, min_shares=5, min_box_notional_usd=4.85, min_box_cost_net=min_box_cost_net,
+        )
+
     def emit_live_two_leg_box_candidate(
         self,
         *,
@@ -7272,19 +7354,10 @@ class Alpha124ShadowDaemon:
         max_box_cost_override: Optional[float] = None,
         extra_fields: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        """Emits a verified non-D1 2-leg riskless box candidate (C1, M3, B3, 2-leg N1) to the live IPC stream."""
-        default_cand_path = LIVE_POLYMARKET_DIR / "d1_live_box_candidates.jsonl"
-        if STATE_FILE != (DATA_DIR / "alpha124_shadow_state.json") and D1_LIVE_CANDIDATES_FILE == default_cand_path:
+        pre = self._live_emit_preflight(dedupe_key, close_ts, now_ts, min_rem=25.0, cooldown=15.0)
+        if pre is None:
             return False
-        if not (self.single_scan or ("fetch_json" in self.__dict__)):
-            # Live mode: stamp with emit-time wall clock (caller's value may be stale after awaited book fetches)
-            now_ts = time.time()
-        rem_sec = float(close_ts - now_ts)
-        if rem_sec < 25.0:
-            return False
-        last_emit = float(self._last_d1_live_emit_ts.get(dedupe_key, 0.0) or 0.0)
-        if (now_ts - last_emit) < 15.0:
-            return False
+        now_ts, rem_sec, default_cand_path = pre
         fee_a = float(leg_a.get("fee_rate", CRYPTO_FEE_RATE))
         fee_b = float(leg_b.get("fee_rate", CRYPTO_FEE_RATE))
         exp_a = float(leg_a.get("fee_exponent", 1.0))
@@ -7302,7 +7375,8 @@ class Alpha124ShadowDaemon:
             and bool(_rb_c1_gov.get("enable_c1_gasless_batch_merge", True))
         )
         if sleeve_source == "COND1_MACRO_PARTITION_BOX":
-            max_cap = (0.992 if rem_sec <= 108000.0 else 0.988) if self.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX") else 0.985
+            _cond_g8 = self.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX")
+            max_cap = (0.992 if rem_sec <= 172800.0 else 0.988) if _cond_g8 else 0.985
         elif box_type == "BARRIER_MONO":
             max_cap = 0.993
         elif _zf_c1_merge_emit:
@@ -7322,19 +7396,7 @@ class Alpha124ShadowDaemon:
             max_cap = 0.990 if max(fee_a, fee_b) == 0.0 else 0.988
         if max_box_cost_override is not None:
             max_cap = min(0.9990 if _zf_c1_merge_emit else max_cap, float(max_box_cost_override))
-        w_live = walk_equal_shares_dominance_box(
-            bk_a.get("asks") or [],
-            bk_b.get("asks") or [],
-            target_budget_usd=20.0,
-            fee_rate_a=fee_a,
-            fee_rate_b=fee_b,
-            fee_exponent_a=exp_a,
-            fee_exponent_b=exp_b,
-            max_box_cost_net=max_cap,
-            min_shares=5,
-            min_box_notional_usd=4.85,
-            min_box_cost_net=0.860,
-        )
+        w_live = self._walk_2l_live_clip(bk_a, bk_b, leg_a, leg_b, max_cap, min_box_cost_net=0.860)
         if not w_live.get("filled"):
             return False
         if len(self._last_d1_live_emit_ts) > 256:
@@ -7402,6 +7464,22 @@ class Alpha124ShadowDaemon:
             "leg_b_neg_risk": bool(leg_b["neg_risk"]) if isinstance(leg_b.get("neg_risk"), bool) else False,
             "leg_b_expiry_ts": float(leg_b.get("end_ts") or close_ts),
         }
+        if sleeve_source in {
+            "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
+            "COND1_MACRO_PARTITION_BOX",
+            "C1_BINARY_COMPLETE_SET",
+            "SP1_NBA_ZERO_FEE_BOX",
+        } and not (bool(leg_a.get("neg_risk_augmented")) or bool(leg_b.get("neg_risk_augmented"))):
+            _nf_2l = round(float(w_live["shares"]) * (1.0 - float(w_live["box_cost_net"])), 4)
+            _c1_ok_2l = (
+                (str(leg_a.get("condition_id") or "") == str(leg_b.get("condition_id") or "") and str(leg_a.get("market_id") or "") == str(leg_b.get("market_id") or ""))
+                if box_type == "COMPLETE_SET"
+                else (str(leg_a.get("market_id") or "") != str(leg_b.get("market_id") or ""))
+            )
+            if _nf_2l > 0.0 and str(leg_a.get("token_id") or "") != str(leg_b.get("token_id") or "") and _c1_ok_2l and not (k_low > 0.0 and k_high > 0.0 and float(k_low) > float(k_high) + 1e-9):
+                cand["rule_verified"] = True
+                cand["min_state_net_payoff_usd"] = _nf_2l
+                cand.setdefault("neg_risk_augmented", False)
         if isinstance(extra_fields, dict):
             cand.update(extra_fields)
         if not self.single_scan and self._ws_books:
@@ -7488,10 +7566,8 @@ class Alpha124ShadowDaemon:
         """Emits a verified 1-leg deterministic lock candidate (`SINGLE_LEG_LOCK`) over the UDS/JSONL live bridge."""
         from src.polymarket_research.riskless_protocol_v2_expansion import emit_single_leg_lock_cand_impl
 
-        return self._record_live_bridge_emit(
-            sleeve_source,
-            emit_single_leg_lock_cand_impl(
-                self,
+        return self._bridge_call(
+            emit_single_leg_lock_cand_impl,
                 sleeve_source=sleeve_source,
                 asset=asset,
                 dedupe_key=dedupe_key,
@@ -7514,14 +7590,16 @@ class Alpha124ShadowDaemon:
                 p_model=p_model,
                 extract_best_bid_fn=extract_best_bid,
                 walk_l2_fn=walk_l2_book_asks_depth_capped,
-                cand_file=D1_LIVE_CANDIDATES_FILE,
-                default_cand_path=LIVE_POLYMARKET_DIR / "d1_live_box_candidates.jsonl",
-                state_file=STATE_FILE,
-                default_state_path=DATA_DIR / "alpha124_shadow_state.json",
                 event_id=event_id,
                 pair_dedupe_key=pair_dedupe_key,
-            ),
         )
+
+    def _bridge_call(self, impl_fn: Any, **kw: Any) -> bool:
+        kw.setdefault("cand_file", D1_LIVE_CANDIDATES_FILE)
+        kw.setdefault("default_cand_path", LIVE_POLYMARKET_DIR / "d1_live_box_candidates.jsonl")
+        kw.setdefault("state_file", STATE_FILE)
+        kw.setdefault("default_state_path", DATA_DIR / "alpha124_shadow_state.json")
+        return self._record_live_bridge_emit(kw["sleeve_source"], impl_fn(self, **kw))
 
     def emit_live_special_v2_box_candidate(
         self,
@@ -7537,10 +7615,8 @@ class Alpha124ShadowDaemon:
         """Emits a `CTF_OVERROUND` or `MULTI_LEG_BUNDLE` (`3..12` leg) candidate over UDS/JSONL."""
         from src.polymarket_research.riskless_protocol_v2_expansion import emit_special_v2_box_cand_impl
 
-        return self._record_live_bridge_emit(
-            sleeve_source,
-            emit_special_v2_box_cand_impl(
-                self,
+        return self._bridge_call(
+            emit_special_v2_box_cand_impl,
                 box_type=box_type,
                 sleeve_source=sleeve_source,
                 asset=asset,
@@ -7548,11 +7624,6 @@ class Alpha124ShadowDaemon:
                 close_ts=close_ts,
                 now_ts=now_ts,
                 payload=payload,
-                cand_file=D1_LIVE_CANDIDATES_FILE,
-                default_cand_path=LIVE_POLYMARKET_DIR / "d1_live_box_candidates.jsonl",
-                state_file=STATE_FILE,
-                default_state_path=DATA_DIR / "alpha124_shadow_state.json",
-            ),
         )
 
     def emit_live_negrisk_convert_candidate(
@@ -7569,10 +7640,8 @@ class Alpha124ShadowDaemon:
         """Emits a verified closed-partition `NegRiskAdapterV2.convertPositions` candidate (`NEGRISK_CONVERT`)."""
         from src.polymarket_research.riskless_protocol_v2_expansion import emit_negrisk_convert_cand_impl
 
-        return self._record_live_bridge_emit(
-            sleeve_source,
-            emit_negrisk_convert_cand_impl(
-                self,
+        return self._bridge_call(
+            emit_negrisk_convert_cand_impl,
                 sleeve_source=sleeve_source,
                 spec=spec,
                 dedupe_key=dedupe_key,
@@ -7580,11 +7649,6 @@ class Alpha124ShadowDaemon:
                 books_by_token=books_by_token,
                 now_ts=now_ts,
                 fee_bips=fee_bips,
-                cand_file=D1_LIVE_CANDIDATES_FILE,
-                default_cand_path=LIVE_POLYMARKET_DIR / "d1_live_box_candidates.jsonl",
-                state_file=STATE_FILE,
-                default_state_path=DATA_DIR / "alpha124_shadow_state.json",
-            ),
         )
 
     def emit_live_single_leg_maker_lock_candidate(
@@ -7618,10 +7682,8 @@ class Alpha124ShadowDaemon:
         """Emits a verified 0%-fee resting Maker 1-leg deterministic lock candidate (`SINGLE_LEG_MAKER_LOCK`)."""
         from src.polymarket_research.riskless_protocol_v2_expansion import emit_single_leg_maker_lock_cand_impl
 
-        return self._record_live_bridge_emit(
-            sleeve_source,
-            emit_single_leg_maker_lock_cand_impl(
-                self,
+        return self._bridge_call(
+            emit_single_leg_maker_lock_cand_impl,
                 sleeve_source=sleeve_source,
                 asset=asset,
                 dedupe_key=dedupe_key,
@@ -7646,12 +7708,7 @@ class Alpha124ShadowDaemon:
                 target_bid_px=target_bid_px,
                 maker_rebate_ps=maker_rebate_ps,
                 extract_best_bid_fn=extract_best_bid,
-                cand_file=D1_LIVE_CANDIDATES_FILE,
-                default_cand_path=LIVE_POLYMARKET_DIR / "d1_live_box_candidates.jsonl",
-                state_file=STATE_FILE,
-                default_state_path=DATA_DIR / "alpha124_shadow_state.json",
                 event_id=event_id,
-            ),
         )
 
     def emit_live_maker_anchor_box_candidate(
@@ -7681,10 +7738,8 @@ class Alpha124ShadowDaemon:
         """EXP-PM-406B / EXP-PM-409: Emits a verified Maker-Anchor 2-leg box candidate to the live IPC stream."""
         from src.polymarket_research.riskless_protocol_v2_expansion import emit_maker_anchor_box_cand_impl
 
-        return self._record_live_bridge_emit(
-            sleeve_source,
-            emit_maker_anchor_box_cand_impl(
-                self,
+        return self._bridge_call(
+            emit_maker_anchor_box_cand_impl,
                 sleeve_source=sleeve_source,
                 box_type=box_type,
                 asset=asset,
@@ -7707,11 +7762,6 @@ class Alpha124ShadowDaemon:
                 posted_spot=posted_spot,
                 crypto_fee_rate=CRYPTO_FEE_RATE,
                 project_root=PROJECT_ROOT,
-                cand_file=D1_LIVE_CANDIDATES_FILE,
-                default_cand_path=LIVE_POLYMARKET_DIR / "d1_live_box_candidates.jsonl",
-                state_file=STATE_FILE,
-                default_state_path=DATA_DIR / "alpha124_shadow_state.json",
-            ),
         )
 
     def _latest_spot_px(self, asset: str) -> float:
@@ -8496,18 +8546,11 @@ class Alpha124ShadowDaemon:
                         live_emit_cap = self._d1_live_max_box_cost(zero_fee=_zf_d1, rem_tte_sec=rem_live)
                         quiet_grad = self.is_sleeve_grad8_ready("D1_QUIET_BOOK_BOX")
                         walk_emit_cap = max(live_emit_cap, 0.989) if quiet_grad else live_emit_cap
-                        w_live = walk_equal_shares_dominance_box(
-                            bk_a.get("asks") or [],
-                            bk_b.get("asks") or [],
-                            target_budget_usd=24.00,
-                            fee_rate_a=float(leg_a["fee_rate"]),
-                            fee_rate_b=float(leg_b["fee_rate"]),
-                            fee_exponent_a=float(leg_a["fee_exponent"]),
-                            fee_exponent_b=float(leg_b["fee_exponent"]),
+                        w_live = self._walk_d1_live_clip_with_fallback(
+                            bk_a, bk_b, leg_a, leg_b,
+                            primary_budget_usd=24.00,
                             max_box_cost_net=walk_emit_cap,
-                            min_shares=5,
-                            min_box_notional_usd=4.85,
-                            min_box_cost_net=0.860,
+                            is_4h_mixed=False,
                         )
                         if w_live.get("filled"):
                             is_quiet_live = self._passes_quiet_book_filter(m15.asset, bk_a, bk_b, w_live, eval_now)
@@ -8649,10 +8692,7 @@ class Alpha124ShadowDaemon:
             if not in_terminal_15m:
                 if s4h_k_target in self.s4h_candles:
                     return
-                ev4_only = await self.fetch_json(
-                    f"{GAMMA_URL}/events?series_slug={slug_4h}&closed=false&end_date_min={now_iso}&order=endDate&ascending=true&limit=3",
-                    timeout=4.0,
-                )
+                ev4_only = await self._fetch_series(slug_4h, 3, 4.0, now_iso)
                 is_mocked_4h_early = bool(self.single_scan or ("fetch_json" in self.__dict__))
                 found_early = False
                 if isinstance(ev4_only, list):
@@ -8677,14 +8717,8 @@ class Alpha124ShadowDaemon:
                 return
 
             ev4_raw, ev15_raw = await asyncio.gather(
-                self.fetch_json(
-                    f"{GAMMA_URL}/events?series_slug={slug_4h}&closed=false&end_date_min={now_iso}&order=endDate&ascending=true&limit=3",
-                    timeout=4.0,
-                ),
-                self.fetch_json(
-                    f"{GAMMA_URL}/events?series_slug={slugs['15m']}&closed=false&end_date_min={now_iso}&order=endDate&ascending=true&limit=3",
-                    timeout=4.0,
-                ),
+                self._fetch_series(slug_4h, 3, 4.0, now_iso),
+                self._fetch_series(slugs["15m"], 3, 4.0, now_iso),
             )
             m4_match: Optional[TwapCandleMarketSpec] = None
             m15_match: Optional[TwapCandleMarketSpec] = None
@@ -8806,18 +8840,11 @@ class Alpha124ShadowDaemon:
                 live_4h_cap = self._d1_live_max_box_cost(zero_fee=_zf_4h, rem_tte_sec=rem_4h_live)
                 quiet_4h_grad = self.is_sleeve_grad8_ready("D1_QUIET_BOOK_BOX")
                 walk_4h_cap = max(live_4h_cap, 0.989) if quiet_4h_grad else live_4h_cap
-                w_live_4h = walk_equal_shares_dominance_box(
-                    bk_a.get("asks") or [],
-                    bk_b.get("asks") or [],
-                    target_budget_usd=13.50,
-                    fee_rate_a=float(leg_a["fee_rate"]),
-                    fee_rate_b=float(leg_b["fee_rate"]),
-                    fee_exponent_a=float(leg_a["fee_exponent"]),
-                    fee_exponent_b=float(leg_b["fee_exponent"]),
+                w_live_4h = self._walk_d1_live_clip_with_fallback(
+                    bk_a, bk_b, leg_a, leg_b,
+                    primary_budget_usd=13.50,
                     max_box_cost_net=walk_4h_cap,
-                    min_shares=5,
-                    min_box_notional_usd=4.85,
-                    min_box_cost_net=0.860,
+                    is_4h_mixed=True,
                 )
                 if w_live_4h.get("filled"):
                     is_quiet_4h = self._passes_quiet_book_filter(m4.asset, bk_a, bk_b, w_live_4h, eval_4h_now)
@@ -9209,10 +9236,7 @@ class Alpha124ShadowDaemon:
             slugs = DOMINANCE_SERIES_SLUGS[asset]
             k5 = f"{asset}_5m_{end_5m}"
             if k5 not in self.twap_candles:
-                ev5_raw = await self.fetch_json(
-                    f"{GAMMA_URL}/events?series_slug={slugs['5m']}&closed=false&end_date_min={now_iso}&order=endDate&ascending=true&limit=3",
-                    timeout=3.0,
-                )
+                ev5_raw = await self._fetch_series(slugs["5m"], 3, 3.0, now_iso)
                 if isinstance(ev5_raw, list):
                     for ev in ev5_raw:
                         sp5 = parse_twap_candle_event(ev, asset, "5m")
@@ -9222,10 +9246,7 @@ class Alpha124ShadowDaemon:
             if is_15m_boundary:
                 k15 = f"{asset}_15m_{end_5m}"
                 if k15 not in self.twap_candles:
-                    ev15_raw = await self.fetch_json(
-                        f"{GAMMA_URL}/events?series_slug={slugs['15m']}&closed=false&end_date_min={now_iso}&order=endDate&ascending=true&limit=3",
-                        timeout=3.0,
-                    )
+                    ev15_raw = await self._fetch_series(slugs["15m"], 3, 3.0, now_iso)
                     if isinstance(ev15_raw, list):
                         for ev in ev15_raw:
                             sp15 = parse_twap_candle_event(ev, asset, "15m")
@@ -9449,10 +9470,7 @@ class Alpha124ShadowDaemon:
             if k5 in self.s5m_candles:
                 continue
             slug_5m = DOMINANCE_SERIES_SLUGS[asset]["5m"]
-            ev5_raw = await self.fetch_json(
-                f"{GAMMA_URL}/events?series_slug={slug_5m}&closed=false&end_date_min={now_iso}&order=endDate&ascending=true&limit=3",
-                timeout=3.5,
-            )
+            ev5_raw = await self._fetch_series(slug_5m, 3, 3.5, now_iso)
             if isinstance(ev5_raw, list):
                 for ev in ev5_raw:
                     sp5 = parse_twap_candle_event(ev, asset, "5m")
@@ -9591,10 +9609,7 @@ class Alpha124ShadowDaemon:
             if k_pre in self.preopen_15m_candles:
                 continue
             slug_15m = DOMINANCE_SERIES_SLUGS[asset]["15m"]
-            ev15_raw = await self.fetch_json(
-                f"{GAMMA_URL}/events?series_slug={slug_15m}&closed=false&end_date_min={now_iso}&order=endDate&ascending=true&limit=5",
-                timeout=3.5,
-            )
+            ev15_raw = await self._fetch_series(slug_15m, 5, 3.5, now_iso)
             if isinstance(ev15_raw, list):
                 for ev in ev15_raw:
                     sp15 = parse_twap_candle_event(ev, asset, "15m")
@@ -10449,9 +10464,25 @@ class Alpha124ShadowDaemon:
                 tier_totals[t_k] = round(
                     tier_totals[t_k] + sum(float(p.get("tier_pnls_usd", {}).get(t_k, 0.0)) for p in closed_sl), 2
                 )
+            _hbs_rec = (
+                (getattr(self, "_hydrated_by_sleeve_snapshot", None) or {}).get(sl)
+                if (not all_closed_sl and not getattr(self, "_ledger_hydrated_clean", True))
+                else None
+            )
+            if isinstance(_hbs_rec, dict) and int(_hbs_rec.get("closed") or 0) > 0:
+                tier_totals["T1000"] = round(tier_totals["T1000"] + float(_hbs_rec.get("realized_pnl_t1000_usd") or 0.0), 2)
+                by_sleeve[sl] = {
+                    **_hbs_rec,
+                    "open": len(open_sl),
+                    "settled": int(_hbs_rec["closed"]),
+                    "quarantined": is_shadow_sleeve_quarantined(sl),
+                    "grad8_live_promoted": bool(_hbs_rec.get("grad8_live_promoted") and not is_shadow_sleeve_quarantined(sl)),
+                }
+                continue
             by_sleeve[sl] = {
                 "open": len(open_sl),
                 "closed": len(closed_sl),
+                "settled": len(closed_sl),
                 "wins": wins,
                 "losses": len(closed_sl) - wins,
                 "win_rate_pct": round(100.0 * wins / len(closed_sl), 2) if closed_sl else 0.0,
@@ -11302,6 +11333,22 @@ class Alpha124ShadowDaemon:
                     min_shares=8,
                     min_box_notional_usd=7.0,
                 )
+                w_nba_live = w_nba if (w_nba.get("filled") and float(w_nba["box_cost_net"]) <= 0.992) else self._walk_2l_live_clip(bk_a, bk_b, la_n, lb_n, 0.992)
+                nba_live_emitted = False
+                if w_nba_live.get("filled") and float(w_nba_live["box_cost_net"]) <= 0.992 and (float(nb["close_ts"]) - now) <= 86400.0:
+                    nba_live_emitted = self.emit_live_two_leg_box_candidate(
+                        sleeve_source="SP1_NBA_ZERO_FEE_BOX",
+                        box_type="NBA_DOMINANCE",
+                        asset="NBA",
+                        dedupe_key=f"SP1_{sp_nba.event_id}_{lga.token_id[-8:]}_{lgb.token_id[-8:]}",
+                        leg_a=la_n,
+                        leg_b=lb_n,
+                        bk_a=bk_a,
+                        bk_b=bk_b,
+                        close_ts=float(nb["close_ts"]),
+                        now_ts=now,
+                        max_box_cost_override=0.992,
+                    )
                 if w_nba.get("filled"):
                     opps_out.append({
                         "sleeve": "SP1_NBA_ZERO_FEE_BOX",
@@ -11312,20 +11359,6 @@ class Alpha124ShadowDaemon:
                         "l1_usd": w_nba["l1_usd"],
                         "close_ts": nb["close_ts"],
                     })
-                    nba_live_emitted = False
-                    if float(w_nba["box_cost_net"]) <= 0.990 and (float(nb["close_ts"]) - now) <= 86400.0:
-                        nba_live_emitted = self.emit_live_two_leg_box_candidate(
-                            sleeve_source="SP1_NBA_ZERO_FEE_BOX",
-                            box_type="NBA_DOMINANCE",
-                            asset="NBA",
-                            dedupe_key=f"SP1_{sp_nba.event_id}_{lga.token_id[-8:]}_{lgb.token_id[-8:]}",
-                            leg_a=la_n,
-                            leg_b=lb_n,
-                            bk_a=bk_a,
-                            bk_b=bk_b,
-                            close_ts=float(nb["close_ts"]),
-                            now_ts=now,
-                        )
                     await self.open_shadow_two_leg_box(
                         sleeve="SP1_NBA_ZERO_FEE_BOX",
                         dedupe_key=f"SP1_{sp_nba.event_id}_{lga.token_id[-8:]}_{lgb.token_id[-8:]}",
@@ -12485,34 +12518,44 @@ class Alpha124ShadowDaemon:
                         fee_exponent_a=float(la_c["fee_exponent"]), fee_exponent_b=float(lb_c["fee_exponent"]),
                         max_box_cost_net=0.992, min_shares=6, min_box_notional_usd=5.5,
                     )
+                    dk_cb = f"CAL1_{la_c['market_id']}_{lb_c['market_id']}"
+                    _cal_rem = float(cbx["close_ts"]) - now
+                    _cal_cap = 0.992 if _cal_rem <= 172800.0 else 0.988
+                    _cal_box = w_cb if (w_cb.get("filled") and float(w_cb["box_cost_net"]) <= _cal_cap) else self._walk_2l_live_clip(bka_c, bkb_c, la_c, lb_c, _cal_cap)
+                    if (
+                        _cal_box.get("filled")
+                        and float(_cal_box["box_cost_net"]) <= _cal_cap
+                        and self._can_emit_zero_loss_math_live("CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX", float(cbx["close_ts"]), now)
+                        and la_c.get("market_id") != lb_c.get("market_id")
+                        and 0.0 < _cal_rem <= 604800.0
+                        and (float(cbx.get("early_leg_close_ts") or cbx["close_ts"]) - now) >= 60.0
+                    ):
+                        self.emit_live_two_leg_box_candidate(
+                            sleeve_source="CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
+                            box_type="MACRO_DOMINANCE",
+                            asset="MACRO",
+                            dedupe_key=dk_cb,
+                            leg_a=la_c,
+                            leg_b=lb_c,
+                            bk_a=bka_c,
+                            bk_b=bkb_c,
+                            close_ts=float(cbx["close_ts"]),
+                            now_ts=now,
+                            k_low=float(la_c["strike"]) if la_c.get("strike") is not None else 0.0,
+                            k_high=float(lb_c["strike"]) if lb_c.get("strike") is not None else 101.0,
+                            max_box_cost_override=_cal_cap,
+                            extra_fields={
+                                "leg_a_deadline_ts": float(la_c.get("end_ts") or cbx["close_ts"]),
+                                "leg_b_deadline_ts": float(lb_c.get("end_ts") or cbx["close_ts"]),
+                            },
+                        )
                     if w_cb.get("filled"):
-                        dk_cb = f"CAL1_{la_c['market_id']}_{lb_c['market_id']}"
                         opps_out.append({
                             "sleeve": "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
                             "market": cbx["label"], "ask_vwap": w_cb["box_cost_net"], "p_model": 1.0,
                             "net_edge": round(1.0 - float(w_cb["box_cost_net"]), 4),
                             "l1_usd": w_cb["l1_usd"], "close_ts": cbx["close_ts"],
                         })
-                        if (
-                            self._can_emit_zero_loss_math_live("CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX", float(cbx["close_ts"]), now)
-                            and la_c.get("market_id") != lb_c.get("market_id")
-                            and 0.0 < (float(cbx["close_ts"]) - now) <= 604800.0
-                            and (float(cbx.get("early_leg_close_ts") or cbx["close_ts"]) - now) >= 60.0
-                        ):
-                            self.emit_live_two_leg_box_candidate(
-                                sleeve_source="CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
-                                box_type="MACRO_DOMINANCE",
-                                asset="MACRO",
-                                dedupe_key=dk_cb,
-                                leg_a=la_c,
-                                leg_b=lb_c,
-                                bk_a=bka_c,
-                                bk_b=bkb_c,
-                                close_ts=float(cbx["close_ts"]),
-                                now_ts=now,
-                                k_low=float(la_c.get("strike") or 100.0),
-                                k_high=float(lb_c.get("strike") or 101.0),
-                            )
                         await self.open_shadow_two_leg_box(
                             "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX", dk_cb, f"CAL1_{sp_cal.ladder_kind}",
                             cbx["label"], la_c, lb_c, bka_c, bkb_c, float(cbx["close_ts"]), 0.992,
@@ -13948,20 +13991,23 @@ class Alpha124ShadowDaemon:
                                 fee_exponent_a=float(la_m.get("fee_exponent", 1.0)), fee_exponent_b=float(lb_m.get("fee_exponent", 1.0)),
                                 max_box_cost_net=0.994, min_shares=6, min_box_notional_usd=5.5,
                             )
+                            lp_live_emitted = False
+                            if sl_lp == "COND1_MACRO_PARTITION_BOX":
+                                _cond_g8 = self.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX")
+                                _cond_rem = float(bx["close_ts"]) - now
+                                _cond_cap = (0.992 if _cond_rem <= 172800.0 else 0.988) if _cond_g8 else 0.985
+                                _cond_max_rem = 604800.0 if _cond_g8 else 108000.0
+                                _cond_box = wm2 if (wm2.get("filled") and float(wm2["box_cost_net"]) <= _cond_cap) else self._walk_2l_live_clip(bka_m, bkb_m, la_m, lb_m, _cond_cap)
+                                if _cond_box.get("filled") and 0.0 < _cond_rem <= _cond_max_rem and float(_cond_box["box_cost_net"]) <= _cond_cap:
+                                    lp_live_emitted = self.emit_live_two_leg_box_candidate(
+                                        sleeve_source=sl_lp, box_type="MACRO_DOMINANCE", asset=asset_lp, dedupe_key=dk_m,
+                                        leg_a=la_m, leg_b=lb_m, bk_a=bka_m, bk_b=bkb_m,
+                                        close_ts=float(bx["close_ts"]), now_ts=now,
+                                        k_low=100.0, k_high=101.0, max_box_cost_override=_cond_cap,
+                                    )
                             if wm2.get("filled"):
                                 opps_out.append({"sleeve": sl_lp, "market": f"{asset_lp} {bx['label']}", "ask_vwap": wm2["box_cost_net"], "p_model": 1.0, "net_edge": round(1.0 - float(wm2["box_cost_net"]), 4), "l1_usd": wm2["l1_usd"], "close_ts": bx["close_ts"]})
-                                lp_live_emitted = False
                                 if sl_lp == "FED1_CENTRAL_BANK_LP_BOX" and (float(bx["close_ts"]) - now) <= 172800.0 and float(wm2["box_cost_net"]) <= 0.990:
-                                    lp_live_emitted = self.emit_live_two_leg_box_candidate(sleeve_source=sl_lp, box_type="MACRO_DOMINANCE", asset=asset_lp, dedupe_key=dk_m, leg_a=la_m, leg_b=lb_m, bk_a=bka_m, bk_b=bkb_m, close_ts=float(bx["close_ts"]), now_ts=now)
-                                elif (
-                                    sl_lp == "COND1_MACRO_PARTITION_BOX"
-                                    and (float(bx["close_ts"]) - now) <= (172800.0 if self.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX") else 108000.0)
-                                    and float(wm2["box_cost_net"]) <= (
-                                        (0.992 if (float(bx["close_ts"]) - now) <= 108000.0 else 0.988)
-                                        if self.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX")
-                                        else 0.985
-                                    )
-                                ):
                                     lp_live_emitted = self.emit_live_two_leg_box_candidate(sleeve_source=sl_lp, box_type="MACRO_DOMINANCE", asset=asset_lp, dedupe_key=dk_m, leg_a=la_m, leg_b=lb_m, bk_a=bka_m, bk_b=bkb_m, close_ts=float(bx["close_ts"]), now_ts=now)
                                 await self.open_shadow_two_leg_box(sl_lp, dk_m, asset_lp, f"{asset_lp} {bx['label']}", la_m, lb_m, bka_m, bkb_m, float(bx["close_ts"]), 0.994, {"is_two_leg_box": True, "double_pay_states": bx["double_pay_states"]})
                                 if not lp_live_emitted:

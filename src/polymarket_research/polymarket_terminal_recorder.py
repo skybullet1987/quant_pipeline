@@ -671,6 +671,8 @@ class L2OrderBook:
         self._empty_ask_since_ts: float = 0.0
         self._metrics_cache_key: Optional[Tuple[int, float, bool]] = None
         self._metrics_cache_payload: Optional[Dict[str, Any]] = None
+        self._tob_cache_seq: int = -1
+        self._tob_cache_payload: Optional[Dict[str, Any]] = None
 
     def _sorted_levels(self) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]]]:
         if self._dirty:
@@ -802,25 +804,33 @@ class L2OrderBook:
     def top_of_book(self, obs_ts: Optional[float] = None) -> Dict[str, Any]:
         """Lightweight O(1) cached top-of-book snapshot for the 25ms shared-memory tick bus."""
         t_now = obs_ts if obs_ts is not None else time.time()
-        sorted_bids, sorted_asks = self._sorted_levels()
-        best_bid, bid_sz = sorted_bids[0] if sorted_bids else (0.0, 0.0)
-        best_ask, ask_sz = sorted_asks[0] if sorted_asks else (1.0, 0.0)
-        denom = bid_sz + ask_sz
-        return {
-            "best_bid": round(best_bid, 4),
-            "best_ask": round(best_ask, 4),
-            "bid_size_l1": round(bid_sz, 2),
-            "ask_size_l1": round(ask_sz, 2),
-            "spread": round(best_ask - best_bid, 4),
-            "is_crossed": bool(best_bid > 0.0 and best_ask < 1.0 and best_bid >= best_ask),
-            "q_mid": round((best_bid + best_ask) / 2.0, 4),
-            "obi_l1": round((bid_sz - ask_sz) / denom, 3) if denom > 0 else 0.0,
-            "age_book_ms": round((t_now - self.last_book_update_ts) * 1000.0, 1) if self.last_book_update_ts > 0 else None,
-            "age_ask_ms": round((t_now - self.last_best_ask_change_ts) * 1000.0, 1) if self.last_best_ask_change_ts > 0 else None,
-            "empty_ask_ms": round((t_now - self._empty_ask_since_ts) * 1000.0, 1) if (not sorted_asks and self._empty_ask_since_ts > 0) else None,
-            "raw_top_bids": sorted_bids[:15],
-            "raw_top_asks": sorted_asks[:15],
-        }
+        base = self._tob_cache_payload
+        if base is None or self._tob_cache_seq != self.book_sequence_id or self._dirty:
+            sorted_bids, sorted_asks = self._sorted_levels()
+            best_bid, bid_sz = sorted_bids[0] if sorted_bids else (0.0, 0.0)
+            best_ask, ask_sz = sorted_asks[0] if sorted_asks else (1.0, 0.0)
+            denom = bid_sz + ask_sz
+            base = {
+                "best_bid": round(best_bid, 4),
+                "best_ask": round(best_ask, 4),
+                "bid_size_l1": round(bid_sz, 2),
+                "ask_size_l1": round(ask_sz, 2),
+                "spread": round(best_ask - best_bid, 4),
+                "is_crossed": bool(best_bid > 0.0 and best_ask < 1.0 and best_bid >= best_ask),
+                "q_mid": round((best_bid + best_ask) / 2.0, 4),
+                "obi_l1": round((bid_sz - ask_sz) / denom, 3) if denom > 0 else 0.0,
+                "raw_top_bids": sorted_bids[:15],
+                "raw_top_asks": sorted_asks[:15],
+                "_has_asks": bool(sorted_asks),
+            }
+            self._tob_cache_seq = self.book_sequence_id
+            self._tob_cache_payload = base
+        out = dict(base)
+        has_asks = out.pop("_has_asks", True)
+        out["age_book_ms"] = round((t_now - self.last_book_update_ts) * 1000.0, 1) if self.last_book_update_ts > 0 else None
+        out["age_ask_ms"] = round((t_now - self.last_best_ask_change_ts) * 1000.0, 1) if self.last_best_ask_change_ts > 0 else None
+        out["empty_ask_ms"] = round((t_now - self._empty_ask_since_ts) * 1000.0, 1) if (not has_asks and self._empty_ask_since_ts > 0) else None
+        return out
 
     def get_metrics(
         self,
@@ -1414,6 +1424,7 @@ class PolymarketDualFeed1HRecorder:
                     "timestamp_unix": now,
                     "spot_price": self.spot_price,
                     "futures_price": self.futures_price,
+                    "authoritative_chainlink_open": self.current_market.get("authoritative_chainlink_open"),
                     "UP": snap["UP"],
                     "DOWN": snap["DOWN"],
                 }
@@ -1516,8 +1527,19 @@ class PolymarketDualFeed1HRecorder:
         if not self._fast_tick_enabled:
             return False
         now = time.time()
-        if not force and (now - self._last_fast_tick_write) < self._fast_tick_throttle_sec(now):
+        elapsed = now - self._last_fast_tick_write
+        if not force and elapsed < self._fast_tick_throttle_sec(now):
             return False
+        sig = (
+            self.spot_price,
+            self.futures_price,
+            self.coinbase_spot,
+            tuple((k, b.book_sequence_id) for k, b in self.books.items()),
+            bool(self.clob_ws_connected),
+        )
+        if not force and self.riskless_bus_only and sig == getattr(self, "_last_shm_write_sig", None) and elapsed < 0.45:
+            return False
+        self._last_shm_write_sig = sig
         self._last_fast_tick_write = now
         try:
             snap = self.build_fast_tick_snapshot(now)
@@ -1651,6 +1673,28 @@ class PolymarketDualFeed1HRecorder:
         except Exception as e:
             logger.warning(f"Clock calibration failed: {e}")
 
+    @staticmethod
+    def _extract_event_price_to_beat(event: Any) -> float:
+        if not isinstance(event, dict):
+            return 0.0
+        meta = event.get("eventMetadata")
+        if isinstance(meta, str):
+            try:
+                meta = _orjson.loads(meta) if _orjson is not None else json.loads(meta)
+            except Exception:
+                meta = None
+        if isinstance(meta, dict):
+            for k in ("priceToBeat", "openPrice"):
+                v = meta.get(k)
+                if v is not None:
+                    try:
+                        f = float(v)
+                        if math.isfinite(f) and f > 0.0:
+                            return f
+                    except (TypeError, ValueError):
+                        pass
+        return 0.0
+
     async def discover_nearest_1h_market(self) -> Optional[Dict[str, Any]]:
         """Enforces: series_slug == self.series_slug and market_duration == 3600s."""
         session = await self.get_session()
@@ -1747,6 +1791,7 @@ class PolymarketDualFeed1HRecorder:
                         "end_dt": end_dt,
                         "candle_open_ts": candle_open_ts,
                         "candle_close_ts": candle_close_ts,
+                        "authoritative_chainlink_open": self._extract_event_price_to_beat(event) or None,
                         "tokens": {
                             "UP": tokens[0],
                             "DOWN": tokens[1]
@@ -1835,7 +1880,9 @@ class PolymarketDualFeed1HRecorder:
 
                     open_px, _ = await self.fetch_finalized_binance_candle(candle_open_ts, interval=hz)
                     twap_60s_px = await self.fetch_binance_60s_twap_open(candle_open_ts)
-                    auth_cl_open = await self.fetch_authoritative_chainlink_open(candle_open_ts, candle_close_ts, horizon=hz)
+                    auth_cl_open = self._extract_event_price_to_beat(event)
+                    if auth_cl_open <= 0.0:
+                        auth_cl_open = await self.fetch_authoritative_chainlink_open(candle_open_ts, candle_close_ts, horizon=hz)
                     cl_open = auth_cl_open if auth_cl_open > 0.0 else 0.0
                     if cl_open <= 0.0 and abs(time.time() - candle_open_ts) <= 35.0:
                         cl_open = await self.fetch_polygon_chainlink_spot()
@@ -1947,8 +1994,33 @@ class PolymarketDualFeed1HRecorder:
         now_t = time.time()
         if now_t < float(candle_open_ts) + 2.0:
             return 0.0
-        variant = {"5m": "fiveminute", "15m": "fifteen", "4h": "fourhour"}.get(str(horizon).lower(), "fifteen")
         session = await self.get_session()
+        asset_u = self.asset.upper()
+        if asset_u in {"XAU", "XAG"}:
+            # Commodities are excluded from /api/crypto/crypto-price (HTTP 400); read Gamma eventMetadata.priceToBeat.
+            base_slug = "gold" if asset_u == "XAU" else "silver"
+            hz_slug = "hourly" if str(horizon).lower() in ("1h", "hourly") else str(horizon).lower()
+            try:
+                g_u = f"{GAMMA_API_URL}/events?series_slug={base_slug}-up-or-down-{hz_slug}&limit=6&closed=false&order=endDate&ascending=true"
+                async with session.get(g_u, timeout=aiohttp.ClientTimeout(total=3.5)) as resp:
+                    if resp.status == 200:
+                        evs = await _fast_resp_json(resp)
+                        for ev in (evs if isinstance(evs, list) else [evs]):
+                            m_ev = (ev.get("markets") or [{}])[0] if isinstance(ev, dict) else {}
+                            end_s = (m_ev.get("endDate") or ev.get("endDate") or "") if isinstance(ev, dict) else ""
+                            if end_s:
+                                try:
+                                    end_ts = datetime.fromisoformat(end_s.replace("Z", "+00:00")).timestamp()
+                                except Exception:
+                                    continue
+                                if abs(end_ts - float(candle_close_ts)) <= 5.0:
+                                    ptb = self._extract_event_price_to_beat(ev)
+                                    if ptb > 0.0:
+                                        return ptb
+            except Exception as e:
+                logger.debug(f"[{asset_u}] Authoritative {horizon} Gamma priceToBeat note: {e}")
+            return 0.0
+        variant = {"5m": "fiveminute", "15m": "fifteen", "4h": "fourhour"}.get(str(horizon).lower(), "fifteen")
         start_iso = datetime.fromtimestamp(int(candle_open_ts), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         end_iso = datetime.fromtimestamp(int(candle_close_ts), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         twap_url = (
@@ -3142,24 +3214,29 @@ class PolymarketDualFeed1HRecorder:
                             last_ping_ts = now_loop
                             await ws.send("PING")
 
-                        if (now_loop - last_quiet_refresh_ts) >= 1.6:
+                        if (now_loop - last_quiet_refresh_ts) >= (2.2 if self.riskless_bus_only else 1.6):
                             last_quiet_refresh_ts = now_loop
-                            quiet_toks = [
-                                tok_q
-                                for tok_q, role_q in subscribed_tokens.items()
-                                if role_q in ("UP", "DOWN", "UP_15M", "DOWN_15M", "UP_5M", "DOWN_5M", "UP_4H", "DOWN_4H")
-                                and role_q in self.books
-                                and (
-                                    (now_loop - self.books[role_q].last_book_update_ts) >= 1.8
-                                    or (
-                                        self.books[role_q].prev_best_bid[0] > 0.0
-                                        and self.books[role_q].prev_best_ask[0] < 1.0
-                                        and self.books[role_q].prev_best_bid[0] >= self.books[role_q].prev_best_ask[0]
+                            qt_task = getattr(self, "_quiet_refresh_task", None)
+                            if qt_task is None or qt_task.done():
+                                quiet_toks = [
+                                    tok_q
+                                    for tok_q, role_q in subscribed_tokens.items()
+                                    if role_q in ("UP", "DOWN", "UP_15M", "DOWN_15M", "UP_5M", "DOWN_5M", "UP_4H", "DOWN_4H")
+                                    and role_q in self.books
+                                    and (
+                                        (now_loop - self.books[role_q].last_book_update_ts) >= (2.4 if self.riskless_bus_only else 1.8)
+                                        or (
+                                            self.books[role_q].prev_best_bid[0] > 0.0
+                                            and self.books[role_q].prev_best_ask[0] < 1.0
+                                            and self.books[role_q].prev_best_bid[0] >= self.books[role_q].prev_best_ask[0]
+                                        )
                                     )
-                                )
-                            ]
-                            if quiet_toks:
-                                await self._refresh_quiet_books_batch(quiet_toks, subscribed_tokens)
+                                ]
+                                if quiet_toks:
+                                    # Run REST /books off the WS loop so ws.recv() is never stalled by HTTP RTT.
+                                    self._quiet_refresh_task = asyncio.create_task(
+                                        self._refresh_quiet_books_batch(quiet_toks, dict(subscribed_tokens))
+                                    )
 
                         if time.time() - last_ws_msg_ts > 25.0:
                             logger.warning(f"[*] CLOB WS silent for >25s on market {subscribed_market_id}. Reconnecting...")
@@ -3174,38 +3251,56 @@ class PolymarketDualFeed1HRecorder:
                             self._maybe_emit_boundary_lock_trigger()
                             continue
 
-                        if msg_str in ("PONG", "pong", "", b"PONG", b"pong"):
-                            self._maybe_emit_boundary_lock_trigger()
-                            continue
-
-                        data = _orjson.loads(msg_str) if _orjson is not None else json.loads(msg_str)
-                        if isinstance(data, list):
-                            for item in data:
-                                asset_id = str(item.get("asset_id") or "")
-                                pending_sub_toks.pop(asset_id, None)
-                                role = subscribed_tokens.get(asset_id)
-                                if role and role in self.books:
-                                    self.books[role].apply_snapshot(item.get("bids", []), item.get("asks", []))
-                        elif isinstance(data, dict):
-                            event_type = data.get("event_type")
-                            if event_type == "price_change":
-                                pcs_by_role = defaultdict(list)
-                                for pc in data.get("price_changes", []):
-                                    role = subscribed_tokens.get(str(pc.get("asset_id") or ""))
-                                    if role:
-                                        pcs_by_role[role].append(pc)
-                                for role, pcs in pcs_by_role.items():
-                                    if role in self.books:
-                                        self.books[role].apply_price_changes(pcs)
-                            elif event_type == "book":
-                                asset_id = str(data.get("asset_id") or "")
-                                pending_sub_toks.pop(asset_id, None)
-                                role = subscribed_tokens.get(asset_id)
-                                if role and role in self.books:
-                                    self.books[role].apply_snapshot(data.get("bids", []), data.get("asks", []))
+                        frames_c = await _drain_ws_frames(ws, msg_str, max_batch=32)
+                        saw_book_frame = False
+                        for frame_c in frames_c:
+                            if frame_c in ("PONG", "pong", "", b"PONG", b"pong"):
+                                continue
+                            data = _orjson.loads(frame_c) if _orjson is not None else json.loads(frame_c)
+                            if isinstance(data, list):
+                                for item in data:
+                                    asset_id = str(item.get("asset_id") or "")
+                                    pending_sub_toks.pop(asset_id, None)
+                                    role = subscribed_tokens.get(asset_id)
+                                    if role and role in self.books:
+                                        self.books[role].apply_snapshot(item.get("bids", []), item.get("asks", []))
+                                        saw_book_frame = True
+                            elif isinstance(data, dict):
+                                event_type = data.get("event_type")
+                                if event_type == "price_change":
+                                    pcs_by_role = defaultdict(list)
+                                    for pc in data.get("price_changes", []):
+                                        role = subscribed_tokens.get(str(pc.get("asset_id") or ""))
+                                        if role:
+                                            pcs_by_role[role].append(pc)
+                                    for role, pcs in pcs_by_role.items():
+                                        if role in self.books:
+                                            self.books[role].apply_price_changes(pcs)
+                                            saw_book_frame = True
+                                elif event_type == "book":
+                                    asset_id = str(data.get("asset_id") or "")
+                                    pending_sub_toks.pop(asset_id, None)
+                                    role = subscribed_tokens.get(asset_id)
+                                    if role and role in self.books:
+                                        self.books[role].apply_snapshot(data.get("bids", []), data.get("asks", []))
+                                        saw_book_frame = True
+                                elif event_type == "best_bid_ask":
+                                    asset_id = str(data.get("asset_id") or "")
+                                    role = subscribed_tokens.get(asset_id)
+                                    if role and role in self.books:
+                                        bk_bbo = self.books[role]
+                                        if bk_bbo.last_book_update_ts > 0.0 and (bk_bbo.bids or bk_bbo.asks):
+                                            try:
+                                                bb_w = float(data.get("best_bid") or 0.0)
+                                                ba_w = float(data.get("best_ask") or 1.0)
+                                                if abs(bb_w - bk_bbo.prev_best_bid[0]) < 1e-6 and abs(ba_w - bk_bbo.prev_best_ask[0]) < 1e-6:
+                                                    bk_bbo.last_book_update_ts = last_ws_msg_ts
+                                            except (TypeError, ValueError):
+                                                pass
 
                         # HIGH-02: single 25ms-throttled writer (complete schema incl. raw_top_bids/asks).
-                        self._maybe_write_fast_tick()
+                        if saw_book_frame:
+                            self._maybe_write_fast_tick()
                         self._maybe_emit_boundary_lock_trigger()
             except Exception as e:
                 self.clob_ws_connected = False

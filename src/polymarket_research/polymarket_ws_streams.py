@@ -1317,6 +1317,9 @@ class PolymarketClobMarketWsTracker:
         self._tick_sizes: Dict[str, float] = {}
         self._sub_wakeup: Optional[asyncio.Event] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._ws_connected: bool = False
+        self._connected_since_mono: float = 0.0
+        self._last_ws_rx_mono: float = 0.0
 
     _FROZEN_KMIA_IDS = frozenset({"6707503", "6707502"})
 
@@ -1347,6 +1350,8 @@ class PolymarketClobMarketWsTracker:
         clean = set(ordered)
         added = False
         with self._lock:
+            if clean == self._desired_tokens and ordered == self._desired_tokens_ordered:
+                return
             if clean - self._desired_tokens:
                 added = True
             self._desired_tokens_ordered = ordered
@@ -1420,6 +1425,21 @@ class PolymarketClobMarketWsTracker:
         self._books[aid] = (now_m, bk_dict)
         return bk_dict
 
+    def _is_live_quiet_book_fresh_locked(self, tok: str, eff_ts: Optional[float], now_m: float, max_age_sec: float) -> bool:
+        if eff_ts is None:
+            return False
+        age_s = now_m - eff_ts
+        if age_s <= max_age_sec:
+            return True
+        return (
+            self._ws_connected
+            and tok in self._snapshot_tokens
+            and tok in self._desired_tokens
+            and eff_ts >= self._connected_since_mono
+            and (now_m - self._last_ws_rx_mono) <= 15.0
+            and age_s <= max(max_age_sec, 120.0)
+        )
+
     def get_numeric_book(self, token_id: str, max_age_sec: float = 2.0) -> Optional[Dict[str, Any]]:
         tok = str(token_id or "").strip()
         if not tok:
@@ -1427,7 +1447,7 @@ class PolymarketClobMarketWsTracker:
         now_m = time.monotonic()
         with self._lock:
             ts_rx = self._last_rx_by_aid.get(tok)
-            if ts_rx is None or (now_m - ts_rx) > max_age_sec:
+            if not self._is_live_quiet_book_fresh_locked(tok, ts_rx, now_m, max_age_sec):
                 return None
             self._materialize_book_locked(tok, build_dict=False)
             num_e = self._numeric_books.get(tok)
@@ -1444,7 +1464,7 @@ class PolymarketClobMarketWsTracker:
             ts_rx = self._last_rx_by_aid.get(tok)
             entry = self._books.get(tok)
             eff_ts = ts_rx if ts_rx is not None else (entry[0] if entry is not None else None)
-            if eff_ts is None or (now_m - eff_ts) > max_age_sec:
+            if not self._is_live_quiet_book_fresh_locked(tok, eff_ts, now_m, max_age_sec):
                 return None
             if tok in self._dirty_tokens or entry is None:
                 return self._materialize_book_locked(tok, build_dict=True)
@@ -1485,6 +1505,8 @@ class PolymarketClobMarketWsTracker:
         tick_changes: List[Tuple[str, float]] = []
         matched_any = False
         with self._lock:
+            if self._ws_connected:
+                self._last_ws_rx_mono = now_m
             for item in items:
                 if not isinstance(item, dict):
                     continue
@@ -1511,7 +1533,8 @@ class PolymarketClobMarketWsTracker:
                     aid_b = str(item.get("asset_id") or "").strip()
                     if aid_b and aid_b in self._desired_tokens:
                         bb_f = _safe_float(item.get("best_bid"), 0.0)
-                        self._last_rx_by_aid[aid_b] = now_m
+                        if aid_b in self._raw_levels or aid_b in self._books:
+                            self._last_rx_by_aid[aid_b] = now_m
                         matched_any = True
                         if bb_f >= self._recycle_bid_trigger:
                             urgent_hits.append((aid_b, bb_f))
@@ -1671,17 +1694,22 @@ class PolymarketClobMarketWsTracker:
                     _enable_ws_nodelay(ws)
                     subscribed = set(desired_0)
                     # Drop pre-reconnect books: deltas missed during the gap would leave phantom levels.
+                    conn_m = time.monotonic()
                     with self._lock:
                         self._books.clear()
                         self._raw_levels.clear()
                         self._numeric_books.clear()
                         self._dirty_tokens.clear()
                         self._last_rx_by_aid.clear()
+                        self._snapshot_tokens.clear()
+                        self._connected_since_mono = conn_m
+                        self._last_ws_rx_mono = conn_m
+                        self._ws_connected = True
                     await ws.send(json.dumps({"assets_ids": desired_0, "type": "market", "custom_feature_enabled": True}))
                     backoff = 0.5
-                    last_chk = time.monotonic()
-                    last_rx = last_chk
-                    last_ping = last_chk
+                    last_chk = conn_m
+                    last_rx = conn_m
+                    last_ping = conn_m
                     recv_t: Optional[asyncio.Future[Any]] = None
                     try:
                         while not (stop_check and stop_check()):
@@ -1699,13 +1727,18 @@ class PolymarketClobMarketWsTracker:
                                     cur = set(cur_ord)
                                 if not cur:
                                     break
+                                removed = sorted(subscribed - cur)
+                                if removed:
+                                    for i_rm in range(0, len(removed), 100):
+                                        await ws.send(json.dumps({"assets_ids": removed[i_rm : i_rm + 100], "operation": "unsubscribe"}))
+                                    subscribed.difference_update(removed)
                                 missing_sub = [t for t in cur_ord if t not in subscribed]
                                 room_sub = max(0, 495 - len(subscribed))
                                 added = missing_sub[:room_sub]
                                 if added:
                                     await ws.send(json.dumps({"assets_ids": added, "operation": "subscribe", "custom_feature_enabled": True}))
                                     subscribed.update(added)
-                                elif len(subscribed - cur) > 16 or bool(missing_sub):
+                                elif bool(missing_sub):
                                     break
                             if (now_m - last_rx) > 30.0:
                                 break
@@ -1721,10 +1754,12 @@ class PolymarketClobMarketWsTracker:
                                 msg = recv_t.result()
                                 recv_t = None
                                 last_rx = time.monotonic()
+                                self._last_ws_rx_mono = last_rx
                                 self.process_ws_payload(msg)
                             else:
                                 continue
                     finally:
+                        self._ws_connected = False
                         if recv_t is not None:
                             if not recv_t.done():
                                 recv_t.cancel()
@@ -1819,19 +1854,25 @@ class PolymarketShardedClobMarketWsTracker:
                 if len(ordered) >= self.max_tokens:
                     break
         with self._lock:
+            if ordered == self._desired_tokens_ordered:
+                return
             buckets = self._rebalance_shards_locked(ordered)
         for idx, sh in enumerate(self._shards):
-            sh.set_desired_tokens(buckets[idx])
+            if buckets[idx] != sh._desired_tokens_ordered:
+                sh.set_desired_tokens(buckets[idx])
 
     def subscribe_tokens_immediate(self, tokens: Iterable[str]) -> None:
         urgent = [str(t).strip() for t in tokens if t and len(str(t).strip()) >= 15 and str(t).strip().isdigit()]
         if not urgent:
             return
         with self._lock:
+            if all(t in self._desired_tokens for t in urgent):
+                return
             merged = list(dict.fromkeys(urgent + list(self._desired_tokens_ordered)))[: self.max_tokens]
             buckets = self._rebalance_shards_locked(merged)
         for idx, sh in enumerate(self._shards):
-            sh.set_desired_tokens(buckets[idx])
+            if buckets[idx] != sh._desired_tokens_ordered:
+                sh.set_desired_tokens(buckets[idx])
 
     def get_book(self, token_id: str, max_age_sec: float = 2.0) -> Optional[Dict[str, Any]]:
         tok = str(token_id or "").strip()

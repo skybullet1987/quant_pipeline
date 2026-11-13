@@ -1999,6 +1999,575 @@ class TestFullThrottlePipelineAndDashboard(unittest.TestCase):
             self.assertLessEqual(sll_mkr["shares"] * sll_mkr["box_cost_net"], 48.695132 * 0.15 + 1e-4)
             self.assertNotEqual(sll_mkr["leg_a_market_id"], "6707503")
 
+    def test_13_dormant_store_prioritizes_near_arb_over_zero_shallow_depth(self) -> None:
+        from src.polymarket_research.full_throttle_pipeline import DormantOpportunityEntry, DormantOpportunityStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "dormant.json"
+            store = DormantOpportunityStore(p, max_entries=50)
+            for idx in range(52):
+                store.entries[f"SHALLOW_{idx:02d}"] = DormantOpportunityEntry(
+                    candidate_id=f"SHALLOW_{idx:02d}",
+                    family_code="M",
+                    sub_type="NR2_CONVERT",
+                    title_summary=f"Shallow {idx}",
+                    market_ids=(f"m_sh_{idx}",),
+                    event_ids=(f"ev_sh_{idx}",),
+                    instrument_ids=(f"tok_sh_{idx}_a", f"tok_sh_{idx}_b"),
+                    dormant_reason="ZERO_OR_SHALLOW_L2_DEPTH",
+                    gap_to_breakeven_bps=0.0,
+                    best_gap_to_breakeven_bps=0.0,
+                    book_top_signature={},
+                    structure_dict=None,
+                    first_stored_ts=100.0,
+                    last_checked_ts=100.0,
+                    status="DORMANT",
+                )
+            store.entries["LIQ_12BPS"] = DormantOpportunityEntry(
+                candidate_id="LIQ_12BPS",
+                family_code="A",
+                sub_type="COMPLETE_SET",
+                title_summary="Liquid 12bps",
+                market_ids=("m_liq12",),
+                event_ids=("ev_liq12",),
+                instrument_ids=("tok_liq12_y", "tok_liq12_n"),
+                dormant_reason="NEAR_ARB_WITHIN_THRESHOLD",
+                gap_to_breakeven_bps=12.0,
+                best_gap_to_breakeven_bps=12.0,
+                book_top_signature={},
+                structure_dict=None,
+                first_stored_ts=100.0,
+                last_checked_ts=100.0,
+                status="DORMANT",
+            )
+            store.entries["LIQ_25BPS"] = DormantOpportunityEntry(
+                candidate_id="LIQ_25BPS",
+                family_code="D",
+                sub_type="CROSS_LADDER",
+                title_summary="Liquid 25bps",
+                market_ids=("m_liq25",),
+                event_ids=("ev_liq25",),
+                instrument_ids=("tok_liq25_y", "tok_liq25_n"),
+                dormant_reason="NEAR_ARB_WITHIN_THRESHOLD",
+                gap_to_breakeven_bps=25.0,
+                best_gap_to_breakeven_bps=25.0,
+                book_top_signature={},
+                structure_dict=None,
+                first_stored_ts=100.0,
+                last_checked_ts=100.0,
+                status="DORMANT",
+            )
+
+            watch_50 = store.get_watch_instrument_ids(max_tokens=10, max_gap_bps=50.0)
+            self.assertEqual(watch_50[:4], ["tok_liq12_y", "tok_liq12_n", "tok_liq25_y", "tok_liq25_n"])
+            fast_rescan_p = Path(tmp) / "dormant_fast_rescan_tokens.json"
+            fast_toks = store.export_fast_rescan_tokens(out_path=fast_rescan_p, max_tokens=10)
+            self.assertEqual(fast_toks[:4], ["tok_liq12_y", "tok_liq12_n", "tok_liq25_y", "tok_liq25_n"])
+            self.assertTrue(fast_rescan_p.exists())
+
+            store.save()
+            reloaded = DormantOpportunityStore(p, max_entries=50)
+            reloaded.load()
+            self.assertIn("LIQ_12BPS", reloaded.entries)
+            self.assertIn("LIQ_25BPS", reloaded.entries)
+            self.assertEqual(len(reloaded.entries), 50)
+            self.assertNotIn("SHALLOW_51", reloaded.entries)
+
+    def test_14_gamma_keyset_long_oracle_desc_clean_k_quota_and_newest_proposed_supplement(self) -> None:
+        from unittest.mock import MagicMock, patch
+        from src.polymarket_research.full_throttle_pipeline import PublicPolymarketScannerClient
+        from src.polymarket_research.uma_nba_endgame_engine import is_objective_uma_market
+
+        adapter_hex = "0x65070be91477460d8a7aeeb94ef92fe056c2f2a7"
+        qid_hex = "0x" + ("ab" * 32)
+        long_prefix = "This market resolves strictly according to standard schedule tracking procedures. " * 7
+        assert len(long_prefix) > 500
+        long_desc = (
+            long_prefix
+            + "Resolution source: official spot closing price on binance.com/en/trade/SOL_USDT "
+            + "will resolve to Yes if closing price >= $150.00."
+        )
+
+        keyset_events = []
+        # 65 stale/subjective proposed events on Page 1 that previously filled K<60 quota alone
+        for i in range(65):
+            keyset_events.append(
+                {
+                    "id": f"ev_subj_{i}",
+                    "slug": f"subjective-prop-{i}",
+                    "title": f"Will celebrity {i} announce a cool surprise this year?",
+                    "active": True,
+                    "closed": False,
+                    "archived": False,
+                    "markets": [
+                        {
+                            "id": f"m_subj_{i}",
+                            "question": f"Will celebrity {i} announce a cool surprise in public remarks?",
+                            "resolvedBy": adapter_hex,
+                            "questionID": qid_hex,
+                            "clobTokenIds": json.dumps([f"tok_sj_{i}_y", f"tok_sj_{i}_n"]),
+                            "outcomes": '["Yes","No"]',
+                            "active": True,
+                            "closed": False,
+                            "archived": False,
+                            "enableOrderBook": True,
+                            "umaResolutionStatus": "proposed",
+                            "customLiveness": 7200,
+                            "liquidityClob": 100.0,
+                        }
+                    ],
+                }
+            )
+
+        keyset_events.append(
+            {
+                "id": "ev_long_oracle_k",
+                "slug": "nvda-close-above-150",
+                "title": "NVDA closing price >= $150 on Nov 13?",
+                "active": True,
+                "closed": False,
+                "archived": False,
+                "markets": [
+                    {
+                        "id": "7100001",
+                        "question": "Will NVDA close at or above $150.00 on Nov 13?",
+                        "description": long_desc,
+                        "resolutionSource": "https://finance.yahoo.com/quote/NVDA",
+                        "resolvedBy": adapter_hex,
+                        "questionID": qid_hex,
+                        "clobTokenIds": json.dumps(["tok_long_k_y", "tok_long_k_n"]),
+                        "outcomes": '["Yes","No"]',
+                        "active": True,
+                        "closed": False,
+                        "archived": False,
+                        "enableOrderBook": True,
+                        "feesEnabled": True,
+                        "umaResolutionStatus": "proposed",
+                        "customLiveness": 7200,
+                        "liquidityClob": 500.0,
+                    }
+                ],
+            }
+        )
+
+        supp_proposed_mkts = [
+            {
+                "id": "7100099",
+                "question": "Will Bitcoin price on Binance BTCUSDT close above $90,000 today?",
+                "description": "Resolves via https://www.binance.com/en/trade/BTC_USDT spot 1m close price on Coingecko.",
+                "resolutionSource": "https://www.binance.com/en/trade/BTC_USDT",
+                "resolvedBy": adapter_hex,
+                "questionID": qid_hex,
+                "clobTokenIds": json.dumps(["tok_supp_btc_y", "tok_supp_btc_n"]),
+                "outcomes": '["Yes","No"]',
+                "active": True,
+                "closed": False,
+                "archived": False,
+                "acceptingOrders": True,
+                "enableOrderBook": True,
+                "feesEnabled": True,
+                "umaResolutionStatus": "proposed",
+                "customLiveness": 600,
+                "liquidityClob": 800.0,
+                "events": [{"id": "ev_supp_new", "slug": "btc-90k-today", "title": "BTC above 90k today?"}],
+            },
+            # D-001 KMIA disputed/frozen guard must never enter supplemental batch
+            {
+                "id": "6707503",
+                "question": "Highest temperature in Miami (KMIA) Nov 7?",
+                "resolvedBy": adapter_hex,
+                "questionID": qid_hex,
+                "clobTokenIds": json.dumps(["tok_kmia_x", "tok_kmia_n"]),
+                "outcomes": '["Yes","No"]',
+                "umaResolutionStatus": "proposed",
+                "events": [{"id": "ev_kmia_supp", "title": "Highest temperature in Miami (KMIA)"}],
+            },
+        ]
+        supp_vol_events = [
+            {
+                "id": "ev_top_vol",
+                "slug": "eth-price-above-3500",
+                "title": "Ethereum price above $3500?",
+                "active": True,
+                "closed": False,
+                "archived": False,
+                "markets": [
+                    {
+                        "id": "7100200",
+                        "question": "Will Ethereum close above $3500?",
+                        "clobTokenIds": json.dumps(["tok_vol_y", "tok_vol_n"]),
+                        "outcomes": '["Yes","No"]',
+                        "active": True,
+                        "closed": False,
+                        "archived": False,
+                        "feesEnabled": False,
+                        "enableOrderBook": True,
+                        "liquidityClob": 25000.0,
+                        "volume24hr": 100000.0,
+                    }
+                ],
+            }
+        ]
+
+        client = PublicPolymarketScannerClient()
+        fake_resp = MagicMock()
+        fake_resp.status = 200
+        with (
+            patch("http.client.HTTPSConnection") as mock_conn_cls,
+            patch.object(
+                client,
+                "_read_gzip_json",
+                side_effect=[
+                    {"events": keyset_events, "next_cursor": None},
+                    supp_proposed_mkts,
+                    supp_vol_events,
+                ],
+            ),
+        ):
+            mock_conn_cls.return_value.getresponse.return_value = fake_resp
+            retained, _meta = client.sweep_gamma_events_keyset(
+                page_limit=100,
+                max_pages=2,
+                compact_fields=True,
+                max_retained_active_markets=500,
+            )
+
+        by_id = {e["id"]: e for e in retained}
+        self.assertIn("ev_long_oracle_k", by_id)
+        self.assertIn("ev_supp_new", by_id)
+        self.assertIn("ev_top_vol", by_id)
+        self.assertNotIn("ev_kmia_supp", by_id)
+        ret_mkt = by_id["ev_long_oracle_k"]["markets"][0]
+        self.assertGreater(len(ret_mkt["description"]), 500)
+        ok_obj, _rsn = is_objective_uma_market({**ret_mkt, "acceptingOrders": True})
+        self.assertTrue(ok_obj, msg=f"Long oracle clause must stay intact, got {_rsn}")
+
+    def test_15_balanced_book_poll_budget_never_starves_uma_dormant_or_zerofee_tiers(self) -> None:
+        from src.polymarket_research.full_throttle_pipeline import (
+            DormantOpportunityEntry,
+            ExecutionMode,
+            ExecutionModeGateConfig,
+            FullThrottlePipeline,
+            OperatingCycleType,
+            PipelineConfig,
+        )
+
+        adapter_hex = "0x65070be91477460d8a7aeeb94ef92fe056c2f2a7"
+        qid_hex = "0x" + ("ab" * 32)
+        now_v = 1794590000.0
+        events = []
+        # Create >400 duplicate-stem events so `zipped_tier1` alone exceeds `hot_cap=180`!
+        for i in range(180):
+            events.append(
+                {
+                    "id": f"ev_t1_a_{i}",
+                    "slug": f"will-candidate-{i}-win-election-2026-a",
+                    "title": f"Will candidate {i} win election in 2026?",
+                    "active": True,
+                    "closed": False,
+                    "markets": [
+                        {
+                            "id": f"m_t1_a_{i}",
+                            "question": f"Will candidate {i} win election in 2026?",
+                            "clobTokenIds": json.dumps([f"tok_t1_a_{i}_y", f"tok_t1_a_{i}_n"]),
+                            "active": True,
+                            "closed": False,
+                            "enableOrderBook": True,
+                            "feesEnabled": True,
+                            "liquidityClob": 100.0,
+                        }
+                    ],
+                }
+            )
+            events.append(
+                {
+                    "id": f"ev_t1_b_{i}",
+                    "slug": f"will-candidate-{i}-win-election-2026-b",
+                    "title": f"Will candidate {i} win election in 2026?",
+                    "active": True,
+                    "closed": False,
+                    "markets": [
+                        {
+                            "id": f"m_t1_b_{i}",
+                            "question": f"Will candidate {i} win election in 2026?",
+                            "clobTokenIds": json.dumps([f"tok_t1_b_{i}_y", f"tok_t1_b_{i}_n"]),
+                            "active": True,
+                            "closed": False,
+                            "enableOrderBook": True,
+                            "feesEnabled": True,
+                            "liquidityClob": 100.0,
+                        }
+                    ],
+                }
+            )
+
+        # Fee-bearing `<=2h` objective UMA proposed market
+        events.append(
+            {
+                "id": "ev_uma_fee_fast",
+                "slug": "btc-up-close-bin",
+                "title": "Bitcoin spot above $90,000?",
+                "active": True,
+                "closed": False,
+                "markets": [
+                    {
+                        "id": "m_uma_fee_fast",
+                        "question": "Will Bitcoin spot close above $90,000?",
+                        "resolutionSource": "https://www.binance.com/en/trade/BTC_USDT",
+                        "description": "Resolves via Binance BTCUSDT spot close price.",
+                        "resolvedBy": adapter_hex,
+                        "questionID": qid_hex,
+                        "clobTokenIds": json.dumps(["tok_uma_fee_y", "tok_uma_fee_n"]),
+                        "outcomes": '["Yes","No"]',
+                        "active": True,
+                        "closed": False,
+                        "enableOrderBook": True,
+                        "feesEnabled": True,
+                        "umaResolutionStatus": "proposed",
+                        "customLiveness": 600,
+                        "liquidityClob": 400.0,
+                    }
+                ],
+            }
+        )
+        # Zero-fee tight market
+        events.append(
+            {
+                "id": "ev_zf_tight",
+                "slug": "macro-rate-cut",
+                "title": "Fed cuts rates by 25bps?",
+                "active": True,
+                "closed": False,
+                "markets": [
+                    {
+                        "id": "m_zf_tight",
+                        "question": "Will the Fed cut rates by 25bps?",
+                        "clobTokenIds": json.dumps(["tok_zf_t_y", "tok_zf_t_n"]),
+                        "outcomePrices": '["0.495","0.501"]',
+                        "bestBid": 0.495,
+                        "bestAsk": 0.500,
+                        "active": True,
+                        "closed": False,
+                        "enableOrderBook": True,
+                        "feesEnabled": False,
+                        "liquidityClob": 50000.0,
+                    }
+                ],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = PipelineConfig(
+                output_dir=Path(tmp) / "p",
+                mode_gate=ExecutionModeGateConfig(mode=ExecutionMode.MODE_2_SHADOW, jurisdiction_code="CA-ON"),
+                max_book_tokens_discovery=200,
+                cold_layer_rotation_tokens=20,
+            )
+            pipe = FullThrottlePipeline(config=cfg)
+            pipe.dormant_store.entries["DORM_5BPS"] = DormantOpportunityEntry(
+                candidate_id="DORM_5BPS",
+                family_code="A",
+                sub_type="COMPLETE_SET",
+                title_summary="Dormant 5bps",
+                market_ids=("m_dorm_liq",),
+                event_ids=("ev_dorm",),
+                instrument_ids=("tok_dorm_liq_y", "tok_dorm_liq_n"),
+                dormant_reason="NEAR_ARB_WITHIN_THRESHOLD",
+                gap_to_breakeven_bps=5.0,
+                best_gap_to_breakeven_bps=5.0,
+                book_top_signature={},
+                structure_dict=None,
+                first_stored_ts=now_v,
+                last_checked_ts=now_v,
+                status="DORMANT",
+            )
+            selected, plan = pipe.select_tokens_for_cycle(
+                events, cycle_type=OperatingCycleType.DISCOVERY_CYCLE, now_ts=now_v
+            )
+            self.assertLessEqual(len(selected), 200)
+            self.assertGreater(plan["graph_and_structural_tokens"], 200)
+            for req in ("tok_uma_fee_y", "tok_uma_fee_n", "tok_dorm_liq_y", "tok_dorm_liq_n", "tok_zf_t_y", "tok_zf_t_n"):
+                self.assertIn(req, selected)
+
+    def test_16_bond1_maker_bridge_empty_asks_deep_l1_step_ahead_high_ceil_and_d007_event_cap(self) -> None:
+        from src.polymarket_research.full_throttle_pipeline import HarvesterCandidateBridge, InstrumentOrderBook
+
+        adapter_hex = "0x65070be91477460d8a7aeeb94ef92fe056c2f2a7"
+        qid_hex = "0x" + ("cd" * 32)
+        now_v = 1794590000.0
+        # Test: (1) empty asks on feesEnabled=True proposed market; (2) >$350 L1 wall jumped FIFO #1 (+0.001);
+        # (3) 0.996->0.997 on fast 600s market with max_box_cost_net=0.998; (4) joining >$350 wall at 0.997 blocked;
+        # (5) two markets under one event_id emit max 1 lock per cycle (`D-007`).
+        events = [
+            {
+                "id": "ev_empty_ask",
+                "slug": "eth-binance-close",
+                "title": "ETH close above $3000 on Binance?",
+                "markets": [
+                    {
+                        "id": "7200001",
+                        "question": "Will Ethereum close above $3,000 on Binance?",
+                        "description": "Resolves via https://www.binance.com/en/trade/ETH_USDT spot feed.",
+                        "resolutionSource": "https://www.binance.com/en/trade/ETH_USDT",
+                        "resolvedBy": adapter_hex,
+                        "questionID": qid_hex,
+                        "clobTokenIds": json.dumps(["t_emp_y", "t_emp_n"]),
+                        "outcomes": '["Yes","No"]',
+                        "active": True,
+                        "closed": False,
+                        "enableOrderBook": True,
+                        "feesEnabled": True,
+                        "umaResolutionStatus": "proposed",
+                        "customLiveness": 7200,
+                        "orderPriceMinTickSize": 0.001,
+                    }
+                ],
+            },
+            {
+                "id": "ev_same_d007",
+                "slug": "same-match-exact-scores",
+                "title": "Real Madrid vs Barcelona Exact Score",
+                "markets": [
+                    {
+                        "id": "7200002",
+                        "question": "Exact Score: Real Madrid 2 - 1 Barcelona?",
+                        "description": "Official UEFA match scorebox on uefa.com.",
+                        "resolutionSource": "https://www.uefa.com",
+                        "resolvedBy": adapter_hex,
+                        "questionID": qid_hex,
+                        "sportsMarketType": "correct_score",
+                        "clobTokenIds": json.dumps(["t_dw1_y", "t_dw1_n"]),
+                        "outcomes": '["Yes","No"]',
+                        "active": True,
+                        "closed": False,
+                        "enableOrderBook": True,
+                        "feesEnabled": True,
+                        "umaResolutionStatus": "proposed",
+                        "customLiveness": 7200,
+                        "orderPriceMinTickSize": 0.001,
+                    },
+                    {
+                        "id": "7200003",
+                        "question": "Exact Score: Real Madrid 3 - 0 Barcelona?",
+                        "description": "Official UEFA match scorebox on uefa.com.",
+                        "resolutionSource": "https://www.uefa.com",
+                        "resolvedBy": adapter_hex,
+                        "questionID": qid_hex,
+                        "sportsMarketType": "correct_score",
+                        "clobTokenIds": json.dumps(["t_dw2_y", "t_dw2_n"]),
+                        "outcomes": '["Yes","No"]',
+                        "active": True,
+                        "closed": False,
+                        "enableOrderBook": True,
+                        "feesEnabled": True,
+                        "umaResolutionStatus": "proposed",
+                        "customLiveness": 7200,
+                        "orderPriceMinTickSize": 0.001,
+                    },
+                ],
+            },
+            {
+                "id": "ev_fast_600",
+                "slug": "sol-10m-ladder",
+                "title": "SOL price at expiry on Pyth",
+                "markets": [
+                    {
+                        "id": "7200004",
+                        "question": "Will Solana exceed $180 on Pyth at expiry?",
+                        "description": "Resolves via official pyth.network price feed.",
+                        "resolutionSource": "https://pyth.network",
+                        "resolvedBy": adapter_hex,
+                        "questionID": qid_hex,
+                        "clobTokenIds": json.dumps(["t_fst_y", "t_fst_n"]),
+                        "outcomes": '["Yes","No"]',
+                        "active": True,
+                        "closed": False,
+                        "enableOrderBook": True,
+                        "feesEnabled": True,
+                        "umaResolutionStatus": "proposed",
+                        "customLiveness": 600,
+                        "orderPriceMinTickSize": 0.001,
+                    }
+                ],
+            },
+            {
+                "id": "ev_deep_join_blocked",
+                "slug": "avax-chainlink-close",
+                "title": "AVAX close above $30 on Chainlink",
+                "markets": [
+                    {
+                        "id": "7200005",
+                        "question": "Will AVAX close above $30 on Chainlink?",
+                        "description": "Resolves via chain.link oracle closing price.",
+                        "resolutionSource": "https://chain.link",
+                        "resolvedBy": adapter_hex,
+                        "questionID": qid_hex,
+                        "clobTokenIds": json.dumps(["t_blk_y", "t_blk_n"]),
+                        "outcomes": '["Yes","No"]',
+                        "active": True,
+                        "closed": False,
+                        "enableOrderBook": True,
+                        "feesEnabled": False,
+                        "umaResolutionStatus": "proposed",
+                        "customLiveness": 7200,
+                        "orderPriceMinTickSize": 0.001,
+                    }
+                ],
+            },
+        ]
+        raw_books = {
+            "t_emp_y": _make_book("t_emp_y", "7200001", [], [(0.992, 60.0)], tick_size="0.001"),
+            "t_emp_n": _make_book("t_emp_n", "7200001", [], [(0.004, 100.0)], tick_size="0.001"),
+            "t_dw1_y": _make_book("t_dw1_y", "7200002", [], [(0.991, 3000.0)], tick_size="0.001"),
+            "t_dw1_n": _make_book("t_dw1_n", "7200002", [], [(0.005, 100.0)], tick_size="0.001"),
+            "t_dw2_y": _make_book("t_dw2_y", "7200003", [], [(0.993, 3000.0)], tick_size="0.001"),
+            "t_dw2_n": _make_book("t_dw2_n", "7200003", [], [(0.004, 100.0)], tick_size="0.001"),
+            "t_fst_y": _make_book("t_fst_y", "7200004", [], [(0.996, 120.0)], tick_size="0.001"),
+            "t_fst_n": _make_book("t_fst_n", "7200004", [], [(0.002, 100.0)], tick_size="0.001"),
+            "t_blk_y": _make_book("t_blk_y", "7200005", [], [(0.997, 500.0)], tick_size="0.001"),
+            "t_blk_n": _make_book("t_blk_n", "7200005", [], [(0.002, 100.0)], tick_size="0.001"),
+        }
+        books = {
+            tid: InstrumentOrderBook.from_raw(tid, b, market_id=b["market"], tick_size=0.001, book_timestamp_sec=now_v)
+            for tid, b in raw_books.items()
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cand_jsonl = Path(tmp) / "d1.jsonl"
+            dedupe_p = Path(tmp) / "dedupe.json"
+            bridge = HarvesterCandidateBridge(
+                candidates_jsonl_path=cand_jsonl,
+                dedupe_state_path=dedupe_p,
+                min_velocity_bps_per_hr=7.5,
+            )
+
+            def _jit(tids):
+                return ({k: raw_books[k] for k in tids if k in raw_books}, {"fetch_timestamp_sec": now_v + 0.1})
+
+            res = bridge.emit_verified_candidates(
+                [],
+                books,
+                events=events,
+                jit_book_fetcher=_jit,
+                enable_passive_maker_bridge=True,
+                max_maker_locks_per_cycle=5,
+                fallback_reconciled_nav_usd=48.70,
+                now_ts=now_v,
+            )
+            self.assertEqual(res["maker_locks_emitted_this_cycle"], 3)
+            self.assertEqual(res["skipped_by_reason"].get("MAKER_EVENT_CONCENTRATION_CAP_D007"), 1)
+
+            emitted = {r["leg_a_market_id"]: r for r in (json.loads(ln) for ln in cand_jsonl.read_text(encoding="utf-8").splitlines())}
+            self.assertEqual(set(emitted.keys()), {"7200001", "7200002", "7200004"})
+            self.assertAlmostEqual(emitted["7200001"]["leg_a_limit_price"], 0.993, places=4)
+            self.assertAlmostEqual(emitted["7200002"]["leg_a_limit_price"], 0.992, places=4)
+            self.assertEqual(emitted["7200002"]["queue_ahead_usd"], 0.0)
+            self.assertTrue(emitted["7200002"]["queue_front"])
+            self.assertAlmostEqual(emitted["7200004"]["leg_a_limit_price"], 0.997, places=4)
+            self.assertAlmostEqual(emitted["7200004"]["max_box_cost_net"], 0.998, places=4)
+            self.assertAlmostEqual(emitted["7200004"]["min_maker_edge"], 0.002, places=4)
+            self.assertNotIn("7200005", emitted)
+
 
 if __name__ == "__main__":
     unittest.main()

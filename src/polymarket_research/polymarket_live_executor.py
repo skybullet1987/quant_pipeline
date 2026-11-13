@@ -3286,6 +3286,63 @@ class PolymarketLiveExecutor:
         )
         return float(tk_f), bool(nr_f)
 
+    def peek_cached_fee_params(
+        self, condition_id: str = "", token_id: Optional[str] = None
+    ) -> Optional[Tuple[float, float]]:
+        """O(1) non-blocking lookup of cached `(fee_rate, fee_exponent)` without network I/O."""
+        cache = getattr(self, "_fee_cache", None)
+        if not isinstance(cache, dict):
+            return None
+        tid_s = str(token_id or "").strip()
+        if tid_s and tid_s in cache:
+            return cache[tid_s]
+        cid_s = str(condition_id or "").strip()
+        if cid_s:
+            hit = cache.get(cid_s) or cache.get(cid_s.lower())
+            if hit is not None:
+                return hit
+        return None
+
+    async def resolve_token_fee_rate_async(
+        self, token_id: str, condition_id: str = ""
+    ) -> Optional[Tuple[float, float]]:
+        """Asynchronously resolves and caches `(fee_rate, fee_exponent)` via `/fee-rate` HTTP/2 pool."""
+        cached = self.peek_cached_fee_params(condition_id, token_id)
+        if cached is not None:
+            return cached
+        tid_s = str(token_id or "").strip()
+        cid_s = str(condition_id or "").strip()
+        if not tid_s or self.dry_run or self.client is None or getattr(self.client, "_mock_children", None) is not None:
+            return None
+        if "get_market_fee_params" not in getattr(self, "__dict__", {}):
+            try:
+                cli = self.get_async_client()
+                host = str(getattr(self.client, "host", None) or self.CLOB_HOST).rstrip("/")
+                resp = await cli.get(f"{host}/fee-rate?token_id={tid_s}")
+                if resp.status_code == 200:
+                    data = (
+                        _orjson.loads(resp.content)
+                        if (_orjson is not None and isinstance(getattr(resp, "content", None), (bytes, bytearray)))
+                        else resp.json()
+                    )
+                    if isinstance(data, dict) and data.get("base_fee") is not None:
+                        raw_bps = float(data["base_fee"])
+                        fr = (raw_bps / 10000.0) if raw_bps >= 1.0 or raw_bps == 0.0 else raw_bps
+                        fe = float(data.get("fee_exponent", 1.0) or 1.0)
+                        pair = (float(fr), float(fe))
+                        self._fee_cache[tid_s] = pair
+                        if cid_s:
+                            self._fee_cache[cid_s] = pair
+                        return pair
+            except Exception:
+                pass
+        if cid_s:
+            try:
+                return await asyncio.to_thread(self.get_market_fee_params, cid_s, tid_s)
+            except Exception:
+                return None
+        return None
+
     async def get_transaction_receipt_status_async(self, tx_hash: str) -> Optional[bool]:
         """
         P0/P1: Asynchronously verifies Polygon on-chain transaction receipt.

@@ -1197,7 +1197,12 @@ class DormantOpportunityStore:
     def save(self) -> None:
         sorted_entries = sorted(
             self.entries.values(),
-            key=lambda e: (0 if e.status == "DORMANT" else 1, e.gap_to_breakeven_bps, e.candidate_id),
+            key=lambda e: (
+                0 if e.status == "DORMANT" else 1,
+                1 if str(getattr(e, "dormant_reason", "") or "") == "ZERO_OR_SHALLOW_L2_DEPTH" else 0,
+                e.gap_to_breakeven_bps,
+                e.candidate_id,
+            ),
         )[: self.max_entries]
         if len(self.entries) > self.max_entries:
             self.entries = {e.candidate_id: e for e in sorted_entries}
@@ -1226,7 +1231,14 @@ class DormantOpportunityStore:
         target_path = Path(out_path) if out_path is not None else Path("data/polymarket/dormant_fast_rescan_tokens.json")
         out_tokens: List[str] = []
         seen: Set[str] = set()
-        for ent in sorted(self.entries.values(), key=lambda e: (e.gap_to_breakeven_bps, e.candidate_id)):
+        for ent in sorted(
+            self.entries.values(),
+            key=lambda e: (
+                1 if str(getattr(e, "dormant_reason", "") or "") == "ZERO_OR_SHALLOW_L2_DEPTH" else 0,
+                e.gap_to_breakeven_bps,
+                e.candidate_id,
+            ),
+        ):
             if ent.status != "DORMANT":
                 continue
             if float(ent.gap_to_breakeven_bps) > float(max_gap_bps) + 1e-9:
@@ -1264,7 +1276,14 @@ class DormantOpportunityStore:
     ) -> List[str]:
         out: List[str] = []
         seen: Set[str] = set()
-        for ent in sorted(self.entries.values(), key=lambda e: e.gap_to_breakeven_bps):
+        for ent in sorted(
+            self.entries.values(),
+            key=lambda e: (
+                1 if str(getattr(e, "dormant_reason", "") or "") == "ZERO_OR_SHALLOW_L2_DEPTH" else 0,
+                e.gap_to_breakeven_bps,
+                str(getattr(e, "candidate_id", "") or ""),
+            ),
+        ):
             if ent.status != "DORMANT":
                 continue
             if max_gap_bps is not None and float(ent.gap_to_breakeven_bps) > float(max_gap_bps) + 1e-9:
@@ -1397,7 +1416,12 @@ class DormantOpportunityStore:
         if len(self.entries) > self.max_entries:
             keep = sorted(
                 self.entries.values(),
-                key=lambda e: (0 if e.status == "DORMANT" else 1, e.gap_to_breakeven_bps, e.candidate_id),
+                key=lambda e: (
+                    0 if e.status == "DORMANT" else 1,
+                    1 if str(getattr(e, "dormant_reason", "") or "") == "ZERO_OR_SHALLOW_L2_DEPTH" else 0,
+                    e.gap_to_breakeven_bps,
+                    e.candidate_id,
+                ),
             )[: self.max_entries]
             self.entries = {e.candidate_id: e for e in keep}
 
@@ -2549,6 +2573,41 @@ class HarvesterCandidateBridge:
         scale = (self.min_velocity_bps_per_hr / 7.5) if self.min_velocity_bps_per_hr > 0.0 else 0.0
         return (round(lam * scale, 6), round(u_resolved, 4))
 
+    @staticmethod
+    def _evaluate_bond1_maker_quote(
+        win_bk: InstrumentOrderBook,
+        opp_bk: InstrumentOrderBook,
+        tick_size: float,
+        *,
+        max_bid_cap: float = 0.997,
+        min_bid_floor: float = 0.945,
+        max_opp_bid: float = 0.008,
+        max_join_l1_usd: float = 350.0,
+    ) -> Tuple[Optional[float], str]:
+        """Evaluates `BOND1` passive FIFO #1 quote eligibility (`asks=[]` resolves to `ba=1.000`)."""
+        if not win_bk.bids:
+            return None, "JIT_BOOK_REVERIFY_MISSING_DEPTH"
+        bb_v = float(win_bk.bids[0].price)
+        l1_usd = bb_v * float(win_bk.bids[0].size)
+        ob_v = float(opp_bk.bids[0].price) if opp_bk.bids else 0.0
+        ba_v = float(win_bk.asks[0].price) if win_bk.asks else 1.0
+        if not (min_bid_floor <= bb_v <= max_bid_cap) or ob_v > max_opp_bid or l1_usd < 5.0:
+            return None, "JIT_BOOK_REVERIFY_EDGE_DECAYED"
+        if ba_v < 1.0 and ob_v > 0.0 and (ba_v + ob_v) > 1.015:
+            return None, "JIT_BOOK_REVERIFY_EDGE_DECAYED"
+        tk = float(tick_size)
+        step_px = round(bb_v + tk, 4) if (ba_v - bb_v) >= (2.0 * tk - 1e-9) else round(bb_v, 4)
+        rest_px = min(step_px, round(ba_v - tk, 4), max_bid_cap)
+        rest_px = round(math.floor((rest_px + 1e-9) / tk) * tk, 4)
+        if not (min_bid_floor <= rest_px <= max_bid_cap):
+            return None, "JIT_BOOK_REVERIFY_EDGE_DECAYED"
+        if ba_v < 1.0 and rest_px >= ba_v - 1e-9:
+            return None, "JIT_BOOK_REVERIFY_EDGE_DECAYED"
+        # Jumping `+1 tick` above L1 achieves `queue_ahead_usd == 0.0` (FIFO #1), so >$350 walls only block joins.
+        if rest_px <= bb_v + 1e-9 and l1_usd > max_join_l1_usd:
+            return None, "JIT_BOOK_REVERIFY_EDGE_DECAYED"
+        return rest_px, "OK"
+
     def emit_verified_candidates(
         self,
         records: Sequence[PipelineOpportunityRecord],
@@ -3319,28 +3378,33 @@ class HarvesterCandidateBridge:
                     bk1_u = books.get(toks_u[1])
                     if bk0_u is None or bk1_u is None:
                         continue
+                    max_bid_cap = 0.998 if live_sec <= 3600.0 else 0.997
+                    raw_gm_tk = float(m.get("orderPriceMinTickSize") or 0.0)
                     for idx_w in (0, 1):
                         win_bk = bk0_u if idx_w == 0 else bk1_u
                         opp_bk = bk1_u if idx_w == 0 else bk0_u
-                        if not win_bk.bids or not win_bk.asks:
+                        if not win_bk.bids:
                             continue
-                        bb_w = float(win_bk.bids[0].price)
-                        l1_usd_w = bb_w * float(win_bk.bids[0].size)
-                        ob_w = float(opp_bk.bids[0].price) if opp_bk.bids else 0.0
-                        ba_w = float(win_bk.asks[0].price) if win_bk.asks else 1.0
-                        if not (0.945 <= bb_w <= 0.994) or ob_w > 0.008 or l1_usd_w < 5.0 or l1_usd_w > 350.0:
-                            continue
-                        if ba_w < 1.0 and ob_w > 0.0 and (ba_w + ob_w) > 1.015:
-                            continue
-                        tk_u = float(win_bk.tick_size) if (win_bk.tick_size and 0.0001 <= win_bk.tick_size <= 0.01) else (0.001 if bb_w >= 0.96 else 0.01)
-                        step_b = round(bb_w + tk_u, 4) if (ba_w - bb_w) >= (2.0 * tk_u - 1e-9) else round(bb_w, 4)
-                        rest_bid = min(step_b, round(ba_w - tk_u, 4), 0.994)
-                        rest_bid = round(math.floor((rest_bid + 1e-9) / tk_u) * tk_u, 4)
-                        if not (0.945 <= rest_bid <= 0.994) or (ba_w < 1.0 and rest_bid >= ba_w - 1e-9):
+                        raw_bk_tk = float(win_bk.tick_size or 0.0)
+                        if 0.0001 <= raw_bk_tk < 0.01:
+                            tk_u = raw_bk_tk
+                        elif 0.0001 <= raw_gm_tk < 0.01:
+                            tk_u = raw_gm_tk
+                        elif 0.0001 <= raw_bk_tk <= 0.01:
+                            tk_u = raw_bk_tk
+                        else:
+                            tk_u = 0.001 if float(win_bk.bids[0].price) >= 0.96 else 0.01
+                        rest_bid, _q_stat = self._evaluate_bond1_maker_quote(
+                            win_bk,
+                            opp_bk,
+                            tk_u,
+                            max_bid_cap=max_bid_cap,
+                        )
+                        if rest_bid is None:
                             continue
                         rem_u = max(300.0, min(live_sec, 7200.0))
                         vel_bps_hr = ((1.0 - rest_bid) * 10_000.0) / (rem_u / 3600.0)
-                        if vel_bps_hr < max(self.min_velocity_bps_per_hr, 15.0):
+                        if (vel_bps_hr + 1e-6) < max(self.min_velocity_bps_per_hr, 15.0):
                             continue
                         out_lbls = _parse_json_list_safe(m.get("outcomes"))
                         side_lbl = str(out_lbls[idx_w]).upper() if idx_w < len(out_lbls) else ("YES" if idx_w == 0 else "NO")
@@ -3350,6 +3414,8 @@ class HarvesterCandidateBridge:
                                 {
                                     "mid": mid_u,
                                     "ev_id": ev_id_u,
+                                    "ev_title": ev_title_raw_u,
+                                    "question": str(m.get("question") or ""),
                                     "cid": str(m.get("conditionId") or m.get("condition_id") or win_bk.condition_id or ""),
                                     "win_tid": toks_u[idx_w],
                                     "opp_tid": toks_u[1 - idx_w],
@@ -3357,7 +3423,9 @@ class HarvesterCandidateBridge:
                                     "disp_lbl": str(m.get("groupItemTitle") or m.get("question") or mid_u)[:64],
                                     "neg_risk": bool(m.get("negRisk") or ev.get("negRisk")),
                                     "rem_sec": rem_u,
+                                    "live_sec": live_sec,
                                     "tick": tk_u,
+                                    "max_bid_cap": max_bid_cap,
                                     "vol24": float(m.get("volume24hr") or 0.0),
                                     "rest_bid": rest_bid,
                                     "fees_enabled": bool(m.get("feesEnabled") is True),
@@ -3366,9 +3434,14 @@ class HarvesterCandidateBridge:
                         )
 
             uma_candidates_ranked.sort(key=lambda x: -x[0])
+            seen_maker_ev_ids: Set[str] = set()
             for vel_u, uc in uma_candidates_ranked:
                 if maker_locks_this_cycle >= max_maker_locks_per_cycle:
                     break
+                ev_id_m = str(uc.get("ev_id") or "").strip()
+                if ev_id_m and ev_id_m in seen_maker_ev_ids:
+                    skipped_reasons["MAKER_EVENT_CONCENTRATION_CAP_D007"] += 1
+                    continue
                 dedupe_m = f"FT_BOND1_SLL_MKR_{uc['mid']}_{uc['win_tid'][:12]}"
                 prev_m = self._dedupe_cache.get(dedupe_m)
                 if prev_m is not None and (now_f - float(prev_m.get("emitted_ts", 0.0))) < max(self.dedupe_ttl_sec, 60.0):
@@ -3410,22 +3483,16 @@ class HarvesterCandidateBridge:
                         tick_size=uc["tick"],
                         book_timestamp_sec=jit_m_ts,
                     )
-                    if not eff_win_bk.bids or not eff_win_bk.asks:
+                    rest_j, jit_err_reason = self._evaluate_bond1_maker_quote(
+                        eff_win_bk,
+                        eff_opp_bk,
+                        uc["tick"],
+                        max_bid_cap=float(uc.get("max_bid_cap", 0.997)),
+                    )
+                    if rest_j is None:
                         self.total_jit_rejected += 1
                         jit_rejected_this_cycle += 1
-                        skipped_reasons["JIT_BOOK_REVERIFY_MISSING_DEPTH"] += 1
-                        continue
-                    bb_j = float(eff_win_bk.bids[0].price)
-                    l1_j = bb_j * float(eff_win_bk.bids[0].size)
-                    ob_j = float(eff_opp_bk.bids[0].price) if eff_opp_bk.bids else 0.0
-                    ba_j = float(eff_win_bk.asks[0].price) if eff_win_bk.asks else 1.0
-                    tk_j = uc["tick"]
-                    step_j = round(bb_j + tk_j, 4) if (ba_j - bb_j) >= (2.0 * tk_j - 1e-9) else round(bb_j, 4)
-                    rest_j = round(math.floor((min(step_j, round(ba_j - tk_j, 4), 0.994) + 1e-9) / tk_j) * tk_j, 4)
-                    if not (0.945 <= bb_j <= 0.994) or not (0.945 <= rest_j <= 0.994) or ob_j > 0.008 or l1_j < 5.0 or l1_j > 350.0 or (ba_j < 1.0 and rest_j >= ba_j - 1e-9):
-                        self.total_jit_rejected += 1
-                        jit_rejected_this_cycle += 1
-                        skipped_reasons["JIT_BOOK_REVERIFY_EDGE_DECAYED"] += 1
+                        skipped_reasons[jit_err_reason] += 1
                         continue
                     uc["rest_bid"] = rest_j
                     self.total_jit_verified += 1
@@ -3433,6 +3500,8 @@ class HarvesterCandidateBridge:
                     emit_m_ts = round(time.time() if now_ts is None else jit_m_ts, 3)
 
                 rest_px = float(uc["rest_bid"])
+                max_box_net = float(uc.get("max_bid_cap", 0.997))
+                min_edge_net = round(max(0.002, 1.0 - max_box_net), 6)
                 sh_mkr = max(5, int(math.floor((nav_15pct_cap_usd / max(0.50, rest_px)) + 1e-9)))
                 if sh_mkr * rest_px < DEFAULT_MIN_MARKETABLE_BUY_USD - 1e-6:
                     continue
@@ -3464,6 +3533,10 @@ class HarvesterCandidateBridge:
                     "ts_unix": emit_m_ts,
                     "asset": "FT_K",
                     "event_id": uc["ev_id"],
+                    "title": str(uc.get("ev_title") or ""),
+                    "question": str(uc.get("question") or ""),
+                    "umaResolutionStatus": "proposed",
+                    "custom_liveness_sec": round(float(uc.get("live_sec", uc["rem_sec"])), 2),
                     "regime": f"SINGLE_LEG_MAKER_LOCK_{uc['disp_lbl'][:40]}",
                     "pair_horizons": "single_leg_maker_lock",
                     "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY",
@@ -3476,10 +3549,10 @@ class HarvesterCandidateBridge:
                     "rem_sec": round(float(uc["rem_sec"]), 2),
                     "shares": sh_mkr,
                     "box_cost_net": rest_px,
-                    "max_box_cost_net": 0.994,
+                    "max_box_cost_net": max_box_net,
                     "anchor_bid_px": rest_px,
                     "min_resting_bid": 0.945,
-                    "min_maker_edge": 0.006,
+                    "min_maker_edge": min_edge_net,
                     "maker_rebate_ps": 0.0,
                     "max_opp_bid": 0.008,
                     "hold_to_maturity": True,
@@ -3506,6 +3579,8 @@ class HarvesterCandidateBridge:
                 emitted_payloads.append(mkr_dict)
                 maker_locks_this_cycle += 1
                 self.total_maker_locks_emitted += 1
+                if uc.get("ev_id"):
+                    seen_maker_ev_ids.add(str(uc["ev_id"]).strip())
                 self._dedupe_cache[dedupe_m] = {
                     "emitted_ts": emit_m_ts,
                     "digest": f"mkr:{rest_px:.4f}:{sh_mkr}",
@@ -3744,6 +3819,9 @@ class PublicPolymarketScannerClient:
         cross-event duplicate stems, and `Family K` UMA `proposed` carry) strictly `< 180 MiB` RSS (`D-010`)!
         """
         t0 = time.perf_counter()
+        from src.polymarket_research.uma_nba_endgame_engine import is_objective_uma_market
+
+        now_epoch_s = time.time()
         ctx = ssl.create_default_context()
         conn = http.client.HTTPSConnection("gamma-api.polymarket.com", timeout=self.timeout_sec, context=ctx)
         headers = {
@@ -3756,7 +3834,7 @@ class PublicPolymarketScannerClient:
         events_out: List[Dict[str, Any]] = []
         retained_heap: List[Tuple[float, int, int, Dict[str, Any]]] = []
         retained_eids_in_heap: Set[str] = set()
-        max_heap_events = 680
+        max_heap_events = 760
         heap_seq = 0
         seen_event_ids: Set[str] = set()
         seen_stem_first_eid: Dict[str, str] = {}
@@ -3867,7 +3945,7 @@ class PublicPolymarketScannerClient:
                     continue
                 cm_loc = {k: m_loc[k] for k in keep_mkt_keys if k in m_loc}
                 if "description" in cm_loc and isinstance(cm_loc["description"], str):
-                    d_s = cm_loc["description"][:420] if len(cm_loc["description"]) > 420 else cm_loc["description"]
+                    d_s = cm_loc["description"][:1400] if len(cm_loc["description"]) > 1400 else cm_loc["description"]
                     cm_loc["description"] = _dedup_s(d_s)
                 for sk in ("outcomes", "feeType", "resolutionSource", "comboStatus", "sportsMarketType"):
                     if sk in cm_loc and isinstance(cm_loc[sk], str):
@@ -4076,6 +4154,7 @@ class PublicPolymarketScannerClient:
                         ev_liq = 0.0
                         ev_zero_fee = False
                         ev_has_uma_proposed = False
+                        ev_has_uma_proposed_clean = False
                         ev_has_uma_any = False
                         ev_all_kmia_frozen = True
                         numeric_ladder_mkt_cnt = 0
@@ -4111,6 +4190,30 @@ class PublicPolymarketScannerClient:
                             elif ust_s == "proposed":
                                 ev_has_uma_proposed = True
                                 ev_has_uma_any = True
+                                if not ev_has_uma_proposed_clean and "kmia" not in title_lower:
+                                    end_pm_raw = str(m.get("endDate") or ev.get("endDate") or "").strip()
+                                    end_pm_ok = True
+                                    if end_pm_raw:
+                                        try:
+                                            dt_pm = datetime.fromisoformat(end_pm_raw.replace("Z", "+00:00"))
+                                            if dt_pm.tzinfo is None:
+                                                dt_pm = dt_pm.replace(tzinfo=timezone.utc)
+                                            if dt_pm.timestamp() < (now_epoch_s - 259200.0):
+                                                end_pm_ok = False
+                                        except Exception:
+                                            pass
+                                    if end_pm_ok:
+                                        ok_pm_obj, _ = is_objective_uma_market(
+                                            {
+                                                **m,
+                                                "acceptingOrders": m.get("acceptingOrders", True),
+                                                "_ev_slug": slug_lower,
+                                                "_ev_title": title_raw,
+                                                "_eval_now_ts": now_epoch_s,
+                                            }
+                                        )
+                                        if ok_pm_obj:
+                                            ev_has_uma_proposed_clean = True
                             elif ust_s != "none":
                                 ev_has_uma_any = True
                             toks_s = [str(x).strip() for x in _parse_json_list_safe(m.get("clobTokenIds")) if str(x).strip()]
@@ -4214,11 +4317,13 @@ class PublicPolymarketScannerClient:
                         has_multi_line_game = is_game_matchup and (3 <= ev_open_cnt <= 24) and sports_struct_mkt_cnt >= 2
                         is_clean_weather = has_weather_kw and not ev_all_kmia_frozen
 
-                        # Quota-guaranteed non-stacking structural priority tiers (`35+55+60+70+180+110+85 = 595 <= 680`
+                        # Quota-guaranteed non-stacking structural priority tiers (`35+55+140+30+70+180+110+85 = 705 <= 760`
                         # heap slots so NO single family can ever starve `D`, `E`, `F`, `G`, `H`, `I`, or `K`!)
                         q_wx = is_clean_weather and fam_quota_cnt["H"] < 35
                         q_d = (is_cross_prize_pair or is_core_logical_d) and fam_quota_cnt["D"] < 55
-                        q_uma = ev_has_uma_proposed and fam_quota_cnt["K"] < 60
+                        q_uma_clean = ev_has_uma_proposed_clean and fam_quota_cnt["K"] < 140
+                        q_uma_raw = ev_has_uma_proposed and not ev_has_uma_proposed_clean and fam_quota_cnt["K_RAW"] < 30
+                        q_uma = q_uma_clean or q_uma_raw
                         q_dup = is_dup_stem and fam_quota_cnt["I"] < 70
                         q_f = (not is_game_matchup and 2 <= ev_open_cnt <= 28 and numeric_ladder_mkt_cnt >= 2 and ev_liq >= 20.0) and fam_quota_cnt["F"] < 180
                         q_e = (not is_game_matchup and has_generalized_ladder and ev_liq >= 20.0) and fam_quota_cnt["E"] < 110
@@ -4227,7 +4332,7 @@ class PublicPolymarketScannerClient:
                         structural_tier = max(
                             2_600_000.0 if q_wx else 0.0,
                             2_540_000.0 if q_d else 0.0,
-                            2_480_000.0 if q_uma else 0.0,
+                            2_490_000.0 if q_uma_clean else (2_475_000.0 if q_uma_raw else 0.0),
                             2_400_000.0 if q_dup else 0.0,
                             2_340_000.0 if q_f else 0.0,
                             2_280_000.0
@@ -4248,8 +4353,10 @@ class PublicPolymarketScannerClient:
                             fam_quota_cnt["H"] += 1
                         elif q_d:
                             fam_quota_cnt["D"] += max(1, 1 + len(prize_partner_entries))
-                        elif q_uma:
+                        elif q_uma_clean:
                             fam_quota_cnt["K"] += 1
+                        elif q_uma_raw:
+                            fam_quota_cnt["K_RAW"] += 1
                         elif q_dup:
                             fam_quota_cnt["I"] += 2 if dup_partner_entry is not None else 1
                         elif q_f:
@@ -4290,6 +4397,155 @@ class PublicPolymarketScannerClient:
                 if not nxt or str(nxt) == str(cursor):
                     break
                 cursor = str(nxt)
+
+            # Fast newest-first active UMA `proposed` & top-24h-volume supplement (`<0.6s`, zero sleep on mock miss)
+            # Ensures fresh 2026 `BOND1` proposals & liquid multi-market structures are NEVER starved by chronological keyset order!
+            if compact_fields and pages_fetched >= 1:
+                def _fetch_supp_json_list(supp_path: str) -> Optional[List[Any]]:
+                    nonlocal conn
+                    try:
+                        conn.request("GET", supp_path, headers=headers)
+                        s_resp = conn.getresponse()
+                        if getattr(s_resp, "status", 0) != 200:
+                            _ = s_resp.read()
+                            return None
+                        s_data = self._read_gzip_json(s_resp)
+                        return s_data if isinstance(s_data, list) else None
+                    except Exception:
+                        return None
+
+                supp_uma_groups: Dict[str, Tuple[Dict[str, Any], List[Dict[str, Any]]]] = {}
+                for offset_p in (0, 100):
+                    supp_mkts = _fetch_supp_json_list(
+                        f"/markets?uma_resolution_status=proposed&closed=false&order=id&ascending=false&limit=100&offset={offset_p}"
+                    )
+                    if not supp_mkts:
+                        break
+                    for pm in supp_mkts:
+                        if not isinstance(pm, dict) or pm.get("closed") or pm.get("archived") or pm.get("active") is False:
+                            continue
+                        if pm.get("enableOrderBook") is False:
+                            continue
+                        mid_pm = str(pm.get("id") or pm.get("market_id") or "").strip()
+                        if not mid_pm or mid_pm in FROZEN_DISPUTED_MARKET_IDS:
+                            continue
+                        if str(pm.get("umaResolutionStatus") or "").strip().lower() != "proposed":
+                            continue
+                        toks_pm = [str(x).strip() for x in _parse_json_list_safe(pm.get("clobTokenIds")) if str(x).strip()]
+                        if len(toks_pm) < 2:
+                            continue
+                        pm_evs = pm.get("events")
+                        parent_ev = pm_evs[0] if isinstance(pm_evs, list) and pm_evs and isinstance(pm_evs[0], dict) else {}
+                        eid_pm = str(parent_ev.get("id") or pm.get("event_id") or pm.get("negRiskMarketID") or f"uma_supp_{mid_pm}").strip()
+                        ev_title_pm = str(parent_ev.get("title") or pm.get("question") or "")
+                        ev_slug_pm = str(parent_ev.get("slug") or pm.get("slug") or "")
+                        if "kmia" in ev_title_pm.lower():
+                            continue
+                        end_pm_s = str(pm.get("endDate") or parent_ev.get("endDate") or "").strip()
+                        if end_pm_s:
+                            try:
+                                dt_s_pm = datetime.fromisoformat(end_pm_s.replace("Z", "+00:00"))
+                                if dt_s_pm.tzinfo is None:
+                                    dt_s_pm = dt_s_pm.replace(tzinfo=timezone.utc)
+                                if dt_s_pm.timestamp() < (now_epoch_s - 259200.0):
+                                    continue
+                            except Exception:
+                                pass
+                        ok_pm_obj, _ = is_objective_uma_market(
+                            {
+                                **pm,
+                                "acceptingOrders": pm.get("acceptingOrders", True),
+                                "_ev_slug": ev_slug_pm.lower(),
+                                "_ev_title": ev_title_pm,
+                                "_eval_now_ts": now_epoch_s,
+                            }
+                        )
+                        if not ok_pm_obj:
+                            continue
+                        if eid_pm not in supp_uma_groups:
+                            stub_ev = dict(parent_ev) if parent_ev else {
+                                "id": eid_pm,
+                                "slug": ev_slug_pm,
+                                "title": ev_title_pm,
+                                "active": True,
+                                "closed": False,
+                                "archived": False,
+                                "negRisk": bool(pm.get("negRisk")),
+                                "negRiskAugmented": bool(pm.get("negRiskAugmented")),
+                                "endDate": pm.get("endDate") or "",
+                            }
+                            supp_uma_groups[eid_pm] = (stub_ev, [])
+                        supp_uma_groups[eid_pm][1].append(pm)
+                    if len(supp_mkts) < 100:
+                        break
+
+                added_uma_supp = 0
+                for eid_pm, (stub_ev, pm_list) in sorted(
+                    supp_uma_groups.items(),
+                    key=lambda kv: -sum(
+                        float(x.get("liquidityClob") or x.get("liquidity") or 0.0) + float(x.get("volume24hr") or 0.0)
+                        for x in kv[1][1]
+                    ),
+                ):
+                    if added_uma_supp >= 90:
+                        break
+                    if eid_pm in retained_eids_in_heap:
+                        continue
+                    nr_pm = bool(stub_ev.get("negRisk") or stub_ev.get("enableNegRisk"))
+                    aug_pm = bool(stub_ev.get("negRiskAugmented") or stub_ev.get("enableNegRiskOther"))
+                    added_open_pm, comp_ev_pm = _build_comp_ev(stub_ev, eid_pm, pm_list, nr_pm, aug_pm)
+                    if added_open_pm > 0:
+                        liq_pm = sum(
+                            float(x.get("liquidityClob") or x.get("liquidity") or 0.0) + float(x.get("volume24hr") or 0.0)
+                            for x in pm_list
+                        )
+                        _push_heap_ev(2_530_000.0 + min(liq_pm, 55_000.0), added_open_pm, comp_ev_pm)
+                        added_uma_supp += 1
+
+                supp_vol_evs = _fetch_supp_json_list(
+                    "/events?closed=false&active=true&order=volume24hr&ascending=false&limit=100"
+                )
+                if supp_vol_evs:
+                    added_vol_supp = 0
+                    for ev_v in supp_vol_evs:
+                        if added_vol_supp >= 45:
+                            break
+                        if not isinstance(ev_v, dict):
+                            continue
+                        eid_v = str(ev_v.get("id") or "").strip()
+                        if not eid_v or eid_v in retained_eids_in_heap:
+                            continue
+                        slug_v_low = str(ev_v.get("slug") or "").lower()
+                        title_v_low = str(ev_v.get("title") or "").lower()
+                        if "-more-markets" in slug_v_low or "more markets" in title_v_low or "kmia" in title_v_low:
+                            continue
+                        mkts_v = [
+                            mv
+                            for mv in (ev_v.get("markets") or ())
+                            if isinstance(mv, dict)
+                            and not mv.get("closed")
+                            and not mv.get("archived")
+                            and mv.get("active") is not False
+                            and mv.get("enableOrderBook") is not False
+                            and str(mv.get("id") or mv.get("market_id") or "") not in FROZEN_DISPUTED_MARKET_IDS
+                        ]
+                        if not mkts_v or len(mkts_v) > 28:
+                            continue
+                        is_nr_v = bool(ev_v.get("negRisk") or ev_v.get("enableNegRisk"))
+                        is_aug_v = bool(ev_v.get("negRiskAugmented") or ev_v.get("enableNegRiskOther"))
+                        has_zf_v = any(mv.get("feesEnabled") is not True for mv in mkts_v)
+                        has_prop_v = any(str(mv.get("umaResolutionStatus") or "").strip().lower() == "proposed" for mv in mkts_v)
+                        if not (has_zf_v or has_prop_v or is_nr_v or len(mkts_v) >= 2):
+                            continue
+                        added_open_v, comp_ev_v = _build_comp_ev(ev_v, eid_v, mkts_v, is_nr_v, is_aug_v)
+                        if added_open_v > 0:
+                            liq_v = sum(
+                                float(x.get("liquidityClob") or x.get("liquidity") or 0.0) + float(x.get("volume24hr") or 0.0)
+                                for x in mkts_v
+                            )
+                            score_v_supp = (2_495_000.0 if has_prop_v else 2_060_000.0) + min(liq_v, 55_000.0)
+                            _push_heap_ev(score_v_supp, added_open_v, comp_ev_v)
+                            added_vol_supp += 1
         finally:
             str_dedup_pool.clear()
             seen_stem_first_eid.clear()
@@ -5676,19 +5932,24 @@ class FullThrottlePipeline:
             pending_val_tokens.extend(tkt.instrument_ids)
 
         if cycle_type == OperatingCycleType.DISCOVERY_CYCLE or not self.hot_priority_tokens:
+            from src.polymarket_research.uma_nba_endgame_engine import is_objective_uma_market
+
+            sel_now_f = float(time.time() if now_ts is None else now_ts)
             # Tier (i): 100% of `OFFICIAL_CONTRACTUAL` & `VERIFIED_MATHEMATICAL` cross-market graph edges + `D..I` pairs
             graph_edge_tokens = self._collect_graph_cross_market_edge_tokens(max_tokens=max(900, int(max_budget * 0.45)))
             d_to_i_map = self.peer_bridge.collect_priority_tokens_d_to_i(
                 events, now_ts=now_ts, max_tokens_per_family=max(260, max_budget // 7)
             )
             mkt_pair_by_tok: Dict[str, Tuple[str, str]] = {}
-            uma_fast_2h: List[str] = []
-            uma_other_proposed: List[str] = []
+            uma_fast_ranked: List[Tuple[Tuple[int, int, float, float], str, str]] = []
+            uma_other_ranked: List[Tuple[Tuple[int, int, int, float, float], str, str]] = []
             zero_fee_and_tight: List[Tuple[float, str, str]] = []
             liq_ranked: List[Tuple[float, str, str]] = []
             all_tradable: List[str] = []
 
             for ev in events:
+                ev_slug_sel = str(ev.get("slug") or "").lower()
+                ev_title_sel = str(ev.get("title") or "")
                 ev_mkts = [
                     m
                     for m in (ev.get("markets") or ())
@@ -5720,13 +5981,39 @@ class FullThrottlePipeline:
                         m.get("volume24hr") or 0.0
                     )
 
-                    # Tier (ii): Non-disputed `umaResolutionStatus == "proposed"` (`<=2h` `BOND1` carry first!)
+                    # Tier (ii): Non-disputed `umaResolutionStatus == "proposed"`
+                    # Include BOTH `0%`-fee and `feesEnabled=True` `<= 2h` proposals in `uma_fast_2h`
+                    # (ranked: objective first, `0%`-fee before fee-bearing, shortest liveness, highest liquidity;
+                    # stale `>72h` past `endDate` routed to tail of `uma_other_ranked`!).
                     if ust == "proposed":
                         live_s = float(m.get("customLiveness") or 7200.0)
-                        if live_s <= 7200.0 and m.get("feesEnabled") is not True:
-                            uma_fast_2h.extend((t0, t1))
+                        is_zf_u = m.get("feesEnabled") is not True
+                        is_stale_past = 0
+                        end_sel_raw = str(m.get("endDate") or ev.get("endDate") or "").strip()
+                        if end_sel_raw:
+                            try:
+                                dt_sel = datetime.fromisoformat(end_sel_raw.replace("Z", "+00:00"))
+                                if dt_sel.tzinfo is None:
+                                    dt_sel = dt_sel.replace(tzinfo=timezone.utc)
+                                if dt_sel.timestamp() < (sel_now_f - 259200.0):
+                                    is_stale_past = 1
+                            except Exception:
+                                pass
+                        ok_u_obj, _ = is_objective_uma_market(
+                            {
+                                **dict(m),
+                                "acceptingOrders": m.get("acceptingOrders", True),
+                                "_ev_slug": ev_slug_sel,
+                                "_ev_title": ev_title_sel,
+                                "_eval_now_ts": sel_now_f,
+                            }
+                        )
+                        if live_s <= 7200.0 and is_stale_past == 0:
+                            uma_fast_ranked.append(((0 if ok_u_obj else 1, 0 if is_zf_u else 1, live_s, -liq), t0, t1))
                         else:
-                            uma_other_proposed.extend((t0, t1))
+                            uma_other_ranked.append(
+                                ((is_stale_past, 0 if ok_u_obj else 1, 0 if is_zf_u else 1, live_s, -liq), t0, t1)
+                            )
                         continue
 
                     # Tier (iv): `0%`-fee (`feesEnabled != True`) & tight indicative binary sum (`<=1.008` / `>=0.992`) + compact NegRisk
@@ -5782,6 +6069,16 @@ class FullThrottlePipeline:
                     break
                 idx_rr += 2
 
+            uma_fast_ranked.sort(key=lambda x: x[0])
+            uma_fast_2h: List[str] = []
+            for _, u0, u1 in uma_fast_ranked:
+                uma_fast_2h.extend((u0, u1))
+
+            uma_other_ranked.sort(key=lambda x: x[0])
+            uma_other_proposed: List[str] = []
+            for _, u0, u1 in uma_other_ranked:
+                uma_other_proposed.extend((u0, u1))
+
             zero_fee_and_tight.sort(key=lambda x: -x[0])
             zf_tokens: List[str] = []
             for _, z0, z1 in zero_fee_and_tight[: max(350, max_budget // 4)]:
@@ -5808,6 +6105,9 @@ class FullThrottlePipeline:
                 if k_idx < len(graph_edge_tokens):
                     zipped_tier1.extend(graph_edge_tokens[k_idx : k_idx + 2])
 
+            self._cached_uma_fast_tokens = list(dict.fromkeys(uma_fast_2h))
+            self._cached_zipped_tier1_tokens = list(dict.fromkeys(zipped_tier1))
+            self._cached_uma_other_tokens = list(dict.fromkeys(uma_other_proposed[:400]))
             self._cached_tier1_and_tier2_tokens = list(
                 dict.fromkeys([*uma_fast_2h, *zipped_tier1, *uma_other_proposed[:400]])
             )
@@ -5817,6 +6117,9 @@ class FullThrottlePipeline:
             )
 
         tier1_and_2 = getattr(self, "_cached_tier1_and_tier2_tokens", self.hot_priority_tokens[: max_budget // 2])
+        uma_fast_pool = getattr(self, "_cached_uma_fast_tokens", [])
+        zipped_t1_pool = getattr(self, "_cached_zipped_tier1_tokens", [])
+        uma_other_pool = getattr(self, "_cached_uma_other_tokens", [])
         tier4_and_liq = getattr(self, "_cached_tier4_and_liq_tokens", self.hot_priority_tokens[max_budget // 2 :])
         tier3_dynamic = list(dict.fromkeys([*dormant_50bps, *pending_val_tokens, *maker_watch, *dormant_wider]))
 
@@ -5835,9 +6138,42 @@ class FullThrottlePipeline:
                 )
             self.cold_rotation_offset = (start + cold_budget) % total_u
 
-        # Combine in strict Wave 3 order: Tier (i)+(ii) -> Tier (iii) -> Tier (iv)+(v hot) -> Cold Rotation
-        ordered_hot = list(dict.fromkeys([*tier1_and_2, *tier3_dynamic, *tier4_and_liq]))
+        # Combine with fair-share tier reservations so `zipped_tier1` (`>1,000` tokens) NEVER starves
+        # `uma_fast` (`BOND1`), `tier3_dynamic` (`dormant_50bps` + `pending_val`), or `tier4_and_liq` (`0%`-fee/tight)!
         hot_cap = max(0, max_budget - len(cold_slice))
+        has_split_pools = bool(uma_fast_pool or zipped_t1_pool or uma_other_pool)
+        if has_split_pools and hot_cap > 0:
+            ordered_hot_list: List[str] = []
+            seen_hot: Set[str] = set()
+
+            def _take_from_pool(pool: Sequence[str], target_add: int) -> None:
+                added = 0
+                for tok in pool:
+                    if len(ordered_hot_list) >= hot_cap or added >= target_add:
+                        break
+                    if tok not in seen_hot:
+                        seen_hot.add(tok)
+                        ordered_hot_list.append(tok)
+                        added += 1
+
+            pool_budgets = (
+                (uma_fast_pool, max(min(len(uma_fast_pool), 2), int(hot_cap * 0.18))),
+                (tier3_dynamic, max(min(len(tier3_dynamic), 2), int(hot_cap * 0.22))),
+                (zipped_t1_pool, max(min(len(zipped_t1_pool), 2), int(hot_cap * 0.36))),
+                (tier4_and_liq, max(min(len(tier4_and_liq), 2), int(hot_cap * 0.16))),
+                (uma_other_pool, max(min(len(uma_other_pool), 2), int(hot_cap * 0.08))),
+            )
+            for p_seq, p_cap in pool_budgets:
+                if p_seq and p_cap > 0 and len(ordered_hot_list) < hot_cap:
+                    _take_from_pool(p_seq, p_cap)
+            # Backfill any unused headroom to 100% of `hot_cap`
+            for p_seq, _ in pool_budgets:
+                if p_seq and len(ordered_hot_list) < hot_cap:
+                    _take_from_pool(p_seq, hot_cap - len(ordered_hot_list))
+            ordered_hot = ordered_hot_list
+        else:
+            ordered_hot = list(dict.fromkeys([*tier1_and_2, *tier3_dynamic, *tier4_and_liq]))
+
         merged = list(dict.fromkeys([*ordered_hot[:hot_cap], *cold_slice]))[:max_budget]
         return merged, {
             "graph_and_structural_tokens": int(getattr(self, "_last_tier1_graph_tokens_count", 0)),
@@ -6455,7 +6791,12 @@ class FullThrottlePipeline:
         dormant_delta = self.dormant_store.update_from_pipeline_records(all_records, typed_books, now_ts=eval_now_ts)
         self.dormant_store.save()
         if self.config.fast_rescan_tokens_path is not None or self.config.emit_harvester_candidates:
-            rescan_out = self.config.fast_rescan_tokens_path or Path("data/polymarket/dormant_fast_rescan_tokens.json")
+            if self.config.fast_rescan_tokens_path is not None:
+                rescan_out = Path(self.config.fast_rescan_tokens_path)
+            elif self.config.harvester_candidates_path:
+                rescan_out = Path(self.config.harvester_candidates_path).parent / "dormant_fast_rescan_tokens.json"
+            else:
+                rescan_out = self.output_dir / "dormant_fast_rescan_tokens.json"
             self.dormant_store.export_fast_rescan_tokens(rescan_out, now_ts=eval_now_ts)
         stage_timings_ms["MONITOR"] = round((time.perf_counter() - s0) * 1000.0, 2)
 

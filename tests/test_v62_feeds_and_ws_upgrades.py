@@ -22,6 +22,7 @@ from src.polymarket_research.polymarket_direct_feeds import (
 )
 from src.polymarket_research.polymarket_terminal_recorder import (
     L2OrderBook,
+    PolymarketDualFeed1HRecorder,
     _fast_resp_json,
 )
 from src.polymarket_research.polymarket_ws_streams import (
@@ -378,6 +379,120 @@ class TestV62WsWeatherSportsConnectorsRecorder(unittest.TestCase):
         # Removing best bid triggers exact recompute to 0.43
         bk.apply_price_changes([{"price": "0.45", "size": "0", "side": "BUY"}])
         self.assertAlmostEqual(bk.prev_best_bid[0], 0.43)
+
+    def test_ws_quiet_live_book_freshness_and_best_bid_ask_snapshot_guard(self) -> None:
+        tok_snap = "10000000000000000001"
+        tok_nosnap = "10000000000000000002"
+        tracker = PolymarketClobMarketWsTracker()
+        tracker.set_desired_tokens([tok_snap, tok_nosnap])
+        # Seed a real book snapshot for tok_snap
+        tracker.process_ws_payload(
+            [
+                {
+                    "event_type": "book",
+                    "asset_id": tok_snap,
+                    "bids": [{"price": "0.48", "size": "12"}],
+                    "asks": [{"price": "0.52", "size": "10"}],
+                },
+                {
+                    "event_type": "best_bid_ask",
+                    "asset_id": tok_nosnap,
+                    "best_bid": "0.40",
+                    "best_ask": "0.60",
+                },
+            ]
+        )
+        # Un-snapshotted token must NOT have _last_rx_by_aid poisoned by best_bid_ask
+        self.assertNotIn(tok_nosnap, tracker._last_rx_by_aid)
+        self.assertIsNone(tracker.get_book(tok_nosnap, max_age_sec=10.0))
+
+        # Simulate 10s quiet period for tok_snap
+        now_m = time.monotonic()
+        tracker._last_rx_by_aid[tok_snap] = now_m - 10.0
+
+        # Disconnected: strict max_age_sec applies -> expired
+        tracker._ws_connected = False
+        self.assertIsNone(tracker.get_book(tok_snap, max_age_sec=0.65))
+        self.assertIsNone(tracker.get_numeric_book(tok_snap, max_age_sec=0.65))
+
+        # Connected with healthy WS traffic within 15s and snapshot after connect -> quiet live book stays fresh
+        tracker._ws_connected = True
+        tracker._connected_since_mono = now_m - 30.0
+        tracker._last_ws_rx_mono = now_m - 1.0
+        bk = tracker.get_book(tok_snap, max_age_sec=0.65)
+        nbk = tracker.get_numeric_book(tok_snap, max_age_sec=0.65)
+        self.assertIsNotNone(bk)
+        self.assertIsNotNone(nbk)
+        self.assertAlmostEqual(float(bk["asks"][0]["price"]), 0.52)
+        self.assertAlmostEqual(nbk["asks"][0][0], 0.52)
+
+        # Stale socket (_last_ws_rx_mono > 15s ago) -> falls back to strict max_age_sec -> expired
+        tracker._last_ws_rx_mono = now_m - 20.0
+        self.assertIsNone(tracker.get_book(tok_snap, max_age_sec=0.65))
+        self.assertIsNone(tracker.get_numeric_book(tok_snap, max_age_sec=0.65))
+
+    def test_ws_sharded_noop_guard_and_inplace_unsubscribe(self) -> None:
+        tok_a = "10000000000000000011"
+        tok_b = "10000000000000000012"
+        tok_c = "10000000000000000013"
+        sharded = PolymarketShardedClobMarketWsTracker(num_shards=2)
+        sharded.set_desired_tokens([tok_a, tok_b])
+        calls = []
+        for idx, shard in enumerate(sharded._shards):
+            orig = shard.set_desired_tokens
+
+            def _wrapped(tokens, _orig=orig, _idx=idx):
+                calls.append((_idx, list(tokens)))
+                return _orig(tokens)
+
+            shard.set_desired_tokens = _wrapped  # type: ignore[method-assign]
+
+        # Identical desired set and already-subscribed urgent token must be no-ops
+        sharded.set_desired_tokens([tok_b, tok_a])
+        sharded.subscribe_tokens_immediate([tok_a])
+        self.assertEqual(calls, [])
+
+        # Adding a truly new token dispatches to its shard
+        sharded.subscribe_tokens_immediate([tok_c])
+        self.assertGreaterEqual(len(calls), 1)
+
+        # Verify in-place unsubscribe + _snapshot_tokens clear on reconnect in source
+        ws_src = (REPO_ROOT / "src/polymarket_research/polymarket_ws_streams.py").read_text(encoding="utf-8")
+        self.assertIn('"operation": "unsubscribe"', ws_src)
+        self.assertIn("self._snapshot_tokens.clear()", ws_src)
+
+    def test_recorder_xau_xag_price_to_beat_l2_tob_cache_and_nonblocking_clob(self) -> None:
+        self.assertAlmostEqual(
+            PolymarketDualFeed1HRecorder._extract_event_price_to_beat({"eventMetadata": {"priceToBeat": "3884.625"}}),
+            3884.625,
+        )
+        self.assertAlmostEqual(
+            PolymarketDualFeed1HRecorder._extract_event_price_to_beat({"eventMetadata": '{"openPrice": 49.1064}'}),
+            49.1064,
+        )
+        self.assertEqual(PolymarketDualFeed1HRecorder._extract_event_price_to_beat({}), 0.0)
+
+        bk = L2OrderBook("tok_cache")
+        bk.apply_snapshot(
+            [{"price": "0.41", "size": "10"}],
+            [{"price": "0.59", "size": "15"}],
+        )
+        t1 = bk.top_of_book(obs_ts=100.0)
+        t1["best_bid"] = 0.99  # Mutating returned dict must not corrupt internal cache
+        t2 = bk.top_of_book(obs_ts=101.0)
+        self.assertAlmostEqual(t2["best_bid"], 0.41)
+        self.assertAlmostEqual(t2["best_ask"], 0.59)
+
+        bk.apply_price_changes([{"price": "0.55", "size": "8", "side": "SELL"}])
+        t3 = bk.top_of_book(obs_ts=102.0)
+        self.assertAlmostEqual(t3["best_ask"], 0.55)
+
+        rec_src = (REPO_ROOT / "src/polymarket_research/polymarket_terminal_recorder.py").read_text(encoding="utf-8")
+        self.assertIn("gold-up-or-down-", rec_src)
+        self.assertIn("silver-up-or-down-", rec_src)
+        self.assertIn("_quiet_refresh_task", rec_src)
+        self.assertIn("_drain_ws_frames", rec_src)
+        self.assertIn("_last_shm_write_sig", rec_src)
 
 
 if __name__ == "__main__":

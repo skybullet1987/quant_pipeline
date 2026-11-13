@@ -13081,6 +13081,9 @@ def desired_market_ws_tokens_impl(harvester: Any, now_ts: Optional[float] = None
                     toks.append(_tk_rs)
         except Exception:
             pass
+    for _c1_tk in list(harvester.__dict__.get("_c1_pair_by_tok", {}).keys()):
+        if _c1_tk:
+            toks.append(_c1_tk)
     return list(dict.fromkeys(toks))[:total_cap]
 
 
@@ -19070,3 +19073,471 @@ def maybe_emit_recorder_fast_riskless_ipc(
             if _write_and_notify_live_cand(recorder, cand_d1, live_cp, live_cp):
                 emitted += 1
     return emitted
+
+
+def index_clinched_ws_cand_impl(harvester: Any, cand: Dict[str, Any], now_ts: Optional[float] = None) -> bool:
+    tok_a = str(cand.get("leg_a_token_id") or "").strip()
+    opp_a = str(cand.get("leg_a_opp_token_id") or "").strip()
+    cid_a = str(cand.get("leg_a_condition_id") or cand.get("leg_a_market_id") or "").strip()
+    cached_fp = None
+    if tok_a and hasattr(harvester.executor, "peek_cached_fee_params"):
+        cached_fp = harvester.executor.peek_cached_fee_params(cid_a, tok_a)
+        if cached_fp is not None:
+            cand["leg_a_market_fee_rate"] = float(cached_fp[0])
+            cand["leg_a_fee_rate"] = float(cached_fp[0])
+            cand["leg_a_fee_exponent"] = float(cached_fp[1])
+    if not harvester.register_clinched_ws_watch_cand(cand, now_ts):
+        return False
+    if opp_a and tok_a:
+        opp_map = harvester.__dict__.setdefault("_clinched_ws_by_opp", {})
+        opp_map.setdefault(opp_a, set()).add(tok_a)
+        if len(opp_map) > 512:
+            w_map = getattr(harvester, "_clinched_ws_watchlist", {})
+            for k_opp in list(opp_map.keys()):
+                kept = {t for t in opp_map[k_opp] if t in w_map}
+                if kept:
+                    opp_map[k_opp] = kept
+                else:
+                    opp_map.pop(k_opp, None)
+    if cached_fp is None and cand.get("leg_a_market_fee_rate") is None and tok_a:
+        def _upd_clinch(fr_val: float, fe_val: float) -> None:
+            w_lock = getattr(harvester, "_clinched_ws_lock", None)
+            w_map = getattr(harvester, "_clinched_ws_watchlist", None)
+            if w_map is None:
+                return
+            if w_lock is not None:
+                with w_lock:
+                    if tok_a in w_map:
+                        w_map[tok_a]["leg_a_fee_rate"] = fr_val
+                        w_map[tok_a]["leg_a_fee_exponent"] = fe_val
+            elif tok_a in w_map:
+                w_map[tok_a]["leg_a_fee_rate"] = fr_val
+                w_map[tok_a]["leg_a_fee_exponent"] = fe_val
+
+        harvester._schedule_bg_token_fee_resolve(tok_a, cid_a, on_resolved=_upd_clinch)
+    return True
+
+
+def _resolve_verified_c1_pair_fees_impl(
+    harvester: Any, cid: str, tok_a: str, tok_b: str, asset: str = "", raw_meta: Optional[Dict[str, Any]] = None
+) -> Optional[Tuple[float, float]]:
+    meta = raw_meta or {}
+    if str(asset or "").strip().upper() in {"XAU", "XAG"}:
+        return (0.0, 0.0)
+    if hasattr(harvester.executor, "peek_cached_fee_params"):
+        fa = harvester.executor.peek_cached_fee_params(cid, tok_a)
+        fb = harvester.executor.peek_cached_fee_params(cid, tok_b)
+        if fa is not None and fb is not None:
+            return (max(0.0, float(fa[0])), max(0.0, float(fb[0])))
+    if meta.get("fee_rate_market") is not None:
+        frm = max(0.0, float(meta.get("fee_rate_market") or 0.0))
+        return (frm, frm)
+    if meta.get("leg_a_fee_rate") is not None and meta.get("leg_b_fee_rate") is not None:
+        return (max(0.0, float(meta.get("leg_a_fee_rate") or 0.0)), max(0.0, float(meta.get("leg_b_fee_rate") or 0.0)))
+    return None
+
+
+def register_c1_ws_pair_impl(harvester: Any, cand: Dict[str, Any], now_ts: Optional[float] = None) -> bool:
+    now_f = float(time.time() if now_ts is None else now_ts)
+    legs = cand.get("legs") if isinstance(cand.get("legs"), list) else []
+    l0 = legs[0] if len(legs) >= 2 and isinstance(legs[0], dict) else {}
+    l1 = legs[1] if len(legs) >= 2 and isinstance(legs[1], dict) else {}
+    tok_a = str(cand.get("leg_a_token_id") or l0.get("token_id") or "").strip()
+    tok_b = str(cand.get("leg_b_token_id") or l1.get("token_id") or cand.get("leg_a_opp_token_id") or "").strip()
+    mid = str(cand.get("leg_a_market_id") or l0.get("market_id") or cand.get("market_id") or "").strip()
+    mid_b = str(cand.get("leg_b_market_id") or l1.get("market_id") or mid).strip()
+    if not tok_a or not tok_b or tok_a == tok_b or not mid or mid != mid_b or mid in {"6707502", "6707503"}:
+        return False
+    exp_ts = float(cand.get("expiry_ts") or cand.get("leg_a_expiry_ts") or 0.0)
+    if exp_ts <= now_f + 12.0:
+        return False
+    cid = str(cand.get("leg_a_condition_id") or l0.get("condition_id") or cand.get("condition_id") or mid).strip()
+    asset = str(cand.get("asset") or "C1").strip()
+    fees = _resolve_verified_c1_pair_fees_impl(harvester, cid, tok_a, tok_b, asset=asset, raw_meta=cand)
+    if fees is None:
+        harvester._schedule_bg_token_fee_resolve(tok_a, cid)
+        harvester._schedule_bg_token_fee_resolve(tok_b, cid)
+        return False
+    if fees[0] > 1e-9 or fees[1] > 1e-9:
+        return False
+    p_map = harvester.__dict__.setdefault("_c1_pair_by_tok", {})
+    if len(p_map) > 400:
+        for k_drop in [k for k, v in p_map.items() if float(v.get("expiry_ts") or 0.0) <= now_f + 5.0]:
+            p_map.pop(k_drop, None)
+    is_new = tok_a not in p_map or tok_b not in p_map
+    pair_rec = {
+        "tok_a": tok_a, "tok_b": tok_b, "market_id": mid, "condition_id": cid,
+        "event_id": str(cand.get("event_id") or ""), "asset": asset, "expiry_ts": exp_ts,
+        "neg_risk": bool(cand.get("leg_a_neg_risk", cand.get("neg_risk", False))),
+        "label_a": str(cand.get("leg_a_label") or l0.get("label") or "YES")[:48],
+        "label_b": str(cand.get("leg_b_label") or l1.get("label") or "NO")[:48],
+        "side_a": str(cand.get("leg_a_side") or l0.get("side") or "YES"),
+        "side_b": str(cand.get("leg_b_side") or l1.get("side") or "NO"),
+        "pair_dedupe_key": str(cand.get("pair_dedupe_key") or cand.get("dedupe_key") or f"C1_PAIR_{mid}"),
+    }
+    p_map[tok_a] = pair_rec
+    p_map[tok_b] = pair_rec
+    mkt_ws = getattr(harvester, "_pos_market_ws", None)
+    if is_new and mkt_ws is not None and hasattr(mkt_ws, "subscribe_tokens_immediate"):
+        try:
+            mkt_ws.subscribe_tokens_immediate([tok_a, tok_b])
+        except Exception:
+            pass
+    return True
+
+
+def eval_ws_c1_complete_set_impl(
+    harvester: Any,
+    tok_id: str,
+    bk_tok: Optional[Dict[str, Any]] = None,
+    bk_other: Optional[Dict[str, Any]] = None,
+    now_ts: Optional[float] = None,
+) -> Optional[Dict[str, Any]]:
+    from src.polymarket_research.holistic_strategy_governance import (
+        GLOBAL_GOVERNANCE_MANAGER,
+        passes_capital_velocity_hurdle,
+    )
+
+    p_map = getattr(harvester, "_c1_pair_by_tok", None)
+    pair = p_map.get(str(tok_id)) if p_map else None
+    if not pair:
+        return None
+    now_f = float(time.time() if now_ts is None else now_ts)
+    exp_ts = float(pair.get("expiry_ts") or 0.0)
+    rem_s = exp_ts - now_f
+    mid = str(pair["market_id"])
+    if rem_s <= 10.0 or mid in {"6707502", "6707503"}:
+        return None
+    cd_map = harvester.__dict__.setdefault("_c1_ws_cd", {})
+    if float(cd_map.get(mid, 0.0) or 0.0) > now_f:
+        return None
+    rb_gov = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {})
+    if not bool(rb_gov.get("enable_internal_c1_ws_scanner", True)):
+        return None
+    paused = {str(x).upper() for x in (rb_gov.get("paused_riskless_sleeves") or [])}
+    if "ZEROFEE1_C1_COMPLETE_SET" in paused or "C1_BINARY_COMPLETE_SET" in paused:
+        return None
+    if is_market_busy_for_scaling(harvester, mid):
+        cd_map[mid] = now_f + 2.0
+        return None
+    tok_a, tok_b = str(pair["tok_a"]), str(pair["tok_b"])
+    other_tok = tok_b if str(tok_id) == tok_a else tok_a
+    mkt_ws = getattr(harvester, "_pos_market_ws", None)
+    for is_other, tk_arg, bk_ref in ((True, other_tok, bk_other), (False, str(tok_id), bk_tok)):
+        if bk_ref is None and mkt_ws is not None:
+            try:
+                got = mkt_ws.get_book(tk_arg, max_age_sec=2.0)
+            except TypeError:
+                got = mkt_ws.get_book(tk_arg)
+            if is_other:
+                bk_other = got
+            else:
+                bk_tok = got
+    bk_a = bk_tok if str(tok_id) == tok_a else bk_other
+    bk_b = bk_other if str(tok_id) == tok_a else bk_tok
+
+    def _best_ask(bk: Optional[Dict[str, Any]]) -> Tuple[float, float]:
+        best: Optional[Tuple[float, float]] = None
+        for lv in (bk or {}).get("asks") or []:
+            px = float(lv["price"] if isinstance(lv, dict) else lv[0])
+            sz = float(lv.get("size", 0.0) if isinstance(lv, dict) else lv[1])
+            if sz > 0.0 and 0.01 <= px <= 0.98 and (best is None or px < best[0]):
+                best = (px, sz)
+        return best or (0.0, 0.0)
+
+    ask_a, sz_a = _best_ask(bk_a)
+    ask_b, sz_b = _best_ask(bk_b)
+    if ask_a <= 0.0 or ask_b <= 0.0:
+        return None
+    sh = min(sz_a, sz_b)
+    if sh < 5.0 or min(ask_a, ask_b) * sh < 1.0:
+        return None
+    min_edge_bps = float(rb_gov.get("zerofee1_min_net_edge_bps", 12.0) or 12.0)
+    cap = min(0.9990, 1.0 - max(0.0010, min_edge_bps / 10000.0))
+    cost_sum = ask_a + ask_b
+    if cost_sum > cap:
+        return None
+    net_edge_bps = (1.0 - cost_sum) * 10000.0
+    dk = f"C1_WS_{mid}_{int(ask_a * 10000)}_{int(ask_b * 10000)}"
+    pdk = str(pair["pair_dedupe_key"])
+    if is_d1_dedupe_blocked(harvester, dk, pdk, [mid], now_f):
+        cd_map[mid] = now_f + 2.0
+        return None
+    evt_ok, _, _, _ = check_per_event_concentration_cap(
+        harvester, pair, market_ids=[mid], now_ts=now_f, min_headroom_usd=2.0
+    )
+    if not evt_ok:
+        cd_map[mid] = now_f + 5.0
+        return None
+    collat_nav = float(harvester.get_reconciled_equity_usd()) if hasattr(harvester, "get_reconciled_equity_usd") else float(getattr(harvester, "live_bankroll", 48.0) or 48.0)
+    vel_ok, _ = passes_capital_velocity_hurdle(
+        box_type="C1_BINARY_COMPLETE_SET",
+        sleeve_src="ZEROFEE1_C1_COMPLETE_SET",
+        collat_usd=collat_nav,
+        rem_tte_sec=rem_s,
+        box_cost_net=cost_sum,
+        merge_wallet_ok=True,
+        cfg=rb_gov,
+    )
+    if not vel_ok:
+        return None
+    cd_map[mid] = now_f + 2.0
+    leg_a = {
+        "token_id": tok_a, "market_id": mid, "condition_id": pair["condition_id"],
+        "side": pair["side_a"], "label": pair["label_a"], "fee_rate": 0.0,
+        "fee_exponent": 1.0, "neg_risk": pair["neg_risk"],
+    }
+    leg_b = {
+        "token_id": tok_b, "market_id": mid, "condition_id": pair["condition_id"],
+        "side": pair["side_b"], "label": pair["label_b"], "fee_rate": 0.0,
+        "fee_exponent": 1.0, "neg_risk": pair["neg_risk"],
+    }
+    return {
+        "ts_unix": now_f, "dedupe_key": dk, "pair_dedupe_key": pdk, "box_id": pdk,
+        "box_type": "C1_BINARY_COMPLETE_SET", "sleeve_source": "ZEROFEE1_C1_COMPLETE_SET",
+        "asset": pair["asset"], "event_id": pair["event_id"], "expiry_ts": exp_ts,
+        "max_box_cost_net": round(cap, 6), "box_cost_net": round(cost_sum, 6),
+        "shares": int(sh), "net_paired_shares": int(sh),
+        "expected_edge_bps": round(net_edge_bps, 2), "ws_triggered": True,
+        "legs": [leg_a, leg_b],
+        "leg_a_token_id": tok_a, "leg_a_market_id": mid, "leg_a_condition_id": pair["condition_id"],
+        "leg_a_side": pair["side_a"], "leg_a_label": pair["label_a"], "leg_a_fee_rate": 0.0,
+        "leg_a_limit_price": ask_a, "leg_a_avail_shares": sz_a, "leg_a_fee_exponent": 1.0, "leg_a_neg_risk": pair["neg_risk"],
+        "leg_b_token_id": tok_b, "leg_b_market_id": mid, "leg_b_condition_id": pair["condition_id"],
+        "leg_b_side": pair["side_b"], "leg_b_label": pair["label_b"], "leg_b_fee_rate": 0.0,
+        "leg_b_limit_price": ask_b, "leg_b_avail_shares": sz_b, "leg_b_fee_exponent": 1.0, "leg_b_neg_risk": pair["neg_risk"],
+    }
+
+
+def scan_shm_c1_pairs_impl(harvester: Any, now_ts: Optional[float] = None) -> int:
+    import json as _json
+    from pathlib import Path as _Path
+
+    shm_dir = _Path(str(getattr(harvester, "_shm_dir", "/dev/shm")))
+    if not shm_dir.is_dir():
+        return 0
+    now_f = float(time.time() if now_ts is None else now_ts)
+    emitted = 0
+    for p_tk in shm_dir.glob("pm_fast_tick_*.json"):
+        try:
+            raw_b = p_tk.read_bytes()
+            if not raw_b:
+                continue
+            tick = _json.loads(raw_b)
+            if not isinstance(tick, dict):
+                continue
+            ts_u = float(tick.get("ts_unix") or 0.0)
+            if ts_u <= 0.0 or (now_f - ts_u) > 15.0:
+                continue
+            tok_a = str(tick.get("yes_token_id") or tick.get("up_token_id") or "").strip()
+            tok_b = str(tick.get("no_token_id") or tick.get("down_token_id") or "").strip()
+            mid = str(tick.get("market_id") or "").strip()
+            if not tok_a or not tok_b or not mid:
+                continue
+            cand_meta = {
+                "leg_a_token_id": tok_a, "leg_b_token_id": tok_b,
+                "leg_a_market_id": mid, "leg_b_market_id": mid,
+                "leg_a_condition_id": str(tick.get("condition_id") or mid),
+                "asset": str(tick.get("asset") or p_tk.stem.replace("pm_fast_tick_", "")),
+                "expiry_ts": float(tick.get("expiry_ts") or 0.0),
+                "fee_rate_market": tick.get("fee_rate_market"),
+                "event_id": str(tick.get("event_id") or ""),
+                "leg_a_neg_risk": bool(tick.get("neg_risk", False)),
+            }
+            if not register_c1_ws_pair_impl(harvester, cand_meta, now_ts=now_f):
+                continue
+            ya = float(tick.get("yes_ask") or tick.get("up_ask") or 0.0)
+            ysz = float(tick.get("yes_ask_sz") or tick.get("up_ask_sz") or 0.0)
+            na = float(tick.get("no_ask") or tick.get("down_ask") or 0.0)
+            nsz = float(tick.get("no_ask_sz") or tick.get("down_ask_sz") or 0.0)
+            if ya > 0.0 and ysz > 0.0 and na > 0.0 and nsz > 0.0:
+                snipe_c = eval_ws_c1_complete_set_impl(
+                    harvester, tok_a,
+                    bk_tok={"asks": [{"price": ya, "size": ysz}]},
+                    bk_other={"asks": [{"price": na, "size": nsz}]},
+                    now_ts=now_f,
+                )
+                if snipe_c is not None and harvester._enqueue_fast_d1_cand(snipe_c):
+                    emitted += 1
+        except Exception:
+            continue
+    return emitted
+
+
+def notify_sll_ws_book_change_impl(harvester: Any, _tok: str, loop_ref: Any = None) -> int:
+    _sll_ev_map = getattr(harvester, "_sll_ws_book_events", None)
+    if not _sll_ev_map:
+        return 0
+    lp = loop_ref or getattr(harvester, "_main_loop", None)
+    same_lp = False
+    if lp is not None:
+        try:
+            same_lp = asyncio.get_running_loop() is lp
+        except RuntimeError:
+            same_lp = False
+    woke = 0
+    for _tk_w, _op_w, _ev_s in list(_sll_ev_map.values()):
+        if _tok in (_tk_w, _op_w) and not _ev_s.is_set():
+            if lp is not None and not same_lp:
+                lp.call_soon_threadsafe(_ev_s.set)
+            else:
+                _ev_s.set()
+            woke += 1
+    return woke
+
+
+def spawn_live_maker_anchor_box_task_impl(harvester: Any, candidate_box: Dict[str, Any], log_obj: Any = None) -> bool:
+    tasks = harvester.__dict__.setdefault("_maker_anchor_bg_tasks", set())
+    by_type = harvester.__dict__.setdefault("_maker_anchor_bg_tasks_by_type", {})
+    b_type = str(candidate_box.get("box_type") or "DOMINANCE_MAKER_ANCHOR").strip().upper()
+    sl_t = str(candidate_box.get("sleeve_source") or "").strip()
+    _is_s2_t = sl_t in {"S2_EXACT_TWAP_LOCK", "S2_RTDS_EXACT_TWAP_INTEGRATOR"}
+    _unlim_t = harvester._is_unlimited_slots_active()
+    is_sll_mkr = b_type == "SINGLE_LEG_MAKER_LOCK"
+    if is_sll_mkr:
+        if _is_s2_t and is_s2_maker_bg_task_capped(harvester):
+            return False
+        b_key = f"SINGLE_LEG_MAKER_LOCK:{candidate_box.get('dedupe_key') or candidate_box.get('leg_a_market_id') or b_type}"
+        sll_running = sum(1 for k, tk in by_type.items() if str(k).startswith("SINGLE_LEG_MAKER_LOCK:") and not tk.done())
+        _sll_lim = (10 if _is_s2_t else 8) if (_unlim_t or harvester._is_v5_unleashed_active()) else (4 if _is_s2_t else 2)
+        if sll_running >= _sll_lim:
+            return False
+    else:
+        b_key = f"{b_type}:{candidate_box.get('dedupe_key') or candidate_box.get('asset') or b_type}" if _unlim_t else b_type
+        box2_running = sum(1 for k, tk in by_type.items() if not str(k).startswith("SINGLE_LEG_MAKER_LOCK:") and not tk.done())
+        if box2_running >= (8 if _unlim_t else 2):
+            return False
+    cur_t = by_type.get(b_key)
+    if cur_t is not None and not cur_t.done():
+        return False
+    if len(tasks) >= ((12 if _is_s2_t else 10) if (_unlim_t or harvester._is_v5_unleashed_active()) else (6 if _is_s2_t else 4)):
+        return False
+    coro = (
+        harvester.maybe_execute_graduated_single_leg_maker_lock(candidate_box)
+        if is_sll_mkr
+        else harvester.maybe_execute_graduated_maker_anchor_box(candidate_box)
+    )
+    t = asyncio.create_task(coro)
+    tasks.add(t)
+    by_type[b_key] = t
+    if is_sll_mkr and _is_s2_t:
+        register_s2_maker_bg_task(harvester, t)
+
+    def _cleanup(done_t: Any) -> None:
+        tasks.discard(done_t)
+        if by_type.get(b_key) is done_t:
+            by_type.pop(b_key, None)
+        harvester._notify_maker_preempt_released()
+        try:
+            if not done_t.cancelled() and done_t.exception() is None:
+                _r = done_t.result()
+                if isinstance(_r, dict) and not _r.get("executed") and log_obj is not None:
+                    log_obj.info(f"[SLL MAKER SKIP] {b_key} ({sl_t or b_type}): {_r.get('reason')}")
+        except Exception:
+            pass
+
+    t.add_done_callback(_cleanup)
+    return True
+
+
+def enqueue_fast_d1_cand_impl(harvester: Any, cand_dict: Dict[str, Any]) -> bool:
+    fq = getattr(harvester, "_fast_d1_cand_lines", None)
+    if fq is None:
+        return False
+    fq.append(_orjson.dumps(cand_dict).decode("utf-8") if _orjson is not None else json.dumps(cand_dict, separators=(",", ":")))
+    lp, ev1, ev2 = (
+        getattr(harvester, "_main_loop", None),
+        getattr(harvester, "_fast_d1_box_event", None),
+        getattr(harvester, "_trigger_notify_event", None),
+    )
+    if lp is not None and ev1 is not None:
+        try:
+            rl = None
+            try:
+                rl = asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+            for ev in (ev1, ev2):
+                if ev is not None:
+                    ev.set() if rl is lp else lp.call_soon_threadsafe(ev.set)
+        except Exception:
+            pass
+    return True
+
+
+def schedule_bg_token_fee_resolve_impl(harvester: Any, tok_id: str, cid: str, on_resolved: Any = None) -> None:
+    if harvester.dry_run or not tok_id or not hasattr(harvester.executor, "resolve_token_fee_rate_async"):
+        return
+    pending = harvester.__dict__.setdefault("_fee_bg_pending", set())
+    if tok_id in pending or len(pending) >= 64:
+        return
+    try:
+        lp = getattr(harvester, "_main_loop", None) or asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    pending.add(tok_id)
+
+    async def _run_fee() -> None:
+        try:
+            res = await harvester.executor.resolve_token_fee_rate_async(tok_id, condition_id=cid)
+            if res is not None and on_resolved is not None:
+                on_resolved(float(res[0]), float(res[1]))
+        except Exception:
+            pass
+        finally:
+            pending.discard(tok_id)
+
+    try:
+        lp.create_task(_run_fee())
+    except Exception:
+        pending.discard(tok_id)
+
+
+def on_ws_book_change_impl(
+    harvester: Any,
+    _tok: str,
+    _bk: Dict[str, Any],
+    loop: Any,
+    trigger_notify_event: Any,
+    decay_tracker: Any = None,
+) -> None:
+    harvester._notify_sll_ws_book_change(_tok, loop)
+    _asks = (_bk or {}).get("asks") or []
+    if decay_tracker is not None and _tok in decay_tracker._by_token:
+        try:
+            _ba_px = float(_asks[0].get("price") or 0.0) if _asks else None
+            _ba_sz = float(_asks[0].get("size") or 0.0) if _asks else 0.0
+            decay_tracker.on_top_of_book_tick(_tok, _ba_px, _ba_sz)
+        except Exception:
+            pass
+    _bids = (_bk or {}).get("bids") or []
+    if _bids and float(_bids[0].get("price", 0.0) or 0.0) >= 0.52:
+        _top_b_ws = float(_bids[0].get("price", 0.0) or 0.0)
+        _tok_map = getattr(harvester, "_active_recycle_tok_map", None)
+        if _tok_map is not None:
+            _flags = _tok_map.get(_tok)
+            _recycle_hit = bool(_flags is not None and (_flags[0] or (_top_b_ws >= 0.997 and _flags[1])))
+        else:
+            _recycle_hit = any(
+                (p.get("is_dominance_box") or (_top_b_ws >= 0.997 and p.get("hold_to_maturity_lock")))
+                and str(p.get("token_id") or "") == _tok
+                for p in harvester.active_positions.values()
+            )
+        if _recycle_hit:
+            harvester._ws_urgent_recycle_ts = time.time()
+            loop.call_soon_threadsafe(trigger_notify_event.set)
+    if getattr(harvester, "_clinched_ws_watchlist", None) and _asks:
+        _snipe_c = harvester.evaluate_clinched_ws_book_snipe(_tok, _bk)
+        if _snipe_c is not None:
+            harvester._enqueue_fast_d1_cand(_snipe_c)
+    _opp_map = getattr(harvester, "_clinched_ws_by_opp", None)
+    if _opp_map and _tok in _opp_map:
+        for _win_tok in list(_opp_map.get(_tok) or ()):
+            _snipe_opp = harvester.evaluate_clinched_ws_book_snipe(_win_tok, None)
+            if _snipe_opp is not None:
+                harvester._enqueue_fast_d1_cand(_snipe_opp)
+    if getattr(harvester, "_c1_pair_by_tok", None) and _asks:
+        _c1_cand = harvester._eval_ws_c1_complete_set(_tok, _bk)
+        if _c1_cand is not None:
+            harvester._enqueue_fast_d1_cand(_c1_cand)
+

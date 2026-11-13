@@ -551,5 +551,338 @@ class TestV62HarvesterAsyncD1AndLifecycle(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(hv._d1_inotify_dirty)
 
 
+class TestV62Phase3ExecutionAndSchemaUnblock(unittest.IsolatedAsyncioTestCase):
+    async def test_d1_short_tte_and_quiet_cap_apply_to_feebearing_dominance_box(self):
+        with tempfile.TemporaryDirectory() as td:
+            hv = _make_dry_harvester(Path(td))
+            hv.dry_run = False
+            hv.executor.dry_run = False
+            hv.executor.auth_mode = "AUTHENTICATED_L2"
+            hv.executor.is_authenticated = True
+            hv.executor.client = mock.MagicMock()
+            hv.executor.client._mock_children = None
+            hv._startup_reconciled = True
+            hv._is_d1_box_halted = lambda: False
+            hv._global_halt_reasons = lambda: []
+            hv._last_known_collateral = 50.0
+            hv.live_bankroll = 50.0
+            hv.executor.get_collateral_balance = mock.MagicMock(return_value=50.0)
+            hv.executor.get_token_balance = mock.MagicMock(return_value=0.0)
+            hv.executor.peek_cached_fee_params = lambda cid="", tok=None: (0.015, 1.0)
+            hv.executor.execute_atomic_dominance_box_async = mock.AsyncMock(
+                return_value={"executed": False, "reason": "MOCK_STOP"}
+            )
+            hv._pos_market_ws = mock.MagicMock()
+            hv._pos_market_ws.get_book = mock.MagicMock(
+                side_effect=lambda tid, max_age_sec=0.65: (
+                    {
+                        "asks": [{"price": 0.515, "size": 50.0}],
+                        "bids": [{"price": 0.500, "size": 50.0}],
+                    }
+                    if str(tid).startswith("2")
+                    else {
+                        "asks": [{"price": 0.489 if str(tid).endswith(("5", "6")) else 0.491, "size": 50.0}],
+                        "bids": [{"price": 0.480, "size": 50.0}],
+                    }
+                )
+            )
+            hv.executor.get_market_books_batch_async = mock.AsyncMock(return_value={})
+            now_f = time.time()
+
+            def _mk_cand(dk, eid, exp_delta, depth, ta, tb):
+                px_q = 0.489 if str(ta).endswith("5") else 0.491
+                return {
+                    "box_id": dk,
+                    "dedupe_key": dk,
+                    "ts_unix": now_f,
+                    "oracle_match_verified": True,
+                    "force_parallel_batch": True,
+                    "box_type": "DOMINANCE",
+                    "sleeve_source": "D1_SAME_ORACLE_DOMINANCE_BOX",
+                    "asset": "BTC",
+                    "event_id": eid,
+                    "expiry_ts": now_f + exp_delta,
+                    "corridor_bps": 12.0,
+                    "p_model": 0.999,
+                    "k_low": 90000.0,
+                    "k_high": 90100.0,
+                    "leg_a_strike": 90000.0,
+                    "leg_b_strike": 90100.0,
+                    "leg_a_side": "UP",
+                    "leg_b_side": "DOWN",
+                    "leg_a_limit_price": px_q,
+                    "leg_b_limit_price": px_q,
+                    "leg_a_token_id": ta,
+                    "leg_b_token_id": tb,
+                    "leg_a_opp_token_id": ("2" * 23) + ta[-1:],
+                    "leg_b_opp_token_id": ("2" * 23) + tb[-1:],
+                    "leg_a_market_id": f"m_{ta[-4:]}",
+                    "leg_b_market_id": f"m_{tb[-4:]}",
+                    "leg_a_condition_id": f"c_{ta[-4:]}",
+                    "leg_b_condition_id": f"c_{tb[-4:]}",
+                    "leg_a_fee_rate": 0.015,
+                    "leg_b_fee_rate": 0.015,
+                    "ask_depth_usd": depth,
+                    "is_quiet_book": depth <= 35.0,
+                }
+
+            with mock.patch(
+                "src.polymarket_research.stage_c_zero_loss_velocity.load_alpha124_graduation_maps_with_lkg_cache",
+                side_effect=_fake_grad_maps,
+            ):
+                # 1) Normal >180s non-quiet BTC DOMINANCE at 0.495+0.495 (>0.985 cap) is rejected
+                res_norm = await hv.maybe_execute_graduated_d1_box_async(
+                    _mk_cand("D1_NORM", "evt_norm", 260.0, 120.0, ("1" * 23) + "1", ("1" * 23) + "2")
+                )
+                self.assertFalse(res_norm.get("executed"))
+                self.assertIn("FRESH_BOOK_WALK_REJECT:", str(res_norm.get("reason")))
+                hv.executor.execute_atomic_dominance_box_async.assert_not_called()
+
+                # 2) Short-TTE <=180s fee-bearing DOMINANCE unlocks 0.9925 cap
+                await hv.maybe_execute_graduated_d1_box_async(
+                    _mk_cand("D1_SHORT", "evt_short", 90.0, 120.0, ("1" * 23) + "3", ("1" * 23) + "4")
+                )
+                self.assertGreaterEqual(hv.executor.execute_atomic_dominance_box_async.await_count, 1)
+                self.assertAlmostEqual(
+                    hv.executor.execute_atomic_dominance_box_async.call_args.kwargs.get("max_box_cost_net"),
+                    0.9925,
+                    places=4,
+                )
+
+                # 3) Quiet-book (ask_depth_usd <= 35) D1_SAME_ORACLE_DOMINANCE_BOX (>180s) unlocks 0.989 cap
+                hv.executor.execute_atomic_dominance_box_async.reset_mock()
+                await hv.maybe_execute_graduated_d1_box_async(
+                    _mk_cand("D1_QUIET", "evt_quiet", 260.0, 20.0, ("1" * 23) + "5", ("1" * 23) + "6")
+                )
+                self.assertGreaterEqual(hv.executor.execute_atomic_dominance_box_async.await_count, 1)
+                self.assertAlmostEqual(
+                    hv.executor.execute_atomic_dominance_box_async.call_args.kwargs.get("max_box_cost_net"),
+                    0.989,
+                    places=4,
+                )
+
+    async def test_schema_normalization_and_exact_equivalence_fee_resolution(self):
+        with tempfile.TemporaryDirectory() as td:
+            hv = _make_dry_harvester(Path(td))
+            hv.live_bankroll = 50.0
+            hv._last_known_collateral = 50.0
+            hv._is_d1_box_halted = lambda: False
+            hv._global_halt_reasons = lambda: []
+            hv.executor.dry_run = False
+            hv.executor.client = types.SimpleNamespace(host="https://clob.polymarket.com")
+            now_f = time.time()
+
+            # Executor resolve_token_fee_rate_async caches 0.0 from /fee-rate endpoint
+            fake_resp = mock.MagicMock()
+            fake_resp.status_code = 200
+            fake_resp.json.return_value = {"base_fee": 0}
+            fake_client = mock.MagicMock()
+            fake_client.get = mock.AsyncMock(return_value=fake_resp)
+            hv.executor._async_http_client = fake_client
+            hv.executor._fee_cache = {}
+            hv.executor.get_async_client = lambda: fake_client
+
+            resolved = await hv.executor.resolve_token_fee_rate_async("tok_eq_a", condition_id="mid_eq_1")
+            self.assertEqual(resolved, (0.0, 1.0))
+            self.assertEqual(hv.executor.peek_cached_fee_params("mid_eq_1", "tok_eq_a"), (0.0, 1.0))
+
+            # Nested 2-leg EXACT_EQUIVALENCE payload without flat leg_a_*/leg_b_* or fee_rate
+            cand_eq = {
+                "box_id": "EQ_1",
+                "dedupe_key": "EQ_1_DK",
+                "box_type": "EXACT_EQUIVALENCE",
+                "sleeve_source": "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
+                "asset": "SP500",
+                "event_id": "evt_eq_1",
+                "expiry_ts": now_f + 1200.0,
+                "legs": [
+                    {"token_id": "tok_eq_a", "market_id": "mid_eq_1", "side": "YES", "label": "June"},
+                    {"token_id": "tok_eq_b", "market_id": "mid_eq_2", "side": "NO", "label": "Dec"},
+                ],
+                "ws_books": {
+                    "tok_eq_a": {"asks": [{"price": 0.490, "size": 50.0}], "bids": [{"price": 0.480, "size": 50.0}]},
+                    "tok_eq_b": {"asks": [{"price": 0.490, "size": 50.0}], "bids": [{"price": 0.480, "size": 50.0}]},
+                },
+            }
+            hv.executor._fee_cache["tok_eq_b"] = (0.0, 1.0)
+            with mock.patch(
+                "src.polymarket_research.stage_c_zero_loss_velocity.load_alpha124_graduation_maps_with_lkg_cache",
+                side_effect=lambda *_a, **_kw: (
+                    {"CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX": {"closed": 12, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 5.0, "legging_adjusted_pnl_t1000_usd": 5.0}},
+                    {"SP500": {"closed": 12, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 5.0, "legging_adjusted_pnl_t1000_usd": 5.0}},
+                    None,
+                ),
+            ):
+                res_eq = hv._d1_step1_gate_and_preempt(cand_eq, concurrent_ok=True)
+            norm_eq = hv._normalize_2leg_candidate_schema(cand_eq)
+            self.assertNotIn("reason", res_eq)
+            self.assertEqual(norm_eq["leg_a_token_id"], "tok_eq_a")
+            self.assertEqual(norm_eq["leg_b_token_id"], "tok_eq_b")
+            self.assertEqual(norm_eq["leg_a_condition_id"], "mid_eq_1")
+            self.assertTrue(res_eq["zero_fee_box"])
+            self.assertEqual(res_eq["box_type"], "EXACT_EQUIVALENCE")
+
+            from src.polymarket_research.stage_c_zero_loss_velocity import is_verified_full_throttle_2leg_box
+            norm_c1 = hv._normalize_2leg_candidate_schema({
+                "box_type": "C1_BINARY_COMPLETE_SET",
+                "sleeve_source": "C1_BINARY_COMPLETE_SET",
+                "condition_id": "0xc1",
+                "leg_a_market_id": "m1",
+                "leg_a_condition_id": "",
+                "leg_b_condition_id": "0xc1",
+                "leg_a_token_id": "tok_c1_y",
+                "leg_b_token_id": "tok_c1_n",
+                "leg_a_side": "YES",
+                "leg_b_side": "NO",
+                "leg_a_limit_price": 0.49,
+                "leg_b_limit_price": 0.49,
+                "leg_a_fee_rate": 0.0,
+                "leg_b_fee_rate": 0.0,
+                "box_cost_net": 0.985,
+                "min_state_net_payoff_usd": 0.05,
+                "expiry_ts": now_f + 3600.0,
+                "rule_verified": True,
+            })
+            self.assertEqual(norm_c1["leg_a_condition_id"], "0xc1")
+            self.assertEqual(norm_c1["leg_b_condition_id"], "0xc1")
+            self.assertEqual(norm_c1["leg_b_market_id"], "m1")
+            self.assertTrue(is_verified_full_throttle_2leg_box(norm_c1))
+
+    async def test_internal_c1_ws_scanner_and_d001_and_fee_guard(self):
+        with tempfile.TemporaryDirectory() as td:
+            hv = _make_dry_harvester(Path(td))
+            hv.live_bankroll = 50.0
+            now_f = time.time()
+            hv._shm_dir = td
+
+            # Disputed KMIA D-001 must be rejected
+            self.assertFalse(hv._register_c1_ws_pair({
+                "leg_a_token_id": "kmia_y", "leg_b_token_id": "kmia_n",
+                "leg_a_market_id": "6707503", "leg_b_market_id": "6707503",
+                "asset": "XAU", "expiry_ts": now_f + 600.0,
+            }, now_ts=now_f))
+
+            # Unverified BTC pair with unknown fee must NOT assume zero fee
+            self.assertFalse(hv._register_c1_ws_pair({
+                "leg_a_token_id": "btc_y", "leg_b_token_id": "btc_n",
+                "leg_a_market_id": "mid_btc_1", "leg_b_market_id": "mid_btc_1",
+                "asset": "BTC", "expiry_ts": now_f + 600.0,
+            }, now_ts=now_f))
+
+            # Fee-bearing BTC pair must be rejected
+            self.assertFalse(hv._register_c1_ws_pair({
+                "leg_a_token_id": "btc_y2", "leg_b_token_id": "btc_n2",
+                "leg_a_market_id": "mid_btc_2", "leg_b_market_id": "mid_btc_2",
+                "asset": "BTC", "expiry_ts": now_f + 600.0,
+                "leg_a_fee_rate": 0.05, "leg_b_fee_rate": 0.05,
+            }, now_ts=now_f))
+
+            # Verified zero-fee XAU tick in SHM emits canonical C1_BINARY_COMPLETE_SET
+            shm_tick = {
+                "ts_unix": now_f,
+                "asset": "XAU",
+                "market_id": "mid_xau_1",
+                "condition_id": "cid_xau_1",
+                "event_id": "evt_xau_1",
+                "expiry_ts": now_f + 3600.0,
+                "fee_rate_market": 0.0,
+                "yes_token_id": "xau_y",
+                "no_token_id": "xau_n",
+                "yes_ask": 0.492,
+                "yes_ask_sz": 25.0,
+                "no_ask": 0.492,
+                "no_ask_sz": 25.0,
+            }
+            (Path(td) / "pm_fast_tick_XAU.json").write_text(json.dumps(shm_tick), encoding="utf-8")
+            hv._fast_d1_cand_lines = collections.deque()
+            emitted = hv._scan_shm_c1_pairs(now_ts=now_f)
+            self.assertEqual(emitted, 1)
+            self.assertIn("xau_y", hv._c1_pair_by_tok)
+            cand_out = json.loads(hv._fast_d1_cand_lines.popleft())
+            self.assertEqual(cand_out["box_type"], "C1_BINARY_COMPLETE_SET")
+            self.assertEqual(cand_out["sleeve_source"], "ZEROFEE1_C1_COMPLETE_SET")
+            self.assertEqual(cand_out["leg_a_fee_rate"], 0.0)
+            self.assertEqual(cand_out["leg_b_fee_rate"], 0.0)
+
+    async def test_clinched_ws_opp_token_reverse_index_and_fee_hydration(self):
+        with tempfile.TemporaryDirectory() as td:
+            hv = _make_dry_harvester(Path(td))
+            now_f = time.time()
+            hv.executor.peek_cached_fee_params = lambda cid="", tok=None: (0.0, 1.0)
+            cand = {
+                "box_type": "CLINCH_WATCHLIST_REG",
+                "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY",
+                "dedupe_key": "CLINCH_1",
+                "event_id": "evt_clinch_1",
+                "asset": "POLITICS",
+                "expiry_ts": now_f + 3600.0,
+                "p_model": 1.0,
+                "leg_a_token_id": "tok_win_c1",
+                "leg_a_opp_token_id": "tok_opp_c1",
+                "leg_a_market_id": "mid_clinch_1",
+                "leg_a_condition_id": "cid_clinch_1",
+                "leg_a_fee_rate": 0.05,  # stale emitted fee rate
+            }
+            self.assertTrue(hv._index_clinched_ws_cand(cand, now_ts=now_f))
+            self.assertIn("tok_win_c1", hv._clinched_ws_by_opp.get("tok_opp_c1", set()))
+            self.assertEqual(hv._clinched_ws_watchlist["tok_win_c1"]["leg_a_fee_rate"], 0.0)
+
+    async def test_sll_three_slots_and_ws_outbid_cooldown(self):
+        with tempfile.TemporaryDirectory() as td:
+            hv = _make_dry_harvester(Path(td))
+            hv.dry_run = False
+            hv.executor.dry_run = False
+            hv.executor.auth_mode = "AUTHENTICATED_L2"
+            hv.executor.is_authenticated = True
+            hv.executor.client = mock.MagicMock()
+            hv.executor.client._mock_children = None
+            hv._startup_reconciled = True
+            hv._is_d1_box_halted = lambda: False
+            hv._global_halt_reasons = lambda: []
+            hv._last_known_collateral = 50.0
+            hv.live_bankroll = 50.0
+            hv.executor.get_collateral_balance = mock.MagicMock(return_value=50.0)
+            now_f = time.time()
+            hv.active_positions = {
+                "pos_b1": {"market_id": "m_b1", "single_leg_lock": True, "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY", "notional_usd": 5.0},
+                "pos_b2": {"market_id": "m_b2", "single_leg_lock": True, "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY", "notional_usd": 5.0},
+            }
+            fake_ws = mock.MagicMock()
+            fake_ws.get_book = mock.MagicMock(return_value={
+                "bids": [{"price": 0.999, "size": 200.0}],
+                "asks": [],
+            })
+            hv._pos_market_ws = fake_ws
+            hv.executor.get_market_books_batch_async = mock.AsyncMock()
+            cand_b3 = {
+                "box_id": "B3",
+                "dedupe_key": "B3_DK",
+                "box_type": "SINGLE_LEG_MAKER_LOCK",
+                "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY",
+                "event_id": "evt_b3",
+                "asset": "BOND",
+                "expiry_ts": now_f + 1800.0,
+                "p_model": 1.0,
+                "max_box_cost_net": 0.997,
+                "anchor_bid_px": 0.996,
+                "leg_a_token_id": "tok_b3",
+                "leg_a_opp_token_id": "opp_b3",
+                "leg_a_market_id": "m_b3",
+                "leg_a_condition_id": "c_b3",
+                "leg_a_fee_rate": 0.0,
+                "leg_a_tick_size": 0.001,
+            }
+            with mock.patch(
+                "src.polymarket_research.stage_c_zero_loss_velocity.load_alpha124_graduation_maps_with_lkg_cache",
+                side_effect=_fake_grad_maps,
+            ):
+                res = await hv.maybe_execute_graduated_single_leg_maker_lock(cand_b3)
+            self.assertFalse(res.get("executed"))
+            self.assertNotEqual(res.get("reason"), "SINGLE_LEG_LOCK_MAX_SLOTS")
+            self.assertIn("BOND1_OUTBID_ABOVE_CAP", str(res.get("reason")))
+            hv.executor.get_market_books_batch_async.assert_not_called()
+            self.assertGreater(hv._d1_retry_cooldown_until.get("B3_DK", 0.0), now_f + 30.0)
+
+
 if __name__ == "__main__":
     unittest.main()

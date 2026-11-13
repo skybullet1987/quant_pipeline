@@ -5838,10 +5838,54 @@ class PolymarketLiveHarvester:
             return bk_a, bk_b, bk_oa, bk_ob
         return None, None, None, None
 
+    def _normalize_2leg_candidate_schema(self, candidate_box: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(candidate_box, dict):
+            return candidate_box
+        c = dict(candidate_box)
+        bt = str(c.get("box_type") or "DOMINANCE").strip().upper()
+        if not c.get("sleeve_source") and c.get("sleeve"):
+            c["sleeve_source"] = c["sleeve"]
+        if c.get("expiry_ts") is None:
+            _ef = c.get("expiry_unix") if c.get("expiry_unix") is not None else c.get("leg_a_expiry_ts")
+            if _ef is not None:
+                c["expiry_ts"] = _ef
+        legs = c.get("legs")
+        if bt not in {"MULTI_LEG_BUNDLE", "CTF_OVERROUND", "NEGRISK_CONVERT"} and isinstance(legs, (list, tuple)) and len(legs) == 2 and all(isinstance(g, dict) for g in legs):
+            for p, g in (("leg_a_", legs[0]), ("leg_b_", legs[1])):
+                for k in ("token_id", "market_id", "condition_id", "side", "label", "opp_token_id", "fee_rate", "fee_exponent", "neg_risk", "strike", "horizon", "limit_price", "avail_shares"):
+                    if c.get(p + k) is None:
+                        v = g.get(k) if g.get(k) is not None else (g.get("price") if k == "limit_price" else (g.get("avail") if k == "avail_shares" else None))
+                        if v is not None:
+                            c[p + k] = v
+        if bt in {"COMPLETE_SET", "C1_BINARY_COMPLETE_SET"}:
+            for k in ("condition_id", "market_id"):
+                tv = c.get(k) or c.get("leg_a_" + k) or c.get("leg_b_" + k)
+                if tv:
+                    if not c.get("leg_a_" + k):
+                        c["leg_a_" + k] = tv
+                    if not c.get("leg_b_" + k):
+                        c["leg_b_" + k] = tv
+        for p, s in (("leg_a_", "a"), ("leg_b_", "b")):
+            if c.get(p + "limit_price") is None and c.get(p + "price") is not None:
+                c[p + "limit_price"] = c[p + "price"]
+            if not c.get(p + "condition_id") and c.get(p + "market_id"):
+                c[p + "condition_id"] = c[p + "market_id"]
+            if c.get(p + "limit_price") is None:
+                asks = ((c.get("ws_books") or {}).get(str(c.get(p + "token_id") or "")) or {}).get("asks") or [] if isinstance(c.get("ws_books"), dict) else []
+                c[p + "limit_price"] = float(asks[0]["price"] if isinstance(asks[0], dict) else asks[0][0]) if asks else 0.50
+            if c.get(p + "fee_rate") is None:
+                fb = c.get("fee_rate_" + s) if c.get("fee_rate_" + s) is not None else c.get("fee_rate")
+                if fb is not None:
+                    c[p + "fee_rate"] = fb
+            if c.get(p + "fee_exponent") is None and c.get("fee_exponent_" + s) is not None:
+                c[p + "fee_exponent"] = c["fee_exponent_" + s]
+        return c
+
     def _d1_step1_gate_and_preempt(self, candidate_box: Dict[str, Any], concurrent_ok: bool = False) -> Dict[str, Any]:
         """Executes D1 governance/graduation prechecks, acquires inflight slot, and triggers maker preemption."""
         if self._is_d1_box_halted():
             return {"executed": False, "reason": "DISABLED_OR_HALTED"}
+        candidate_box = self._normalize_2leg_candidate_schema(candidate_box)
         box_type = str(candidate_box.get("box_type") or "DOMINANCE").strip().upper()
         if box_type == "C1_BINARY_COMPLETE_SET":
             box_type = "COMPLETE_SET"
@@ -5933,7 +5977,7 @@ class PolymarketLiveHarvester:
             _min_nr_legs = 1 if _is_m1_chk else 2
             if not sleeve_src or len(nrm_chk) != 64 or not isinstance(nr_legs_chk, list) or not (_min_nr_legs <= len(nr_legs_chk) <= 15):
                 return {"executed": False, "reason": "INVALID_NEGRISK_CONVERT_INVARIANTS"}
-        elif box_type in {"COMPLETE_SET", "LADDER_MONO", "BARRIER_MONO", "NEGRISK_2LEG", "NBA_DOMINANCE", "SPORTS_CORRIDOR", "MACRO_DOMINANCE", "COUNTING_DOMINANCE", "CROSS_BASIS_DOMINANCE"}:
+        elif box_type in {"COMPLETE_SET", "LADDER_MONO", "BARRIER_MONO", "NEGRISK_2LEG", "NBA_DOMINANCE", "SPORTS_CORRIDOR", "MACRO_DOMINANCE", "COUNTING_DOMINANCE", "CROSS_BASIS_DOMINANCE", "EXACT_EQUIVALENCE"}:
             same_mkt_ok = (mid_a_chk == mid_b_chk) if box_type == "COMPLETE_SET" else (mid_a_chk != mid_b_chk)
             if not tok_a or not tok_b or tok_a == tok_b or not mid_a_chk or not mid_b_chk or not same_mkt_ok:
                 return {"executed": False, "reason": "INVALID_BOX_INVARIANTS"}
@@ -6049,16 +6093,37 @@ class PolymarketLiveHarvester:
                 )
 
             _c_legs_fr = candidate_box.get("legs") or candidate_box.get("no_legs") or []
+            _peek_fee_fn = getattr(self.executor, "peek_cached_fee_params", None)
+            _cid_fa = str(candidate_box.get("leg_a_condition_id") or candidate_box.get("condition_id") or "")
+            _cid_fb = str(candidate_box.get("leg_b_condition_id") or candidate_box.get("condition_id") or _cid_fa)
+            _cfa = _peek_fee_fn(_cid_fa, tok_a) if callable(_peek_fee_fn) else None
+            _cfb = _peek_fee_fn(_cid_fb, tok_b) if (callable(_peek_fee_fn) and tok_b) else None
             fr_a = (
                 float(candidate_box["leg_a_fee_rate"])
                 if candidate_box.get("leg_a_fee_rate") is not None
-                else (max((float(x.get("fee_rate") or 0.0) for x in _c_legs_fr if isinstance(x, dict)), default=0.07) if _c_legs_fr else 0.07)
+                else (
+                    float(_cfa[0])
+                    if _cfa is not None
+                    else (max((float(x.get("fee_rate") or 0.0) for x in _c_legs_fr if isinstance(x, dict)), default=0.07) if _c_legs_fr else 0.07)
+                )
             )
+            if _cfa is not None and float(_cfa[0]) == 0.0 and not candidate_box.get("fee_rate_verified"):
+                fr_a = 0.0
+                if candidate_box.get("leg_a_fee_exponent") is None:
+                    candidate_box["leg_a_fee_exponent"] = float(_cfa[1])
             fr_b = (
                 float(candidate_box["leg_b_fee_rate"])
                 if candidate_box.get("leg_b_fee_rate") is not None
-                else (0.0 if box_type in {"SINGLE_LEG_LOCK", "MULTI_LEG_BUNDLE", "CTF_OVERROUND"} else fr_a)
+                else (
+                    float(_cfb[0])
+                    if _cfb is not None
+                    else (0.0 if box_type in {"SINGLE_LEG_LOCK", "MULTI_LEG_BUNDLE", "CTF_OVERROUND"} else fr_a)
+                )
             )
+            if _cfb is not None and float(_cfb[0]) == 0.0 and not candidate_box.get("fee_rate_verified"):
+                fr_b = 0.0
+                if candidate_box.get("leg_b_fee_exponent") is None:
+                    candidate_box["leg_b_fee_exponent"] = float(_cfb[1])
             zero_fee_box = (fr_a == 0.0) if box_type == "SINGLE_LEG_LOCK" else (max(fr_a, fr_b) == 0.0)
             _rb_gov_m = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {})
             _zf1_cap = round(1.0 - max(0.0010, float(_rb_gov_m.get("zerofee1_min_net_edge_bps", 15.0) or 15.0) / 10000.0), 4)
@@ -6123,7 +6188,7 @@ class PolymarketLiveHarvester:
                 )
                 cand_rem_zf = float(candidate_box.get("expiry_ts") or 0.0) - now_ts
                 c_net = float(candidate_box.get("box_cost_net") or 1.0)
-                _2l_t = {"COMPLETE_SET", "BARRIER_MONO", "NEGRISK_2LEG", "NBA_DOMINANCE", "SPORTS_CORRIDOR", "MACRO_DOMINANCE", "COUNTING_DOMINANCE", "LADDER_MONO", "CROSS_BASIS_DOMINANCE"}
+                _2l_t = {"COMPLETE_SET", "BARRIER_MONO", "NEGRISK_2LEG", "NBA_DOMINANCE", "SPORTS_CORRIDOR", "MACRO_DOMINANCE", "COUNTING_DOMINANCE", "LADDER_MONO", "CROSS_BASIS_DOMINANCE", "EXACT_EQUIVALENCE"}
                 cond1_short_ok = sleeve_src == "COND1_MACRO_PARTITION_BOX" and (
                     (own_grad and 0.0 < cand_rem_zf <= 172800.0 and c_net <= 0.992)
                     or (0.0 < cand_rem_zf <= 108000.0 and c_net <= 0.985)
@@ -6200,8 +6265,8 @@ class PolymarketLiveHarvester:
                 return finish_protocol_v2_special_box_sync(self, candidate_box, dedupe_k, retry_cd, now_ts, _rcfg_b1, own_grad=own_grad)
             lbl_a = str(candidate_box.get("leg_a_label", "LEG_A"))
             lbl_b = str(candidate_box.get("leg_b_label", "LEG_B"))
-            px_a_lim = float(candidate_box["leg_a_limit_price"])
-            px_b_lim = float(candidate_box["leg_b_limit_price"])
+            px_a_lim = float(candidate_box.get("leg_a_limit_price") or 0.50)
+            px_b_lim = float(candidate_box.get("leg_b_limit_price") or 0.50)
             sh_req = float(candidate_box.get("net_paired_shares") or candidate_box.get("shares", 12.0))
             sh_a_gross = float(candidate_box.get("leg_a_gross_shares") or candidate_box.get("shares", sh_req))
             sh_b_gross = float(candidate_box.get("leg_b_gross_shares") or candidate_box.get("shares", sh_req))
@@ -6699,8 +6764,14 @@ class PolymarketLiveHarvester:
                             live_walk_cap = max(_zf_base_cap, float(_rb_d1_gov.get("d1_short_tte_max_box_cost_net", 0.9925)))
                         else:
                             live_walk_cap = _zf_base_cap
-                    elif box_type in {"SPORTS_CORRIDOR", "MACRO_DOMINANCE", "NBA_DOMINANCE", "NEGRISK_2LEG", "LADDER_MONO", "COUNTING_DOMINANCE"} or sleeve_src == "SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX":
+                    elif box_type in {"SPORTS_CORRIDOR", "MACRO_DOMINANCE", "NBA_DOMINANCE", "NEGRISK_2LEG", "LADDER_MONO", "COUNTING_DOMINANCE", "CROSS_BASIS_DOMINANCE", "EXACT_EQUIVALENCE"} or sleeve_src == "SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX":
                         live_walk_cap = 0.988
+                    elif box_type == "DOMINANCE" and own_grad and self._is_v5_unleashed_active():
+                        live_walk_cap = _d1_cfg_cap
+                        if fresh_quiet:
+                            live_walk_cap = max(live_walk_cap, 0.989)
+                        if 0.0 < rem_tte_s <= float(_rb_d1_gov.get("d1_short_tte_threshold_sec", 180.0)):
+                            live_walk_cap = max(live_walk_cap, float(_rb_d1_gov.get("d1_short_tte_max_box_cost_net", 0.9925)))
                     elif sleeve_src == "D1_QUIET_BOOK_BOX" and fresh_quiet and self._is_v5_unleashed_active():
                         live_walk_cap = max(_d1_cfg_cap, 0.989)
                     elif box_type == "COMPLETE_SET" and self._is_v5_unleashed_active():
@@ -6826,7 +6897,7 @@ class PolymarketLiveHarvester:
         )
         is_zero_itode_box = box_type == "COMPLETE_SET" or (
             zero_fee_box
-            and box_type in {"NEGRISK_2LEG", "NEGRISK_CROSS", "NBA_DOMINANCE", "SPORTS_CORRIDOR", "MACRO_DOMINANCE", "COUNTING_DOMINANCE", "BARRIER_MONO"}
+            and box_type in {"NEGRISK_2LEG", "NEGRISK_CROSS", "NBA_DOMINANCE", "SPORTS_CORRIDOR", "MACRO_DOMINANCE", "COUNTING_DOMINANCE", "BARRIER_MONO", "CROSS_BASIS_DOMINANCE", "EXACT_EQUIVALENCE"}
         )
         _rcfg_d1 = getattr(self, "risk_config", None) or RISK_CONFIG
         _d1_route_mode = str(_rcfg_d1.get("d1_routing_mode", "hybrid_auto"))
@@ -7106,9 +7177,34 @@ class PolymarketLiveHarvester:
         self, candidate_box: Dict[str, Any], concurrent_ok: bool = False
     ) -> Dict[str, Any]:
         """Native uvloop async D1 execution: Event preempt wait, _pos_market_ws->batch REST, direct async FOK."""
+        candidate_box = self._normalize_2leg_candidate_schema(candidate_box)
         box_t_pre = str(candidate_box.get("box_type") or "DOMINANCE").strip().upper()
         if box_t_pre in {"SINGLE_LEG_LOCK", "NEGRISK_CONVERT", "CTF_OVERROUND", "MULTI_LEG_BUNDLE"}:
             return await asyncio.to_thread(self.maybe_execute_graduated_d1_box, candidate_box)
+        if (
+            not self.dry_run
+            and box_t_pre != "DOMINANCE"
+            and not candidate_box.get("fee_rate_verified")
+            and candidate_box.get("leg_a_fee_rate") is None
+            and asyncio.iscoroutinefunction(getattr(self.executor, "resolve_token_fee_rate_async", None))
+        ):
+            _tk_fa = str(candidate_box.get("leg_a_token_id") or "")
+            _tk_fb = str(candidate_box.get("leg_b_token_id") or "")
+            _cd_fa = str(candidate_box.get("leg_a_condition_id") or candidate_box.get("condition_id") or "")
+            _cd_fb = str(candidate_box.get("leg_b_condition_id") or candidate_box.get("condition_id") or _cd_fa)
+            if _tk_fa and _tk_fb:
+                _res_fa, _res_fb = await asyncio.gather(
+                    self.executor.resolve_token_fee_rate_async(_tk_fa, _cd_fa),
+                    self.executor.resolve_token_fee_rate_async(_tk_fb, _cd_fb),
+                )
+                if _res_fa is not None:
+                    candidate_box["leg_a_fee_rate"] = float(_res_fa[0])
+                    candidate_box["leg_a_fee_exponent"] = float(_res_fa[1])
+                if _res_fb is not None:
+                    candidate_box["leg_b_fee_rate"] = float(_res_fb[0])
+                    candidate_box["leg_b_fee_exponent"] = float(_res_fb[1])
+                if _res_fa is not None and _res_fb is not None:
+                    candidate_box["fee_rate_verified"] = True
         s1 = self._d1_step1_gate_and_preempt(candidate_box, concurrent_ok=concurrent_ok)
         if not s1.get("_s1_ok"):
             return s1
@@ -7447,7 +7543,7 @@ class PolymarketLiveHarvester:
         sll_inflight_cnt = sum(1 for k in inflight_mkr_types if str(k).startswith("SINGLE_LEG_MAKER_LOCK:"))
         if (
             mkr_type_k in inflight_mkr_types
-            or (not _is_s2_early and sll_inflight_cnt >= (8 if _unlim_mkr else 2))
+            or (not _is_s2_early and sll_inflight_cnt >= (8 if _unlim_mkr else 3))
             or len(inflight_mkr) >= ((12 if _is_s2_early else 10) if _unlim_mkr else (6 if _is_s2_early else 4))
         ):
             return {"executed": False, "reason": "SINGLE_LEG_MAKER_ALREADY_INFLIGHT"}
@@ -7484,6 +7580,24 @@ class PolymarketLiveHarvester:
             or (pair_dedupe_k and float(retry_cd.get(pair_dedupe_k, 0.0) or 0.0) > now_ts)
         ):
             return {"executed": False, "reason": "ALREADY_SEEN_OR_COOLDOWN"}
+        if (
+            not self.dry_run
+            and sleeve_src not in {"S2_EXACT_TWAP_LOCK", "S2_RTDS_EXACT_TWAP_INTEGRATOR"}
+            and sleeve_src not in {"C1_BINARY_COMPLETE_SET", "D1_SAME_ORACLE_DOMINANCE_BOX", "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX"}
+            and "get_market_book" not in getattr(self.executor, "__dict__", {})
+            and getattr(self, "_pos_market_ws", None) is not None
+        ):
+            _bk_pre_ws = self._pos_market_ws.get_book(tok_a, max_age_sec=1.5)
+            if isinstance(_bk_pre_ws, dict) and (_bk_pre_ws.get("bids") or []):
+                _max_rb_ws = min(0.998, float(candidate_box.get("max_box_cost_net", 0.994) or 0.994))
+                _top_b_ws = max(
+                    (float(x["price"] if isinstance(x, dict) else x[0]) for x in _bk_pre_ws["bids"]),
+                    default=0.0,
+                )
+                if _top_b_ws > _max_rb_ws + 1e-6:
+                    if dedupe_k:
+                        retry_cd[dedupe_k] = now_ts + 90.0
+                    return {"executed": False, "reason": f"BOND1_OUTBID_ABOVE_CAP:{_top_b_ws:.4f}>{_max_rb_ws:.4f}"}
         if not self.dry_run and (
             not getattr(self, "_startup_reconciled", False)
             or self._global_halt_reasons()
@@ -8005,6 +8119,10 @@ class PolymarketLiveHarvester:
                                     else:
                                         seen_boxes.add(dedupe_k)
                                 return _sp_res
+                    if str(_veto_r).startswith("DUAL_BOOK_CONSENSUS_VETO"):
+                        _cd_s = max(float(_cd_s or 0.0), 180.0 if "bid=0.0000" in str(_veto_r) else 45.0)
+                    elif str(_veto_r).startswith("BOND1_OUTBID_ABOVE_CAP:"):
+                        _cd_s = max(float(_cd_s or 0.0), 120.0)
                     if _cd_s > 0.0:
                         retry_cd[dedupe_k] = time.time() + _cd_s
                     return {"executed": False, "reason": _veto_r}
@@ -8563,8 +8681,16 @@ class PolymarketLiveHarvester:
                         sleeve_src, exp_ts, time.time(), 150.0,
                         first_post_ts=first_post_ts, uws_ok=bool(uws is not None and uws.is_healthy()), rcfg=_rcfg_sll,
                     )
+                    _early_term_skip_dead = False
+                    if _clob_early_term and not was_preempted and mkt_ws_s is not None and not self.dry_run:
+                        _bk_et = mkt_ws_s.get_book(tok_a, max_age_sec=5.0)
+                        if isinstance(_bk_et, dict) and not _bk_et.get("is_partial_delta"):
+                            _b_et = _bk_et.get("bids") or []
+                            _tb_et = max((float(x["price"] if isinstance(x, dict) else x[0]) for x in _b_et), default=0.0)
+                            if _tb_et <= 0.0 or _tb_et > max_rb + 1e-6:
+                                _early_term_skip_dead = True
                     if (
-                        (was_preempted or _clob_early_term)
+                        (was_preempted or (_clob_early_term and not _early_term_skip_dead))
                         and not self.dry_run
                         and not getattr(self, "_shutdown_requested", False)
                         and preempt_why != "SHUTDOWN"
@@ -8715,98 +8841,42 @@ class PolymarketLiveHarvester:
             self._notify_maker_preempt_released()
 
     def _notify_sll_ws_book_change(self, _tok: str, loop_ref: Any = None) -> int:
-        _sll_ev_map = getattr(self, "_sll_ws_book_events", None)
-        if not _sll_ev_map:
-            return 0
-        lp = loop_ref or getattr(self, "_main_loop", None)
-        same_lp = False
-        if lp is not None:
-            try:
-                same_lp = asyncio.get_running_loop() is lp
-            except RuntimeError:
-                same_lp = False
-        woke = 0
-        for _tk_w, _op_w, _ev_s in list(_sll_ev_map.values()):
-            if _tok in (_tk_w, _op_w) and not _ev_s.is_set():
-                if lp is not None and not same_lp:
-                    lp.call_soon_threadsafe(_ev_s.set)
-                else:
-                    _ev_s.set()
-                woke += 1
-        return woke
+        from src.polymarket_research.riskless_protocol_v2_expansion import notify_sll_ws_book_change_impl
+        return notify_sll_ws_book_change_impl(self, _tok, loop_ref=loop_ref)
 
     def _spawn_live_maker_anchor_box_task(self, candidate_box: Dict[str, Any]) -> bool:
-        from src.polymarket_research.riskless_protocol_v2_expansion import is_s2_maker_bg_task_capped, register_s2_maker_bg_task
+        from src.polymarket_research.riskless_protocol_v2_expansion import spawn_live_maker_anchor_box_task_impl
+        return spawn_live_maker_anchor_box_task_impl(self, candidate_box, log_obj=logger)
 
-        tasks = self.__dict__.setdefault("_maker_anchor_bg_tasks", set())
-        by_type = self.__dict__.setdefault("_maker_anchor_bg_tasks_by_type", {})
-        b_type = str(candidate_box.get("box_type") or "DOMINANCE_MAKER_ANCHOR").strip().upper()
-        sl_t = str(candidate_box.get("sleeve_source") or "").strip()
-        _is_s2_t = sl_t in {"S2_EXACT_TWAP_LOCK", "S2_RTDS_EXACT_TWAP_INTEGRATOR"}
-        _unlim_t = self._is_unlimited_slots_active()
-        is_sll_mkr = b_type == "SINGLE_LEG_MAKER_LOCK"
-        if is_sll_mkr:
-            if _is_s2_t and is_s2_maker_bg_task_capped(self):
-                return False
-            b_key = f"SINGLE_LEG_MAKER_LOCK:{candidate_box.get('dedupe_key') or candidate_box.get('leg_a_market_id') or b_type}"
-            sll_running = sum(1 for k, tk in by_type.items() if str(k).startswith("SINGLE_LEG_MAKER_LOCK:") and not tk.done())
-            _sll_lim = (10 if _is_s2_t else 8) if (_unlim_t or self._is_v5_unleashed_active()) else (4 if _is_s2_t else 2)
-            if sll_running >= _sll_lim:
-                return False
-        else:
-            b_key = f"{b_type}:{candidate_box.get('dedupe_key') or candidate_box.get('asset') or b_type}" if _unlim_t else b_type
-            box2_running = sum(1 for k, tk in by_type.items() if not str(k).startswith("SINGLE_LEG_MAKER_LOCK:") and not tk.done())
-            if box2_running >= (8 if _unlim_t else 2):
-                return False
-        cur_t = by_type.get(b_key)
-        if cur_t is not None and not cur_t.done():
-            return False
-        if len(tasks) >= ((12 if _is_s2_t else 10) if (_unlim_t or self._is_v5_unleashed_active()) else (6 if _is_s2_t else 4)):
-            return False
-        coro = (
-            self.maybe_execute_graduated_single_leg_maker_lock(candidate_box)
-            if is_sll_mkr
-            else self.maybe_execute_graduated_maker_anchor_box(candidate_box)
-        )
-        t = asyncio.create_task(coro)
-        tasks.add(t)
-        by_type[b_key] = t
-        if is_sll_mkr and _is_s2_t:
-            register_s2_maker_bg_task(self, t)
+    def _enqueue_fast_d1_cand(self, cand_dict: Dict[str, Any]) -> bool:
+        from src.polymarket_research.riskless_protocol_v2_expansion import enqueue_fast_d1_cand_impl
+        return enqueue_fast_d1_cand_impl(self, cand_dict)
 
-        def _cleanup(done_t: Any) -> None:
-            tasks.discard(done_t)
-            if by_type.get(b_key) is done_t:
-                by_type.pop(b_key, None)
-            self._notify_maker_preempt_released()
-            try:
-                if not done_t.cancelled() and done_t.exception() is None:
-                    _r = done_t.result()
-                    if isinstance(_r, dict) and not _r.get("executed"):
-                        logger.info(f"[SLL MAKER SKIP] {b_key} ({sl_t or b_type}): {_r.get('reason')}")
-            except Exception:
-                pass
+    def _schedule_bg_token_fee_resolve(self, tok_id: str, cid: str, on_resolved: Any = None) -> None:
+        from src.polymarket_research.riskless_protocol_v2_expansion import schedule_bg_token_fee_resolve_impl
+        return schedule_bg_token_fee_resolve_impl(self, tok_id, cid, on_resolved=on_resolved)
 
-        t.add_done_callback(_cleanup)
-        return True
+    def _index_clinched_ws_cand(self, cand: Dict[str, Any], now_ts: Optional[float] = None) -> bool:
+        from src.polymarket_research.riskless_protocol_v2_expansion import index_clinched_ws_cand_impl
+        return index_clinched_ws_cand_impl(self, cand, now_ts=now_ts)
+
+    def _register_c1_ws_pair(self, cand: Dict[str, Any], now_ts: Optional[float] = None) -> bool:
+        from src.polymarket_research.riskless_protocol_v2_expansion import register_c1_ws_pair_impl
+        return register_c1_ws_pair_impl(self, cand, now_ts=now_ts)
+
+    def _eval_ws_c1_complete_set(
+        self, tok_id: str, bk_tok: Optional[Dict[str, Any]] = None, bk_other: Optional[Dict[str, Any]] = None, now_ts: Optional[float] = None
+    ) -> Optional[Dict[str, Any]]:
+        from src.polymarket_research.riskless_protocol_v2_expansion import eval_ws_c1_complete_set_impl
+        return eval_ws_c1_complete_set_impl(self, tok_id, bk_tok=bk_tok, bk_other=bk_other, now_ts=now_ts)
+
+    def _scan_shm_c1_pairs(self, now_ts: Optional[float] = None) -> int:
+        from src.polymarket_research.riskless_protocol_v2_expansion import scan_shm_c1_pairs_impl
+        return scan_shm_c1_pairs_impl(self, now_ts=now_ts)
 
     def _desired_market_ws_tokens(self, now_ts: Optional[float] = None) -> List[str]:
         from src.polymarket_research.riskless_protocol_v2_expansion import desired_market_ws_tokens_impl
-        toks = list(desired_market_ws_tokens_impl(self, now_ts=now_ts))
-        try:
-            from src.polymarket_research.full_throttle_pipeline import load_dormant_fast_rescan_tokens
-            dormant_toks = load_dormant_fast_rescan_tokens(max_age_sec=1800.0)
-            if dormant_toks:
-                seen = set(toks)
-                for dt_k in dormant_toks:
-                    if dt_k and dt_k not in seen:
-                        seen.add(dt_k)
-                        toks.append(dt_k)
-        except ImportError:
-            pass
-        except Exception:
-            pass
-        return toks
+        return list(desired_market_ws_tokens_impl(self, now_ts=now_ts))
 
     def register_clinched_ws_watch_cand(self, cand: Dict[str, Any], now_ts: Optional[float] = None) -> bool:
         from src.polymarket_research.riskless_protocol_v2_expansion import register_clinched_ws_watch_cand_impl
@@ -8874,16 +8944,18 @@ class PolymarketLiveHarvester:
                 if b_type_c == "CLINCH_WATCHLIST_REG":
                     seen_emits[emit_id] = None
                     self._record_ft_candidate_funnel(cand, stage="CLINCH_WATCHLIST")
-                    self.register_clinched_ws_watch_cand(cand, now_ts)
+                    self._index_clinched_ws_cand(cand, now_ts)
                     continue
                 self._record_ft_candidate_funnel(cand, stage="RECEIVED")
+                if b_type_c in ("C1_BINARY_COMPLETE_SET", "EXACT_EQUIVALENCE"):
+                    self._register_c1_ws_pair(cand, now_ts=now_ts)
                 if not self.dry_run and _stage_b_reg_decay_watch is not None:
                     try:
                         _stage_b_reg_decay_watch(cand, emit_funnel=False, tracker=_STAGE_B_DECAY_TRACKER)
                     except Exception:
                         pass
                 if b_type_c == "SINGLE_LEG_MAKER_LOCK" and float(cand.get("p_model") or 0.0) >= 0.998:
-                    self.register_clinched_ws_watch_cand(cand, now_ts)
+                    self._index_clinched_ws_cand(cand, now_ts)
                 if b_type_c in {"DOMINANCE_MAKER_ANCHOR", "ZERO_FEE_MAKER_ANCHOR", "SINGLE_LEG_MAKER_LOCK"}:
                     mkr_cands.append((emit_id, cand))
                 else:
@@ -12022,6 +12094,9 @@ class PolymarketLiveHarvester:
                             pass
                         d1_ipc_sock = None
 
+            self._main_loop = loop
+            self._fast_d1_box_event = fast_d1_box_event
+            self._trigger_notify_event = trigger_notify_event
             last_heartbeat = time.time()
             last_clob_heartbeat = 0.0
             last_mgmt_check = 0.0
@@ -12041,43 +12116,8 @@ class PolymarketLiveHarvester:
                     loop.call_soon_threadsafe(trigger_notify_event.set)
 
                 def _on_ws_book_change(_tok: str, _bk: Dict[str, Any]) -> None:
-                    self._notify_sll_ws_book_change(_tok, loop)
-                    _asks = (_bk or {}).get("asks") or []
-                    if _STAGE_B_DECAY_TRACKER is not None and _tok in _STAGE_B_DECAY_TRACKER._by_token:
-                        try:
-                            _ba_px = float(_asks[0].get("price") or 0.0) if _asks else None
-                            _ba_sz = float(_asks[0].get("size") or 0.0) if _asks else 0.0
-                            _STAGE_B_DECAY_TRACKER.on_top_of_book_tick(_tok, _ba_px, _ba_sz)
-                        except Exception:
-                            pass
-                    _bids = (_bk or {}).get("bids") or []
-                    if _bids and float(_bids[0].get("price", 0.0) or 0.0) >= 0.52:
-                        _top_b_ws = float(_bids[0].get("price", 0.0) or 0.0)
-                        _tok_map = getattr(self, "_active_recycle_tok_map", None)
-                        if _tok_map is not None:
-                            _flags = _tok_map.get(_tok)
-                            _recycle_hit = bool(_flags is not None and (_flags[0] or (_top_b_ws >= 0.997 and _flags[1])))
-                        else:
-                            _recycle_hit = any(
-                                (p.get("is_dominance_box") or (_top_b_ws >= 0.997 and p.get("hold_to_maturity_lock")))
-                                and str(p.get("token_id") or "") == _tok
-                                for p in self.active_positions.values()
-                            )
-                        if _recycle_hit:
-                            self._ws_urgent_recycle_ts = time.time()
-                            loop.call_soon_threadsafe(trigger_notify_event.set)
-                    if getattr(self, "_clinched_ws_watchlist", None) and _asks:
-                        _snipe_c = self.evaluate_clinched_ws_book_snipe(_tok, _bk)
-                        if _snipe_c is not None:
-                            _fq = getattr(self, "_fast_d1_cand_lines", None)
-                            if _fq is not None:
-                                _fq.append(
-                                    _orjson.dumps(_snipe_c).decode("utf-8")
-                                    if _orjson is not None
-                                    else json.dumps(_snipe_c, separators=(",", ":"))
-                                )
-                                loop.call_soon_threadsafe(fast_d1_box_event.set)
-                                loop.call_soon_threadsafe(trigger_notify_event.set)
+                    from src.polymarket_research.riskless_protocol_v2_expansion import on_ws_book_change_impl
+                    on_ws_book_change_impl(self, _tok, _bk, loop, trigger_notify_event, decay_tracker=_STAGE_B_DECAY_TRACKER)
 
                 _ws_shards_cfg = max(
                     1,
@@ -12412,6 +12452,13 @@ class PolymarketLiveHarvester:
                         f"Active positions: {len(self.active_positions)} (${active_exp:.2f}) | "
                         f"Closed: {len(self.closed_positions)}"
                     )
+
+                if not self.dry_run and (time.time() - getattr(self, "_last_shm_c1_scan", 0.0) >= 2.0):
+                    self._last_shm_c1_scan = time.time()
+                    try:
+                        self._scan_shm_c1_pairs(self._last_shm_c1_scan)
+                    except Exception:
+                        pass
 
                 # Periodic stale-recorder monitor (rate-limited alerts inside; cheap stat() calls every 5s)
                 if not self.dry_run and (time.time() - getattr(self, "_last_stale_check", 0.0) >= 5.0):
