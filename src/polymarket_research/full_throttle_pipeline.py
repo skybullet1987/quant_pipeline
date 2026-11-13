@@ -3746,11 +3746,13 @@ class PublicPolymarketScannerClient:
             del comp
         else:
             raw = comp
-        big_payload = len(raw) > 2_000_000
+        big_payload = len(raw) > 750_000
         if big_payload:
             _reclaim_process_memory()
         parsed = _loads_json_bytes(raw)
         del raw
+        if big_payload:
+            _reclaim_process_memory()
         return parsed
 
     _WEATHER_ICAO_UPPER_RE = re.compile(
@@ -3804,16 +3806,16 @@ class PublicPolymarketScannerClient:
     def sweep_gamma_events_keyset(
         self,
         *,
-        page_limit: int = 35,
-        max_pages: int = 950,
+        page_limit: int = 22,
+        max_pages: int = 1100,
         compact_fields: bool = True,
-        max_retained_active_markets: int = 1_700,
+        max_retained_active_markets: int = 1_450,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """
         Enumerates 100% of observable active unclosed events via `/events/keyset?after_cursor=...`.
         Streams exact full-universe census counters across 100% of all events/markets (`~19,257` events,
         `~375,963` child markets, `~201,218` active unclosed markets) while maintaining a generalized
-        structural-priority bounded min-heap (`<= 680` events / `<= 1,700` active markets) covering
+        structural-priority bounded min-heap (`<= 660` events / `<= 1,450` active markets) covering
         all 14 Opportunity Families (`A..N`, including `Family D` logical hierarchies, `Family G`
         multi-line sports & tournament advancement, `Family H` weather/ICAO brackets, `Family I`
         cross-event duplicate stems, and `Family K` UMA `proposed` carry) strictly `< 180 MiB` RSS (`D-010`)!
@@ -3834,7 +3836,7 @@ class PublicPolymarketScannerClient:
         events_out: List[Dict[str, Any]] = []
         retained_heap: List[Tuple[float, int, int, Dict[str, Any]]] = []
         retained_eids_in_heap: Set[str] = set()
-        max_heap_events = 760
+        max_heap_events = 660
         heap_seq = 0
         seen_event_ids: Set[str] = set()
         seen_stem_first_eid: Dict[str, str] = {}
@@ -3913,8 +3915,10 @@ class PublicPolymarketScannerClient:
         str_dedup_pool: Dict[str, str] = {}
 
         def _dedup_s(val: Any) -> Any:
-            if not isinstance(val, str) or len(val) > 2048:
+            if not isinstance(val, str) or len(val) > 160:
                 return val
+            if len(str_dedup_pool) > 1_000:
+                str_dedup_pool.clear()
             return str_dedup_pool.setdefault(val, val)
 
         def _build_comp_ev(
@@ -3945,8 +3949,10 @@ class PublicPolymarketScannerClient:
                     continue
                 cm_loc = {k: m_loc[k] for k in keep_mkt_keys if k in m_loc}
                 if "description" in cm_loc and isinstance(cm_loc["description"], str):
-                    d_s = cm_loc["description"][:1400] if len(cm_loc["description"]) > 1400 else cm_loc["description"]
-                    cm_loc["description"] = _dedup_s(d_s)
+                    is_prop_d = str(cm_loc.get("umaResolutionStatus") or "").strip().lower() == "proposed"
+                    d_cap = 1100 if is_prop_d else 220
+                    d_s = cm_loc["description"][:d_cap] if len(cm_loc["description"]) > d_cap else cm_loc["description"]
+                    cm_loc["description"] = d_s
                 for sk in ("outcomes", "feeType", "resolutionSource", "comboStatus", "sportsMarketType"):
                     if sk in cm_loc and isinstance(cm_loc[sk], str):
                         cm_loc[sk] = _dedup_s(cm_loc[sk])
@@ -4271,7 +4277,7 @@ class PublicPolymarketScannerClient:
                             if first_eid is None:
                                 if len(seen_stem_first_eid) < 12_000:
                                     seen_stem_first_eid[norm_stem] = eid
-                                    if ev_open_cnt <= 4 and ev_liq >= 5.0 and len(seen_stem_first_ev) < 250:
+                                    if ev_open_cnt <= 4 and ev_liq >= 5.0 and len(seen_stem_first_ev) < 140:
                                         seen_stem_first_ev[norm_stem] = _build_comp_ev(ev, eid, raw_mkts, is_nr_ev, is_aug_ev)
                             elif first_eid != eid:
                                 is_dup_stem = True
@@ -4285,7 +4291,7 @@ class PublicPolymarketScannerClient:
                             if p_first_eid is None:
                                 if len(seen_prize_first_eid) < 8_000:
                                     seen_prize_first_eid[pk_s] = eid
-                                    if ev_open_cnt <= 64 and ev_liq >= 10.0 and len(seen_prize_first_ev) < 180:
+                                    if ev_open_cnt <= 64 and ev_liq >= 10.0 and len(seen_prize_first_ev) < 100:
                                         seen_prize_first_ev[pk_s] = _build_comp_ev(ev, eid, raw_mkts, is_nr_ev, is_aug_ev)
                             elif p_first_eid != eid:
                                 is_cross_prize_pair = True
@@ -4317,17 +4323,17 @@ class PublicPolymarketScannerClient:
                         has_multi_line_game = is_game_matchup and (3 <= ev_open_cnt <= 24) and sports_struct_mkt_cnt >= 2
                         is_clean_weather = has_weather_kw and not ev_all_kmia_frozen
 
-                        # Quota-guaranteed non-stacking structural priority tiers (`35+55+140+30+70+180+110+85 = 705 <= 760`
+                        # Quota-guaranteed non-stacking structural priority tiers (`35+50+110+20+60+160+100+80 = 615 <= 660`
                         # heap slots so NO single family can ever starve `D`, `E`, `F`, `G`, `H`, `I`, or `K`!)
                         q_wx = is_clean_weather and fam_quota_cnt["H"] < 35
-                        q_d = (is_cross_prize_pair or is_core_logical_d) and fam_quota_cnt["D"] < 55
-                        q_uma_clean = ev_has_uma_proposed_clean and fam_quota_cnt["K"] < 140
-                        q_uma_raw = ev_has_uma_proposed and not ev_has_uma_proposed_clean and fam_quota_cnt["K_RAW"] < 30
+                        q_d = (is_cross_prize_pair or is_core_logical_d) and fam_quota_cnt["D"] < 50
+                        q_uma_clean = ev_has_uma_proposed_clean and fam_quota_cnt["K"] < 110
+                        q_uma_raw = ev_has_uma_proposed and not ev_has_uma_proposed_clean and fam_quota_cnt["K_RAW"] < 20
                         q_uma = q_uma_clean or q_uma_raw
-                        q_dup = is_dup_stem and fam_quota_cnt["I"] < 70
-                        q_f = (not is_game_matchup and 2 <= ev_open_cnt <= 28 and numeric_ladder_mkt_cnt >= 2 and ev_liq >= 20.0) and fam_quota_cnt["F"] < 180
-                        q_e = (not is_game_matchup and has_generalized_ladder and ev_liq >= 20.0) and fam_quota_cnt["E"] < 110
-                        q_g = ((has_tournament_adv_kw and ev_liq >= 50.0) or (has_multi_line_game and ev_liq >= 150.0)) and fam_quota_cnt["G"] < 85
+                        q_dup = is_dup_stem and fam_quota_cnt["I"] < 60
+                        q_f = (not is_game_matchup and 2 <= ev_open_cnt <= 28 and numeric_ladder_mkt_cnt >= 2 and ev_liq >= 20.0) and fam_quota_cnt["F"] < 160
+                        q_e = (not is_game_matchup and has_generalized_ladder and ev_liq >= 20.0) and fam_quota_cnt["E"] < 100
+                        q_g = ((has_tournament_adv_kw and ev_liq >= 50.0) or (has_multi_line_game and ev_liq >= 150.0)) and fam_quota_cnt["G"] < 80
 
                         structural_tier = max(
                             2_600_000.0 if q_wx else 0.0,
@@ -4387,16 +4393,23 @@ class PublicPolymarketScannerClient:
                         events_out.append(ev)
 
                 nxt = payload.get("next_cursor")
-                had_dense_page = len(batch) > 0 and sum(len(e.get("markets") or ()) for e in batch if isinstance(e, dict)) > 800
+                had_dense_page = len(batch) > 0 and sum(len(e.get("markets") or ()) for e in batch if isinstance(e, dict)) > 450
                 del payload, batch
-                if had_dense_page or pages_fetched % 15 == 0:
-                    if len(str_dedup_pool) > 6_000:
+                if had_dense_page or pages_fetched % 10 == 0:
+                    if len(str_dedup_pool) > 1_000:
                         str_dedup_pool.clear()
                     _reclaim_process_memory()
 
                 if not nxt or str(nxt) == str(cursor):
                     break
                 cursor = str(nxt)
+
+            # Release cross-event stem/prize caches before fetching supplements (`D-010` swapless guard).
+            seen_stem_first_eid.clear()
+            seen_stem_first_ev.clear()
+            seen_prize_first_eid.clear()
+            seen_prize_first_ev.clear()
+            _reclaim_process_memory()
 
             # Fast newest-first active UMA `proposed` & top-24h-volume supplement (`<0.6s`, zero sleep on mock miss)
             # Ensures fresh 2026 `BOND1` proposals & liquid multi-market structures are NEVER starved by chronological keyset order!
@@ -4415,9 +4428,9 @@ class PublicPolymarketScannerClient:
                         return None
 
                 supp_uma_groups: Dict[str, Tuple[Dict[str, Any], List[Dict[str, Any]]]] = {}
-                for offset_p in (0, 100):
+                for offset_p in (0, 60):
                     supp_mkts = _fetch_supp_json_list(
-                        f"/markets?uma_resolution_status=proposed&closed=false&order=id&ascending=false&limit=100&offset={offset_p}"
+                        f"/markets?uma_resolution_status=proposed&closed=false&order=id&ascending=false&limit=60&offset={offset_p}"
                     )
                     if not supp_mkts:
                         break
@@ -4476,8 +4489,10 @@ class PublicPolymarketScannerClient:
                             }
                             supp_uma_groups[eid_pm] = (stub_ev, [])
                         supp_uma_groups[eid_pm][1].append(pm)
-                    if len(supp_mkts) < 100:
+                    if len(supp_mkts) < 60:
+                        del supp_mkts
                         break
+                    del supp_mkts
 
                 added_uma_supp = 0
                 for eid_pm, (stub_ev, pm_list) in sorted(
@@ -4487,7 +4502,7 @@ class PublicPolymarketScannerClient:
                         for x in kv[1][1]
                     ),
                 ):
-                    if added_uma_supp >= 90:
+                    if added_uma_supp >= 60:
                         break
                     if eid_pm in retained_eids_in_heap:
                         continue
@@ -4501,14 +4516,16 @@ class PublicPolymarketScannerClient:
                         )
                         _push_heap_ev(2_530_000.0 + min(liq_pm, 55_000.0), added_open_pm, comp_ev_pm)
                         added_uma_supp += 1
+                supp_uma_groups.clear()
+                _reclaim_process_memory()
 
                 supp_vol_evs = _fetch_supp_json_list(
-                    "/events?closed=false&active=true&order=volume24hr&ascending=false&limit=100"
+                    "/events?closed=false&active=true&order=volume24hr&ascending=false&limit=15"
                 )
                 if supp_vol_evs:
                     added_vol_supp = 0
                     for ev_v in supp_vol_evs:
-                        if added_vol_supp >= 45:
+                        if added_vol_supp >= 15:
                             break
                         if not isinstance(ev_v, dict):
                             continue
@@ -4546,6 +4563,8 @@ class PublicPolymarketScannerClient:
                             score_v_supp = (2_495_000.0 if has_prop_v else 2_060_000.0) + min(liq_v, 55_000.0)
                             _push_heap_ev(score_v_supp, added_open_v, comp_ev_v)
                             added_vol_supp += 1
+                    del supp_vol_evs
+                    _reclaim_process_memory()
         finally:
             str_dedup_pool.clear()
             seen_stem_first_eid.clear()
@@ -5550,7 +5569,7 @@ class PipelineConfig:
     max_book_tokens_discovery: int = 1500
     max_book_tokens_fast_cycle: int = 950
     cold_layer_rotation_tokens: int = 300
-    max_gamma_pages: int = 950
+    max_gamma_pages: int = 1100
     max_candidates_per_family: int = 300
     max_ledger_rows: int = 5000
     max_rss_mib: float = MAX_SWAPLESS_SAFE_RSS_MIB
