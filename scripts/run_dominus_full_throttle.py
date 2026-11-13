@@ -60,7 +60,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--max-book-tokens-discovery", type=int, default=1800)
     parser.add_argument("--max-book-tokens-fast", type=int, default=1100)
     parser.add_argument("--cold-rotation-tokens", type=int, default=350)
-    parser.add_argument("--max-gamma-pages", type=int, default=1100)
+    parser.add_argument("--max-gamma-pages", type=int, default=950)
     parser.add_argument("--resume-checkpoint", action="store_true", help="Load prior checkpoint_state.json before running")
     parser.add_argument(
         "--emit-harvester-candidates",

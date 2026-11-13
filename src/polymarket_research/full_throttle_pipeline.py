@@ -3746,13 +3746,14 @@ class PublicPolymarketScannerClient:
             del comp
         else:
             raw = comp
-        big_payload = len(raw) > 750_000
-        if big_payload:
-            _reclaim_process_memory()
+        big_payload = len(raw) > 1_500_000
         parsed = _loads_json_bytes(raw)
         del raw
-        if big_payload:
-            _reclaim_process_memory()
+        if big_payload and _LIBC_MALLOC_TRIM is not None:
+            try:
+                _LIBC_MALLOC_TRIM(0)
+            except Exception:
+                pass
         return parsed
 
     _WEATHER_ICAO_UPPER_RE = re.compile(
@@ -3806,8 +3807,8 @@ class PublicPolymarketScannerClient:
     def sweep_gamma_events_keyset(
         self,
         *,
-        page_limit: int = 22,
-        max_pages: int = 1100,
+        page_limit: int = 30,
+        max_pages: int = 950,
         compact_fields: bool = True,
         max_retained_active_markets: int = 1_450,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
@@ -4393,9 +4394,9 @@ class PublicPolymarketScannerClient:
                         events_out.append(ev)
 
                 nxt = payload.get("next_cursor")
-                had_dense_page = len(batch) > 0 and sum(len(e.get("markets") or ()) for e in batch if isinstance(e, dict)) > 450
+                had_dense_page = len(batch) > 0 and sum(len(e.get("markets") or ()) for e in batch if isinstance(e, dict)) > 650
                 del payload, batch
-                if had_dense_page or pages_fetched % 10 == 0:
+                if had_dense_page or pages_fetched % 30 == 0:
                     if len(str_dedup_pool) > 1_000:
                         str_dedup_pool.clear()
                     _reclaim_process_memory()
@@ -4520,12 +4521,12 @@ class PublicPolymarketScannerClient:
                 _reclaim_process_memory()
 
                 supp_vol_evs = _fetch_supp_json_list(
-                    "/events?closed=false&active=true&order=volume24hr&ascending=false&limit=15"
+                    "/events?closed=false&active=true&order=volume24hr&ascending=false&limit=8"
                 )
                 if supp_vol_evs:
                     added_vol_supp = 0
                     for ev_v in supp_vol_evs:
-                        if added_vol_supp >= 15:
+                        if added_vol_supp >= 8:
                             break
                         if not isinstance(ev_v, dict):
                             continue
@@ -5569,7 +5570,7 @@ class PipelineConfig:
     max_book_tokens_discovery: int = 1500
     max_book_tokens_fast_cycle: int = 950
     cold_layer_rotation_tokens: int = 300
-    max_gamma_pages: int = 1100
+    max_gamma_pages: int = 950
     max_candidates_per_family: int = 300
     max_ledger_rows: int = 5000
     max_rss_mib: float = MAX_SWAPLESS_SAFE_RSS_MIB
