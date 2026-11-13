@@ -1,6 +1,6 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-11-13 15:33:48 UTC | Repo: C:/Users/Anton/source/repos/Dominus
+Generated: 2026-11-13 16:27:34 UTC | Repo: C:/Users/Anton/source/repos/Dominus
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (L20-23 | 1,649B) :: Centralized Risk & Sizing Limits (Backward-Compatible Floor/Caps)
   - [config/polymarket_strategy_and_risk.json] (L24-27 | 9,436B) :: v5.0 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Config

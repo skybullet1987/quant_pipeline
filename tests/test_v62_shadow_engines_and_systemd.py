@@ -681,6 +681,141 @@ class TestAlpha124Grad8AndFeedWiring(unittest.TestCase):
         self.assertIn("tok_cnt_no", toks)
         self.assertIn("tok_cnt_yes", toks)
 
+    def test_projections_full_throttle_telemetry_and_empirical_runrate(self) -> None:
+        from datetime import datetime, timedelta, timezone
+        from scripts import polymarket_daily_projections as pdp
+
+        now = time.time()
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            cov_p = tdp / "universe_coverage.json"
+            ftd_p = tdp / "full_throttle_dashboard.json"
+            cov_p.write_text(
+                json.dumps(
+                    {
+                        "universe_summary": {
+                            "total_events": 19633,
+                            "total_markets": 365805,
+                            "active_orderbook_markets": 173244,
+                            "total_tokens": 346488,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            ftd_p.write_text(
+                json.dumps(
+                    {
+                        "schema": "dominus_full_throttle_dashboard_v1",
+                        "section_1b_proposition_graph": {"total_edges": 5547},
+                        "section_2_opportunity_metrics": {"rule_mismatch_rejections_prevented": 21208},
+                        "section_2c_dormant_opportunity_store": {"active_dormant_count": 1200},
+                        "section_2d_hedged_maker_shadow_quoter": {"net_post_adverse_shadow_pnl_ex_rebate_usd": 537.68},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(pdp, "UNIVERSE_COVERAGE_FILE", cov_p),
+                mock.patch.object(pdp, "FULL_THROTTLE_DASHBOARD_FILE", ftd_p),
+            ):
+                tel = pdp._load_full_throttle_telemetry()
+                self.assertEqual(tel["total_events"], 19633)
+                self.assertEqual(tel["total_markets"], 365805)
+                self.assertEqual(tel["proposition_graph_edges"], 5547)
+                self.assertEqual(tel["rule_trap_blocks"], 21208)
+                self.assertEqual(tel["dormant_near_arbs"], 1200)
+                self.assertAlmostEqual(tel["family_l_shadow_pnl_usd"], 537.68, places=2)
+
+        now_dt = datetime.fromtimestamp(now, tz=timezone.utc)
+        live_st = {
+            "live_bankroll": 42.12,
+            "open_positions": {},
+            "closed_positions": [
+                {
+                    "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
+                    "status": "SETTLED",
+                    "settled_at_utc": (now_dt - timedelta(hours=3)).isoformat(),
+                    "net_pnl_usd": 0.25,
+                    "notional_usd": 10.0,
+                    "fee_usd": 0.0,
+                },
+                {
+                    "sleeve": "D1_LIVE_2LEG_MERGE",
+                    "status": "SETTLED",
+                    "resolution_seen_at_ts": now - 3 * 86400.0,
+                    "net_pnl_usd": 1.75,
+                    "notional_usd": 40.0,
+                    "fee_usd": 0.0,
+                },
+                {
+                    "sleeve": "SLEEVE_1_SUBHOURLY_15M",
+                    "status": "SETTLED",
+                    "settled_at_utc": (now_dt - timedelta(hours=2)).isoformat(),
+                    "net_pnl_usd": -25.00,
+                    "notional_usd": 25.0,
+                    "fee_usd": 0.50,
+                },
+                {
+                    "sleeve": "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",
+                    "status": "NOT_EXECUTED",
+                    "settled_at_utc": (now_dt - timedelta(hours=1)).isoformat(),
+                    "net_pnl_usd": 0.0,
+                    "notional_usd": 0.0,
+                },
+            ],
+        }
+        emp = pdp.compute_empirical_realized_runrate(live_st, 49.12, now_ts=now)
+        self.assertEqual(emp["window_24h"]["closed_records"], 1)
+        self.assertAlmostEqual(emp["window_24h"]["realized_pnl_usd"], 0.25, places=4)
+        self.assertFalse(emp["window_24h"]["clears_vm_hurdle"])
+        self.assertEqual(emp["window_7d"]["closed_records"], 2)
+        self.assertAlmostEqual(emp["window_7d"]["realized_pnl_usd"], 2.00, places=4)
+        self.assertIn("day_30", emp["status_quo_linear_30d_baseline"])
+
+        payload = pdp.build_live_projections(days=30, riskless_only=True, live_state_override=live_st)
+        self.assertFalse(payload["row2_s2_twap_enabled"])
+        self.assertIn("empirical_realized_runrate", payload)
+        d30 = payload["day_by_day_schedule"][29]
+        self.assertIn("vm_cost_cum_usd", d30)
+        self.assertIn("p50_net_after_vm_usd", d30)
+
+    def test_alpha124_resolve_gatling_starting_nav_uses_live_reconciled_nav(self) -> None:
+        from src.polymarket_research import alpha_124_shadow_daemon as a124_mod
+
+        d = a124_mod.Alpha124ShadowDaemon(single_scan=True)
+        d.live_account_equity_usd = 49.12
+        self.assertAlmostEqual(d._resolve_gatling_starting_nav_usd(), 49.12, places=2)
+
+        d.live_account_equity_usd = 0.0
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            st_file = tdp / "state.json"
+            mir_file = tdp / "mirror.json"
+            opps_file = tdp / "opps.json"
+            lh_file = tdp / "live_harvester_state.json"
+            lh_file.write_text(
+                json.dumps({"reconciled_nav_usd": 49.12, "live_bankroll": 42.12, "total_account_equity": 99.60}),
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(a124_mod, "LIVE_POLYMARKET_DIR", tdp),
+                mock.patch.object(a124_mod, "DATA_DIR", tdp),
+                mock.patch.object(a124_mod, "STATE_FILE", st_file),
+                mock.patch.object(a124_mod, "LIVE_ALPHA124_STATE_MIRROR_FILE", mir_file),
+                mock.patch.object(a124_mod, "OPPS_FILE", opps_file),
+            ):
+                d2 = a124_mod.Alpha124ShadowDaemon(single_scan=True)
+                d2.live_account_equity_usd = 0.0
+                d2.closed_positions = []
+                d2.open_positions = {}
+                resolved = d2._resolve_gatling_starting_nav_usd()
+                self.assertAlmostEqual(resolved, 49.12, places=2)
+                d2.write_state_files([])
+                written = json.loads(st_file.read_text(encoding="utf-8"))
+                gp = written.get("gatling_projection", {})
+                self.assertAlmostEqual(gp.get("starting_nav_usd", 0.0), 49.12, places=2)
+
     def test_permission_gate_zero_violations_across_all_owned_files(self) -> None:
         from src.paa_os.permissions import PermissionGate
 
@@ -689,6 +824,7 @@ class TestAlpha124Grad8AndFeedWiring(unittest.TestCase):
             "systemd/polymarket-live-harvester.service",
             "systemd/polymarket-recorder.service",
             "systemd/polymarket-alpha124-shadow.service",
+            "scripts/polymarket_daily_projections.py",
             "src/polymarket_research/universal_arb_verifier.py",
             "src/polymarket_research/uma_nba_endgame_engine.py",
             "src/polymarket_research/macro_counting_ctf_engine.py",

@@ -1,7 +1,7 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET COMPLETE UNIFIED CODEBASE (v4.0 FULL LIVE + ALPHA-124 11-SLEEVE EDITION)
-Generated: 2026-11-13 15:33:50 UTC
+Generated: 2026-11-13 16:27:38 UTC
 100% Un-Truncated Source Code, Mathematical Oracles, Execution Stack, Systemd Units & Unit Tests
 Repository: C:/Users/Anton/source/repos/Dominus
 ========================================================================================
@@ -51,30 +51,30 @@ TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
   [42] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 77,198 - 79,026 | 87,117 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
   [43] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 79,027 - 81,324 | 111,459 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
   [44] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 81,325 - 83,701 | 119,757 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
-  [45] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 83,702 - 99,380 | 876,182 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
-  [46] scripts/backtest_alpha_124.py (Lines 99,381 - 100,243 | 40,201 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
-  [47] scripts/polymarket_daily_projections.py (Lines 100,244 - 102,026 | 75,445 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
-  [48] scripts/alpha124_status.py (Lines 102,027 - 102,105 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
-  [49] scripts/polymarket_scorecard_snapshot.py (Lines 102,106 - 102,255 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
-  [50] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 102,256 - 104,150 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
-  [51] src/polymarket_research/honest_riskless_backtester.py (Lines 104,151 - 105,050 | 42,478 B) :: v6.0 Honest CLOB L2 Execution Kernel, Zero-Lookahead Harness & CompactCandidateL2Recorder
-  [52] src/polymarket_research/riskless_expansion_v6_engines.py (Lines 105,051 - 108,721 | 175,952 B) :: v6.0 8-Sleeve Riskless Expansion Engine (XV Subset-NO, 0.001 Tail, BOND3, CAD/USD FX, Deribit USDC, Halftime, PreConv NR3, Yield Box)
-  [53] src/polymarket_research/riskless_fast_feeds.py (Lines 108,722 - 110,054 | 56,861 B) :: v6.2 $0/mo Fast Feeds: Pyth Hermes, Scoped Polygon Logs WS, Hyperliquid/Coinbase/Deribit WS, Macro RSS/EDGAR & Live CAD/USD FX
-  [54] tests/test_alpha_124_oracles.py (Lines 110,055 - 114,135 | 216,226 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
-  [55] tests/test_polymarket_wfo_5fixes.py (Lines 114,136 - 119,867 | 293,910 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
-  [56] tests/test_zero_trust_forensic_audit.py (Lines 119,868 - 120,626 | 33,478 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
-  [57] tests/test_riskless_frontier_v4.py (Lines 120,627 - 121,469 | 44,264 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
-  [58] tests/test_v530_forensic_plumbing_fixes.py (Lines 121,470 - 122,249 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
-  [59] tests/test_v531_qa_audit_fixes.py (Lines 122,250 - 124,051 | 95,568 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
-  [60] tests/test_v550_zero_loss_frontier_and_velocity.py (Lines 124,052 - 124,818 | 37,480 B) :: Unit Tests: v5.5.0 Zero-Loss Frontier, Relayer V2 Batch Merge, Verified m=1 Convert & Velocity
-  [61] tests/test_v560_fill_rate_and_profit_growth.py (Lines 124,819 - 127,903 | 158,467 B) :: Unit Tests: v5.6.0 Fill-Rate, Profit-Growth, NR_M1 Bridge, WS Clinch Sniper & Sticky FIFO Queue
-  [62] tests/test_v570_ms_velocity_and_ws_sniper.py (Lines 127,904 - 129,524 | 82,028 B) :: Unit Tests: v5.7.0 Sub-ms Hot-Path Velocity, 450-Token WS Sniper, 2h UMA Recycle & Dynamic Scaling
-  [63] tests/test_v580_sharded_ws_d1fast_pusd_and_direct_feeds.py (Lines 129,525 - 130,313 | 34,863 B) :: Unit Tests: v5.8.0 4-Shard WS, D1FAST IPC, V2 pUSD Redemption/Wrap & Direct Feeds
-  [64] tests/test_stage_b_economic_attribution.py (Lines 130,314 - 130,756 | 19,968 B) :: Unit Tests: Stage B Opportunity Funnel, Competitor Decay, Markouts & 10 Institutional KPIs
-  [65] tests/test_stage_c_zero_loss_velocity.py (Lines 130,757 - 132,096 | 61,447 B) :: Unit Tests: Stage C Zero-Loss Velocity Recycler, Pre-Split Lock & Clinched Split-to-Sell
-  [66] tests/test_priority0_live_leak_fixes.py (Lines 132,097 - 133,017 | 46,004 B) :: Unit Tests: Priority 0 Live Leaks (Unified Event Cap, UNWRESID Guard, 0%-Fee Plumbing, Stage B & Fast D1 Loop)
-  [67] tests/test_v590_fast_cancel_ws_hedge_and_synthetic_maker.py (Lines 133,018 - 133,723 | 36,015 B) :: Unit Tests: v5.9.0 1-RTT Fast Cancel, 0-REST WS Fill-to-Hedge, Synthetic Maker Shield & AFF1 Settled Locks
-  [68] tests/test_riskless_remediation_and_8_new_engines.py (Lines 133,724 - 134,889 | 47,955 B) :: Unit Tests: v6.0 Riskless Remediation, Honest Backtester, CompactCandidateL2Recorder & All 8 New Engines
+  [45] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 83,702 - 99,402 | 877,116 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
+  [46] scripts/backtest_alpha_124.py (Lines 99,403 - 100,265 | 40,201 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
+  [47] scripts/polymarket_daily_projections.py (Lines 100,266 - 102,235 | 83,318 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
+  [48] scripts/alpha124_status.py (Lines 102,236 - 102,314 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
+  [49] scripts/polymarket_scorecard_snapshot.py (Lines 102,315 - 102,464 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
+  [50] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 102,465 - 104,359 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
+  [51] src/polymarket_research/honest_riskless_backtester.py (Lines 104,360 - 105,259 | 42,478 B) :: v6.0 Honest CLOB L2 Execution Kernel, Zero-Lookahead Harness & CompactCandidateL2Recorder
+  [52] src/polymarket_research/riskless_expansion_v6_engines.py (Lines 105,260 - 108,930 | 175,952 B) :: v6.0 8-Sleeve Riskless Expansion Engine (XV Subset-NO, 0.001 Tail, BOND3, CAD/USD FX, Deribit USDC, Halftime, PreConv NR3, Yield Box)
+  [53] src/polymarket_research/riskless_fast_feeds.py (Lines 108,931 - 110,263 | 56,861 B) :: v6.2 $0/mo Fast Feeds: Pyth Hermes, Scoped Polygon Logs WS, Hyperliquid/Coinbase/Deribit WS, Macro RSS/EDGAR & Live CAD/USD FX
+  [54] tests/test_alpha_124_oracles.py (Lines 110,264 - 114,344 | 216,226 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
+  [55] tests/test_polymarket_wfo_5fixes.py (Lines 114,345 - 120,076 | 293,910 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
+  [56] tests/test_zero_trust_forensic_audit.py (Lines 120,077 - 120,835 | 33,478 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
+  [57] tests/test_riskless_frontier_v4.py (Lines 120,836 - 121,678 | 44,264 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
+  [58] tests/test_v530_forensic_plumbing_fixes.py (Lines 121,679 - 122,458 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
+  [59] tests/test_v531_qa_audit_fixes.py (Lines 122,459 - 124,260 | 95,568 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
+  [60] tests/test_v550_zero_loss_frontier_and_velocity.py (Lines 124,261 - 125,027 | 37,480 B) :: Unit Tests: v5.5.0 Zero-Loss Frontier, Relayer V2 Batch Merge, Verified m=1 Convert & Velocity
+  [61] tests/test_v560_fill_rate_and_profit_growth.py (Lines 125,028 - 128,112 | 158,467 B) :: Unit Tests: v5.6.0 Fill-Rate, Profit-Growth, NR_M1 Bridge, WS Clinch Sniper & Sticky FIFO Queue
+  [62] tests/test_v570_ms_velocity_and_ws_sniper.py (Lines 128,113 - 129,733 | 82,028 B) :: Unit Tests: v5.7.0 Sub-ms Hot-Path Velocity, 450-Token WS Sniper, 2h UMA Recycle & Dynamic Scaling
+  [63] tests/test_v580_sharded_ws_d1fast_pusd_and_direct_feeds.py (Lines 129,734 - 130,522 | 34,863 B) :: Unit Tests: v5.8.0 4-Shard WS, D1FAST IPC, V2 pUSD Redemption/Wrap & Direct Feeds
+  [64] tests/test_stage_b_economic_attribution.py (Lines 130,523 - 130,965 | 19,968 B) :: Unit Tests: Stage B Opportunity Funnel, Competitor Decay, Markouts & 10 Institutional KPIs
+  [65] tests/test_stage_c_zero_loss_velocity.py (Lines 130,966 - 132,305 | 61,447 B) :: Unit Tests: Stage C Zero-Loss Velocity Recycler, Pre-Split Lock & Clinched Split-to-Sell
+  [66] tests/test_priority0_live_leak_fixes.py (Lines 132,306 - 133,226 | 46,004 B) :: Unit Tests: Priority 0 Live Leaks (Unified Event Cap, UNWRESID Guard, 0%-Fee Plumbing, Stage B & Fast D1 Loop)
+  [67] tests/test_v590_fast_cancel_ws_hedge_and_synthetic_maker.py (Lines 133,227 - 133,932 | 36,015 B) :: Unit Tests: v5.9.0 1-RTT Fast Cancel, 0-REST WS Fill-to-Hedge, Synthetic Maker Shield & AFF1 Settled Locks
+  [68] tests/test_riskless_remediation_and_8_new_engines.py (Lines 133,933 - 135,098 | 47,955 B) :: Unit Tests: v6.0 Riskless Remediation, Honest Backtester, CompactCandidateL2Recorder & All 8 New Engines
 """
 
 from __future__ import annotations
@@ -94259,6 +94259,7 @@ class Alpha124ShadowDaemon:
             "last_emit_ts": float(getattr(self, "_live_bridge_last_emit_ts", 0.0) or 0.0),
             "pending_maker_orders_count": len(self.pending_maker_orders),
         }
+        live_nav_ref = self._resolve_gatling_starting_nav_usd()
         state = {
             "updated_at_utc": datetime.now(timezone.utc).isoformat(),
             "updated_ts": now_st,
@@ -94300,7 +94301,7 @@ class Alpha124ShadowDaemon:
                 "preopen_15m_candles": len(self.preopen_15m_candles),
             },
             "portfolio_realized_pnl_by_bankroll_usd": tier_totals,
-            "gatling_projection": compute_gatling_trajectory_projection(starting_nav_usd=60.92),
+            "gatling_projection": compute_gatling_trajectory_projection(starting_nav_usd=live_nav_ref),
             "by_sleeve": by_sleeve,
             "per_strategy": by_sleeve,
             "by_d1_asset": by_d1_asset,
@@ -94394,6 +94395,27 @@ class Alpha124ShadowDaemon:
         async with wr_lock:
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(self._get_state_io_executor(), self.write_state_files, list(opps))
+
+    def _resolve_gatling_starting_nav_usd(self, default_nav_usd: float = 49.12) -> float:
+        """Resolves current reconciled live NAV for `gatling_projection` without stale hardcoded anchors."""
+        cached_eq = getattr(self, "live_account_equity_usd", None)
+        if cached_eq is not None:
+            try:
+                val = float(cached_eq)
+                if val > 0.0:
+                    return val
+            except Exception:
+                pass
+        try:
+            lh_p = LIVE_POLYMARKET_DIR / "live_harvester_state.json"
+            if lh_p.exists():
+                lh_d = json.loads(lh_p.read_text(encoding="utf-8"))
+                eq_v = self._extract_reconciled_live_equity_usd(lh_d)
+                if eq_v > 0.0:
+                    return eq_v
+        except Exception:
+            pass
+        return float(default_nav_usd)
 
     @staticmethod
     def _extract_reconciled_live_equity_usd(lh_d: Dict[str, Any]) -> float:
@@ -101590,26 +101612,183 @@ def _compute_cash_milestone_etas(
     return eta_map
 
 
+_RETIRED_DIRECTIONAL_MARKERS = ("SLEEVE_1", "SOC2", "LATTICE", "DIRECTIONAL", "OFI", "MEAN_REV")
+
+
+def _parse_record_ts(rec: Dict[str, Any]) -> float:
+    for key in (
+        "settled_at_utc",
+        "closed_at",
+        "closed_ts",
+        "close_ts",
+        "exit_ts",
+        "resolution_seen_at_ts",
+        "timestamp",
+        "updated_at",
+        "entry_ts",
+        "entry_time_utc",
+    ):
+        val = rec.get(key)
+        if val is None or val == "":
+            continue
+        if isinstance(val, (int, float)):
+            fval = float(val)
+            if fval > 0.0:
+                return fval
+            continue
+        if isinstance(val, str):
+            sval = val.strip()
+            try:
+                fval = float(sval)
+                if fval > 0.0:
+                    return fval
+            except ValueError:
+                pass
+            try:
+                dt = datetime.fromisoformat(sval.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.timestamp()
+            except ValueError:
+                continue
+    return 0.0
+
+
+def compute_empirical_realized_runrate(
+    live_st: Dict[str, Any],
+    anchor_nav_usd: float,
+    *,
+    now_ts: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Computes empirical realized pure-riskless live cash run-rates over trailing 24h / 72h / 7d windows
+    from `live_harvester_state.json`, strictly excluding retired directional/lattice strategies and
+    non-executed zero-fill records while contrasting empirical capture against the `$0.8223/day` VM hurdle.
+    """
+    ref_ts = float(now_ts) if now_ts is not None else datetime.now(timezone.utc).timestamp()
+    nav0 = max(1.0, float(anchor_nav_usd or 1.0))
+    closed = [c for c in (live_st.get("closed_positions") or []) if isinstance(c, dict)]
+
+    windows_sec = (("window_24h", 86400.0), ("window_72h", 259200.0), ("window_7d", 604800.0))
+    stats: Dict[str, Dict[str, Any]] = {
+        k: {
+            "closed_records": 0,
+            "filled_wins": 0,
+            "filled_losses": 0,
+            "realized_pnl_usd": 0.0,
+            "filled_notional_usd": 0.0,
+            "fees_paid_usd": 0.0,
+            "days_span": secs / 86400.0,
+        }
+        for k, secs in windows_sec
+    }
+
+    for rec in closed:
+        status_u = str(rec.get("status") or "").strip().upper()
+        if status_u in {"NOT_EXECUTED", "ZERO_FILL_IGNORED", "CANCELLED"}:
+            continue
+        sid = str(rec.get("strategy_id") or rec.get("sleeve") or rec.get("alpha_id") or rec.get("reason") or "")
+        if any(m in sid.upper() for m in _RETIRED_DIRECTIONAL_MARKERS):
+            continue
+        ts_val = _parse_record_ts(rec)
+        if ts_val <= 0.0:
+            continue
+        age_s = ref_ts - ts_val
+        if age_s < -300.0:
+            continue
+        pnl = float(rec.get("net_pnl_usd") or rec.get("realized_pnl_usd") or rec.get("pnl_usd") or 0.0)
+        notional = float(rec.get("notional_usd") or rec.get("cost_usd") or 0.0)
+        fee = float(rec.get("fee_usd") or rec.get("fees_paid_usd") or rec.get("realized_exit_fee") or 0.0)
+        for k, secs in windows_sec:
+            if age_s <= secs:
+                b = stats[k]
+                b["closed_records"] += 1
+                b["realized_pnl_usd"] += pnl
+                b["filled_notional_usd"] += notional
+                b["fees_paid_usd"] += fee
+                if pnl > 1e-6:
+                    b["filled_wins"] += 1
+                elif pnl < -1e-6:
+                    b["filled_losses"] += 1
+
+    out_windows: Dict[str, Dict[str, Any]] = {}
+    for k, _ in windows_sec:
+        b = stats[k]
+        span_d = b["days_span"]
+        pnl_u = round(b["realized_pnl_usd"], 4)
+        avg_d = round(pnl_u / span_d, 4)
+        net_vm_d = round(avg_d - FINLAND_VM_COST_USD_PER_DAY, 4)
+        bps_hr = round((avg_d / nav0) * 10000.0 / 24.0, 2)
+        out_windows[k] = {
+            "closed_records": b["closed_records"],
+            "filled_wins": b["filled_wins"],
+            "filled_losses": b["filled_losses"],
+            "realized_pnl_usd": pnl_u,
+            "filled_notional_usd": round(b["filled_notional_usd"], 2),
+            "fees_paid_usd": round(b["fees_paid_usd"], 4),
+            "avg_daily_pnl_usd": avg_d,
+            "implied_bps_per_hr": bps_hr,
+            "net_after_vm_daily_usd": net_vm_d,
+            "clears_vm_hurdle": bool(avg_d >= FINLAND_VM_COST_USD_PER_DAY),
+        }
+
+    w7d_avg = out_windows["window_7d"]["avg_daily_pnl_usd"]
+    status_quo_horizons = {}
+    for hd in (1, 7, 14, 30):
+        gross = round(w7d_avg * hd, 2)
+        vm_c = round(FINLAND_VM_COST_USD_PER_DAY * hd, 2)
+        status_quo_horizons[f"day_{hd}"] = {
+            "gross_equity_usd": round(nav0 + gross, 2),
+            "gross_profit_usd": gross,
+            "vm_cost_cum_usd": vm_c,
+            "net_after_vm_usd": round(gross - vm_c, 2),
+        }
+
+    return {
+        **out_windows,
+        "trailing_7d_status_quo_daily_usd": w7d_avg,
+        "vm_hurdle_daily_usd": FINLAND_VM_COST_USD_PER_DAY,
+        "status_quo_linear_30d_baseline": status_quo_horizons,
+        "v62_target_vs_status_quo_note": (
+            "Trailing 7d live cash reflects carry-only pre-v6.2 capture; clearing the $0.8223/day VM hurdle "
+            "requires live D1/FT 2-leg CLASS_A/B/C1 merge fills unlocked in v6.2."
+        ),
+    }
+
+
 def _load_full_throttle_telemetry() -> Dict[str, Any]:
     cov = _load_json(UNIVERSE_COVERAGE_FILE)
     ftd = _load_json(FULL_THROTTLE_DASHBOARD_FILE)
     univ = cov.get("universe_summary") if isinstance(cov, dict) else {}
     if not isinstance(univ, dict):
         univ = {}
-    ft_univ = (ftd.get("universe") or {}) if isinstance(ftd, dict) else {}
-    ft_opp = (ftd.get("opportunity_engine") or {}) if isinstance(ftd, dict) else {}
-    ft_mkr = (ftd.get("hedged_maker_shadow") or {}) if isinstance(ftd, dict) else {}
+    ft_d = ftd if isinstance(ftd, dict) else {}
+    ft_univ = ft_d.get("section_1_universe_coverage") or ft_d.get("universe") or {}
+    ft_pg = ft_d.get("section_1b_proposition_graph") or {}
+    ft_opp = ft_d.get("section_2_opportunity_metrics") or ft_d.get("opportunity_engine") or {}
+    ft_dorm = ft_d.get("section_2c_dormant_opportunity_store") or {}
+    ft_mkr = ft_d.get("section_2d_hedged_maker_shadow_quoter") or ft_d.get("hedged_maker_shadow") or {}
     return {
-        "total_events": int(univ.get("total_events") or ft_univ.get("total_events") or 0),
-        "total_markets": int(univ.get("total_markets") or ft_univ.get("total_markets") or 0),
+        "total_events": int(univ.get("total_events") or ft_univ.get("total_observable_events") or ft_univ.get("total_events") or 0),
+        "total_markets": int(univ.get("total_markets") or ft_univ.get("total_observable_markets") or ft_univ.get("total_markets") or 0),
         "active_orderbook_markets": int(
-            univ.get("active_orderbook_markets") or ft_univ.get("active_orderbook_markets") or 0
+            univ.get("active_orderbook_markets")
+            or ft_univ.get("orderbook_enabled_markets")
+            or ft_univ.get("active_orderbook_markets")
+            or 0
         ),
-        "total_tokens": int(univ.get("total_tokens") or ft_univ.get("total_tokens") or 0),
-        "proposition_graph_edges": int(ft_opp.get("proposition_graph_edges") or 0),
-        "rule_trap_blocks": int(ft_opp.get("rule_trap_blocks") or 0),
-        "dormant_near_arbs": int(ft_opp.get("dormant_watchlist_count") or 0),
-        "family_l_shadow_pnl_usd": round(float(ft_mkr.get("realized_shadow_pnl_usd") or 0.0), 4),
+        "total_tokens": int(univ.get("total_tokens") or ft_univ.get("total_tradable_outcome_tokens") or ft_univ.get("total_tokens") or 0),
+        "proposition_graph_edges": int(ft_pg.get("total_edges") or ft_opp.get("proposition_graph_edges") or 0),
+        "rule_trap_blocks": int(ft_opp.get("rule_mismatch_rejections_prevented") or ft_opp.get("rule_trap_blocks") or 0),
+        "dormant_near_arbs": int(ft_dorm.get("active_dormant_count") or ft_opp.get("dormant_watchlist_count") or 0),
+        "family_l_shadow_pnl_usd": round(
+            float(
+                ft_mkr.get("net_post_adverse_shadow_pnl_ex_rebate_usd")
+                or ft_mkr.get("realized_shadow_pnl_usd")
+                or 0.0
+            ),
+            4,
+        ),
     }
 
 
@@ -101785,10 +101964,28 @@ def build_live_projections(
                 row["p50_v393_ticket_usd"] = 0.0 if is_pure_riskless else compute_v541_ticket_size(eq_prev)
         row["active_regime_and_milestone"] = milestone_lbl
         row["p50_sleeve_pnl_breakdown_usd"] = base_breakdown
+        row["vm_cost_cum_usd"] = round(FINLAND_VM_COST_USD_PER_DAY * d, 2)
+        for pk in ("p25", "p50", "p75"):
+            row[f"{pk}_net_after_vm_usd"] = round(
+                (row[f"{pk}_end_equity_usd"] - compounding_anchor_usd) - row["vm_cost_cum_usd"], 2
+            )
         all_rows.append(row)
 
     daily_rows = all_rows[:days]
     has_disputed_haircut = bool(live_equity - locked_floor_equity > 0.05)
+    empirical_rr = compute_empirical_realized_runrate(
+        live_st,
+        compounding_anchor_usd,
+        now_ts=now_utc.timestamp(),
+    )
+    rb_cfg_d = (strat_cfg.get("riskless_boxes") or {}) if isinstance(strat_cfg, dict) else {}
+    s2_twap_active = bool(
+        is_pure_riskless
+        and not is_strict_math_only
+        and bool(rb_cfg_d.get("enable_s2_twap_lock_live", False))
+        and "S2_EXACT_TWAP_LOCK" not in paused_riskless_set
+        and "S2_RTDS_EXACT_TWAP_INTEGRATOR" not in paused_riskless_set
+    )
 
     payload = {
         "generated_at_utc": now_utc.isoformat(),
@@ -101803,12 +102000,10 @@ def build_live_projections(
         ),
         "riskless_only_mode": is_pure_riskless,
         "strict_pure_riskless_mode": is_strict_math_only,
-        "strict_pure_riskless_firewall_enabled": bool(
-            ((strat_cfg.get("riskless_boxes")) or {}).get("strict_pure_riskless_mode", False)
-        ),
-        "row2_post_clinch_carries_enabled": bool(
-            ((strat_cfg.get("riskless_boxes")) or {}).get("enable_single_leg_maker_bond1", True)
-        ),
+        "strict_pure_riskless_firewall_enabled": bool(rb_cfg_d.get("strict_pure_riskless_mode", False)),
+        "row2_post_clinch_carries_enabled": bool(rb_cfg_d.get("enable_single_leg_maker_bond1", True)),
+        "row2_s2_twap_enabled": s2_twap_active,
+        "empirical_realized_runrate": empirical_rr,
         "vm_infra_cost_usd_per_month": FINLAND_VM_COST_USD_PER_MONTH,
         "vm_infra_cost_usd_per_day": FINLAND_VM_COST_USD_PER_DAY,
         "quarantined_sleeves_excluded": sorted(QUARANTINED_SLEEVES),
@@ -101989,6 +102184,19 @@ def print_human_scorecard(payload: Dict[str, Any]) -> None:
             f"Live Epoch: {anc['live_wins']}W/{anc['live_closed_trades'] - anc['live_wins']}L ({anc['live_win_rate_pct']:.1f}% WR) | "
             f"To $88 Dynamic: ${anc['distance_to_88_dynamic_sizing_usd']:.2f} | To $110 Slot-2: ${anc['distance_to_110_slot2_unlock_usd']:.2f}"
         )
+    emp = payload.get("empirical_realized_runrate") or {}
+    w7d = emp.get("window_7d") or {}
+    w24 = emp.get("window_24h") or {}
+    if emp:
+        print(
+            f"VM Hurdle: ${FINLAND_VM_COST_USD_PER_DAY:.4f}/d (${FINLAND_VM_COST_USD_PER_MONTH:.2f}/mo) | "
+            f"Empirical Trailing 7d Riskless: {w7d.get('filled_wins', 0)}W/{w7d.get('filled_losses', 0)}L "
+            f"${float(w7d.get('realized_pnl_usd', 0.0)):+.2f} (${float(w7d.get('avg_daily_pnl_usd', 0.0)):+.2f}/d, "
+            f"net VM ${float(w7d.get('net_after_vm_daily_usd', 0.0)):+.2f}/d) | "
+            f"24h: ${float(w24.get('realized_pnl_usd', 0.0)):+.2f} | "
+            f"Row2: BOND1={bool(payload.get('row2_post_clinch_carries_enabled'))} "
+            f"S2_TWAP={bool(payload.get('row2_s2_twap_enabled'))}"
+        )
     print("\n--- Clean Active Shadow Sleeve Graduation Readiness (Quarantined Sleeves Excluded) ---")
     for g in payload["sleeve_graduation_live_tracker"]:
         status_tag = "READY" if g["ready_for_stage1_micro_live"] else "WAIT "
@@ -101999,12 +102207,13 @@ def print_human_scorecard(payload: Dict[str, Any]) -> None:
         )
     sched = payload["day_by_day_schedule"]
     print(f"\n--- {len(sched)}-Day Reconciled-Floor-Anchored Compounding Schedule (Depth-Capped, Non-Cash Model) ---")
-    print("Day | Date       | P25 Eq ($) | P50 Base Eq ($) | P50 Day PnL | P75 LowLat ($) | Active Regime / Graduation Milestone")
-    print("-" * 122)
+    print("Day | Date       | P25 Eq ($) | P50 Base Eq ($) | P50 Day PnL | VM Cum ($) | P50 Net-VM | P75 LowLat ($) | Active Regime / Graduation Milestone")
+    print("-" * 146)
     for r in sched[:30]:
         print(
             f"D{r['day']:02d} | {r['date_utc']} | ${r['p25_end_equity_usd']:9.2f} | "
             f"${r['p50_end_equity_usd']:14.2f} | ${r['p50_daily_pnl_usd']:+10.2f} | "
+            f"${r.get('vm_cost_cum_usd', 0.0):9.2f} | ${r.get('p50_net_after_vm_usd', 0.0):+9.2f} | "
             f"${r['p75_end_equity_usd']:13.2f} | {r['active_regime_and_milestone']}"
         )
 

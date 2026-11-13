@@ -1,113 +1,125 @@
-# DOMINUS v5.2 — Riskless Full-Throttle Strategy, Attribution & Empirical Projections Report
+# Dominus Polymarket — Reconciled Day-by-Day Projections & Strategy Report (`v6.2` Live Deployment)
 
-**Campaign Standard:** DOMINUS v5.2 Riskless Full-Throttle (`RISKLESS_PAA`)  
-**Projection Model:** `v5.2_full_throttle_riskless_velocity` ([scripts/polymarket_daily_projections.py](scripts/polymarket_daily_projections.py))  
-**Reconciled Baseline Timestamp:** `2026-11-11 22:51 UTC`  
-**Operating Invariants:** `directional.riskless_only_mode = true` | `proposal_only_live_promotion = true` (`< $5,000` NAV, `D-002`) | `CA-ON` Jurisdiction Gate (`D-008`) | `MemorySwapMax=0B` (`D-010`)
-
----
-
-## 1. Full-Universe Architecture & New 14-Family (`A..N`) Riskless Engine
-
-Prior to the Full-Throttle campaign, DOMINUS v5.1 discovered only `~3,530` active markets (`1.75%` of the observable Polymarket universe) due to hardcoded top-volume binary caps (`340` -> `1,200`), category-only pagination, and single-shard WebSocket limits. Waves 1–3 replace heuristic sub-sampling with exhaustive, fee-exact, rule-verified full-universe surveillance:
-
-### 1.1 Exhaustive Universe Discovery & Two-Layer Surveillance
-- **[`FullUniverseRegistry`](src/polymarket_research/full_universe_discovery.py)** (`data/universe/market_registry.sqlite3` & `data/universe/coverage_snapshot.json`):
-  - Enumerates **`100.0%` of observable public Gamma & CLOB markets**: **`19,257` events**, **`375,963` total markets**, **`201,218` active orderbook-enabled markets**, **`402,240` outcome token IDs**, **`34,428` dynamic taker-fee markets**, and **`549–606` UMA proposed markets**.
-  - Separates **Discovery Completeness** (`100%` retained with normalized metadata) from **Execution Eligibility** via machine-readable skip codes (`ORDERBOOK_DISABLED`, `MISSING_TOKEN_IDS`, `CLOSED_OR_ARCHIVED`, `AUGMENTED_PLACEHOLDER_OUTCOME`, `ZERO_RESTING_DEPTH`).
-  - Operates under **`<120 MiB` peak RSS** using streaming SQLite batch commits and `indicative_prices_json` `bestBid`/`bestAsk` seeding.
-- **[`TwoLayerSurveillanceScheduler`](src/polymarket_research/full_universe_discovery.py)**:
-  - **Layer A (Full-Universe Background Sweep):** Guarantees zero active market starvation across all `201,218` orderbook markets via bounded rotating sweeps.
-  - **Layer B (High-Priority Adaptive Book Polling):** Batches `POST https://clob.polymarket.com/books` (`400` tokens/batch, `sock_read` timeout isolation, `1,000`-book inline LRU cap) + `5 x 250 = 1,250` sharded WebSocket subscriptions.
-
-### 1.2 Proposition Graph, Rule-Equivalence Veto & 14 Structural Arbitrage Families (`A..N`)
-- **[`MarketPropositionGraph`](src/polymarket_research/market_proposition_graph.py) & [`universal_arb_verifier`](src/polymarket_research/universal_arb_verifier.py):**
-  - Builds **`6,097` verified logical edges** (`EQUIVALENT`, `COMPLEMENT`, `IMPLIES`, `MUTUALLY_EXCLUSIVE`, `EXHAUSTIVE_PARTITION`, `CUMULATIVE_TIME_LADDER`, `MONOTONIC_STRIKE_LADDER`) across binary, scalar, calendar, and `NegRisk` markets.
-  - Enforces **fail-closed semantic trap vetoes** (`514` cataloged rule mismatches; **`313` pseudo-arbitrage rule traps blocked** in the latest full sweep, preventing source-authority, timezone, `Other`-bucket, or overtime/regulation mismatches from ever reaching live execution).
-- **[`FullThrottlePipeline`](src/polymarket_research/full_throttle_pipeline.py) & [`NetAlphaOpportunityEngine`](src/polymarket_research/net_alpha_opportunity_engine.py) (`14` Families `A..N`):**
-  - **Class A (`SINGLE_MARKET_COMPLETE_SET`):** `Family A` Binary YES+NO Complete Set (`C1`/`ZEROFEE1`), `Family B` Closed Exhaustive `NegRisk` All-YES Complete Set (`NR1`), `Family C` `NegRisk` `m=2` NO-Subset Convert (`NR2`), `Family D` Atomic Overround Split/Sell (`PreSplitGun` @ `>=$140`).
-  - **Class B (`TWO_LEG_CROSS_MARKET_DOMINANCE`):** `Family E` Monotonic Strike Ladder Dominance (`FT_STRIKE1` / `M3` / `B3`), `Family F` Calendar / Deadline Survival Monotonicity (`CAL1`), `Family G` Same-Event Cross-Market Duplicate / Implication Dominance (`FT_DUP1` / `COND1` / `LP1`), `Family H` Same-Oracle Multi-Horizon Crypto/Metals Dominance (`D1` / `D1_4H` / `D1_QUIET`).
-  - **Class C (`POST_CLINCH_DETERMINISTIC_CARRY`):** `Family I` Objective UMA Proposed / Liveness Bond Carry (`BOND1` / `UMA_READY1`), `Family J` Official-Source Pre-Proposal Clinch (`BOND2` / `W_PRUNE1` routine METAR dead-NO / `WS_CLINCH_SNIPER`).
-  - **Class D (`HEDGED_MAKER_AND_TIER_GATED`):** `Family K` `>=3`-Leg Atomic `NegRisk` Partition Bundles (quarantined `< $500` NAV per `D-007`), `Family L` `0 bps` `postOnly` Hedged Maker & Fee-Rebate Capture ([`HedgedMakerShadowQuoter`](src/polymarket_research/full_throttle_pipeline.py)), `Family M` Regulated `CA-ON` Cross-Venue Equivalence (`Stage G` @ `>=$253` NAV), `Family N` Dormant Near-Arb Stalking ([`DormantOpportunityStore`](src/polymarket_research/full_throttle_pipeline.py) — **`1,200` `<=50 bps` near-arbs** with **`1,165` hot tokens** dynamically pinned to live WebSockets).
+**Report Reconciled:** `2026-11-13 16:31 UTC` (Live Host: `kraken-finland`, `europe-north1-b`)  
+**Projection Engine:** [`scripts/polymarket_daily_projections.py`](scripts/polymarket_daily_projections.py) (`model_version: v5.2_full_throttle_riskless_velocity`, `riskless_only_mode: true`, `strict_pure_riskless_mode: false`)  
+**Strategy Governance:** [`config/polymarket_strategy_and_risk.json`](config/polymarket_strategy_and_risk.json) | **Manual:** [`AGENTS.md`](AGENTS.md) | **State & Decisions:** [`PROJECT_STATE.md`](PROJECT_STATE.md), [`DECISIONS.md`](DECISIONS.md) | **Operator Brief:** [`DAILY_COMMAND_CENTER_REPORT.md`](DAILY_COMMAND_CENTER_REPORT.md)
 
 ---
 
-## 2. Wave 1–3 Upgrades to Live & Shadow Execution Sleeves
+## 1. Authoritative Reconciled Capital & NAV Baseline (`D-001` / `D-009` Compliant)
 
-| Subsystem | Bottleneck Diagnosed (`#60` / `#64`) | Wave 1–3 Production Remediation | Verified Impact |
-| :--- | :--- | :--- | :--- |
-| **`alpha_124_shadow_daemon.py` UMA Bond Loop** | `scan_uma_resolution_bonds` was serialized behind `283` `NegRisk` slates (`~7,000` tokens) inside `_bg_tradfi_task`, causing `7.5m` `BOND1` emission droughts. | Extracted independent **`18.0s` `_run_bg_uma_bonds` task**, expanded objective UMA discovery to **`606` markets** (`60` `1M`-boosted hot bonds), and extended on-chain verification cache (`90s–240s`). | Continuous `18s` `BOND1` maker/taker emission with `0` head-of-line blocking from `NegRisk` sweeps. |
-| **`alpha_124_shadow_daemon.py` `/books` & Swapless RAM** | `MemoryCurrent` hit `1,073.7 / 1,100.0 MiB` due to `7,000`-token `active_nrc` bursts, `rest_cache` growth, and raw Gamma `events`/`chats` dict bloat. | Added `36` hot + `36` rotating `active_nrc` window (`<60s` full rotation), inline `rest_cache <= 800` trim inside `fetch_books_batch`, `sock_read >= 6.5s` timeout isolation, and `UMA` dict slimming + `malloc_trim(0)`. | Eliminates `/books` semaphore timeouts and bounds steady-state RSS safely below the `1,100 MiB` swapless ceiling (`D-010`). |
-| **`alpha_124_shadow_daemon.py` Zero-Fee Binary & WS Matrix** | `340`-binary top-volume cap and `15 bps` clamp starved `C1`/`ZEROFEE1` mergeable candidates; `alpha124_shadow_state.json` went `360s` stale during long scans. | Expanded `zerofee_general_binaries` to **`1,200` markets** (`>= 15.0 bps` net floor), upgraded sharded WS to **`5 x 250 = 1,250` tokens**, and tightened `_run_bg_state_heartbeat` to **`45s`** with `catalog_counts` + `live_bridge_telemetry` in both state & mirror files. | `3.5x` binary book coverage, `<45s` Command Center telemetry freshness, and live IPC emit attribution per sleeve. |
-| **`stage_c_zero_loss_velocity.py` & `polymarket_live_harvester.py`** | `Stage C` `15 bps/hr` / `<=8h` lockup rejected `18–24h` `BOND1`/`C1`/`CAL1` carries (`8–14 bps/hr`); missing `opp_token_id` caused avoidable single-leg skips; `120s` re-peg churned FIFO #1 priority. | Tuned seed gate to **`>= 7.5 bps/hr` & `<= 24.0h`** (`Stage C`), wired `opp_token_id` resolution, raised sticky FIFO #1 hold to **`900s` (`15m`)**, and bridged certified 2-leg `CLASS_A/B` (`FT_DUP1`, `FT_STRIKE1`) into live `RISKLESS_PAA`. | Preserves FIFO #1 queue priority (`sign=0.56–1.04ms`, `post=73–81ms`) while doubling eligible high-certainty daily turns. |
+Per [`AGENTS.md`](AGENTS.md) (`D-001`, `D-009`), live projections anchor strictly to **reconciled worst-case floor NAV** — never to persisted book equity (`$99.67`, which still carries the `$50.51` cost basis of the 4 disputed `KMIA` positions) and never to non-cash simulated shadow PnL:
 
----
-
-## 3. Highest-Conviction Profit Drivers Ranked by Velocity, Capacity & Readiness
-
-At the current **`$48.70` True Worst-Case Guaranteed-Floor NAV** (`<= $7.30` per correlated event under the `15%` `D-006` concentration cap), capital velocity (`bps/hr`) dominates raw per-ticket margin:
-
-| Rank | Profit Driver / Sleeve Family | Status at `$48.70` NAV | Empirical Net Edge & Velocity | Est. Daily CLOB Capacity | Unlock / Scaling Gate |
-| :---: | :--- | :--- | :--- | :--- | :--- |
-| **1** | **`D1` Same-Oracle & Quiet-Book Boxes** (`9` Crypto + `XAU/XAG`, `<70ms` Batch Cancel-on-Arb) | **LIVE (`RISKLESS_PAA`)** | `150–260 bps` net/box (`5m–4h` hold = **`40–300+ bps/hr`**) | `$60–$220` clip; `$15–$52/day` | Active now; preempts slowest non-FIFO-#1 `BOND1` makers only on `>=200 bps` arbs. |
-| **2** | **`Full-Throttle CLASS_A/B` 2-Leg Bridge + `1,200`-Bin `C1` Relayer V2 Merge** (`FT_DUP1`, `FT_STRIKE1`, `CAL1`, `COND1`, `NR2 m=2`, `ZEROFEE1`) | **LIVE (`RISKLESS_PAA`)** | `15–185 bps` net; `$0`-gas Relayer V2 merge (`~2.5s`) or `<=24h` (`>=7.5 bps/hr`) | `$55–$165` clip; `$12–$38/day` | Active now across `71` `CAL1` ladders, `283` `NegRisk` slates (`m=2`), and `1,200` `0%`-fee binaries. |
-| **3** | **`606`-Market `BOND1` (`18s` Loop) + `BOND2` + `W_PRUNE1` Carry** (`0%` Maker + `<1h` `0.9975` Taker) | **LIVE (`RISKLESS_PAA`)** | `35–95 bps` net (`18–45 bps/hr`; active `6947122` = **`36.42 bps/hr`**) | `$220+` across `<=6` uncorrelated events (`$7.5–$22/day`) | Active now (`<=15%` NAV per event; `0` disputed/ambiguous subjective markets). |
-| **4** | **`WS_CLINCH_SNIPER` (`MKR_LOCK1` / `SP2` / `CL1`)** (`1,250`-Token Sharded WS) | **LIVE (`RISKLESS_PAA`)** | `65–140 bps` net (`<=1h` post-clinch = **`65–200+ bps/hr`**) | `$12–$65` clip; `$6.5–$21/day` | Active now (`S2` TWAP remains paused until explicit WFO re-certification). |
-| **5** | **`MKR_REWARD_LOCKED_CARRY` + `Family L` `0 bps` `postOnly` Hedged Maker** | **SHADOW (`+$0.17` `0`-Dir Fills)** | `0 bps` maker + `15%–25%` fee rebate / LP reward (`~135 bps/day` on locked pair) | `$18–$75` pool; `$2.5–$10/day` | Auto-unlocks at **`>= $125` Undisputed Floor NAV** + owner approval for `Family L` live promotion. |
-| **6** | **`PreSplitOverroundGunEngine` (`Family D`)** (`CTF.splitPosition` -> Dual Overround Sell) | **GATED (`>=$140` NAV)** | `80–160 bps` per `<3s` atomic split/recycle (`>200 bps/hr`) | `$15–$60` lot; `$8–$25/day` | Unlocks at **`>= $140`–`$150` Undisputed Floor NAV** (`M3.2`). |
-| **7** | **Regulated `CA-ON` Cross-Venue Riskless (`Stage G` — `ForecastEx / IBKR` + `STX Ontario`)** | **SHADOW CERTIFYING** | `90–220 bps` cross-exchange lock (`0%` proxy/VPN spoofing, `D-008`) | `$25–$110` lot; `$5.5–$18/day` | Unlocks at **`>= $253` Undisputed Floor NAV** + `168.0h` uncontaminated `0`-Double-Zero certification. |
-| **8** | **Atomic `>=3`-Leg `NegRiskAdapter` Partition Bundles (`Family K`)** | **QUARANTINED `< $500`** | `110–190 bps` full-slate partition edge | `$35–$140` lot; `$6.5–$22/day` | Strictly quarantined until **`>= $500` Undisputed Floor NAV** (`D-007`). |
+| Metric | Live Value (`2026-11-13 16:31 UTC`) | Notes & Accounting Scope |
+| :--- | :--- | :--- |
+| **Funder Beacon Proxy (`sig_type=3`)** | `0x013A2474454fBd8738cff6a7f204eF1bc377F4e9` | Polygon `pUSD` wallet |
+| **Free Liquid `pUSD` (`live_bankroll`)** | **`$42.12`** | Immediately deployable trading cash |
+| **Worst-Case Guaranteed-Floor NAV (Anchor)** | **`$49.12`** | `$42.12` free `pUSD` + `$7.00` par floor on active `MKR_LOCK1` (`$6.965` cost basis on `7000344`) + **`$0.00`** assumed on 4 disputed `KMIA` (`$50.51` frozen cost basis) |
+| **Mark-to-Bid Liquidation NAV** | **`$49.09`** | Excludes optimistic UMA win recovery; reflects live CLOB bid |
+| **Persisted Harvester Book Equity (`total_account_equity`)** | **`$99.67`** | Book value including `$50.51` frozen `KMIA` + `$6.965` open `MKR_LOCK1` (`frozen_single_leg_cost_usd: $57.55`) — **never used for sizing** |
+| **High Water Mark (`HWM`)** | `$99.67` | Persisted book equity reference |
+| **Disputed `KMIA` Positions (`D-001` Protected)** | `4` positions (`$50.51` cost basis) | `6707503` (`35 NO`) & `6707502` (`17 YES`); kept **100% untouched** (`umaResolutionStatus == "disputed"`) |
+| **Infrastructure Cost Hurdle (`kraken-finland`)** | **`$0.8223/day` (`$24.67/month`)** | Requires **`+6.98 bps/hr`** (`+167.4 bps/day`) net edge on `$49.12` floor just to break even on VM cost |
+| **Active Live `v6.2` Config Toggles** | `BOND1=True`, `S2_TWAP=False`, `cancel_on_arb max=$43.23` | `Row 1` pure-riskless live + `Row 2` `BOND1` carry enabled; `S2` TWAP paused; directional/lattice hard-disabled |
 
 ---
 
-## 4. Strict Non-Conflated Real-Trading vs Shadow Attribution (`D-009` & `Principle 8`)
+## 2. Empirical Pre-`v6.2` Run-Rate vs. `$0.8223/d` VM Hurdle (Strict Non-Conflation)
 
-Realized on-chain wallet `pUSD`, frozen disputed `KMIA` cost basis, and simulated shadow ledgers are **never summed or conflated**:
+Before projecting `v6.2` modeled target capacity forward, [`compute_empirical_realized_runrate`](scripts/polymarket_daily_projections.py) measures actual realized pure-riskless cash closes from `live_harvester_state.json` (excluding retired directional/lattice losses and `NOT_EXECUTED` records):
 
-### 4.1 Authoritative On-Chain Wallet & Three Distinct Live NAVs (`kraken-finland`, `2026-11-11 UTC`)
-1. **True Worst-Case Guaranteed-Floor NAV (`locked_floor_equity`):** **`$48.70`** (`$48.6951` = `$41.7441` free `pUSD` + `$6.9510` resting `BOND1` CLOB maker order on market `6947122`, `7 sh @ $0.9930`, plus **`$0.00` worst-case payout** on the 4 disputed `KMIA` positions). **All `v5.2` position sizing, `15%` concentration caps, and compounding projections anchor strictly to this floor.**
-2. **Mark-to-Bid Liquidation NAV (`reconciled_nav_usd`):** **`$48.83`** (`$48.6951` cash/maker + `$0.1390` live CLOB bid across the `52.0` disputed `KMIA` shares).
-3. **Persisted Harvester Book Equity (`total_account_equity`):** **`$99.21`** (`$48.6951` cash/maker + **`$50.51` cost-basis frozen `KMIA` UMA receivable** across markets `6707503` `35.0 NO` sh and `6707502` `17.0 YES` sh — `4/4` untouched per `D-001`).
-4. **Signer EOA Gas Reserve:** `41.81 POL` (`~$3.70` gas reserve) + `$1.00 USDC.e` untracked EOA cash.
+| Trailing Window | Filled Riskless Record | Realized Net PnL | Filled Notional | Fees Paid | Avg Daily Rate | Implied Edge (`bps/hr`) | Net After VM (`$0.8223/d`) | Clears VM Hurdle? |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Trailing 24h** | `7W / 0L` (`100.0%`) | `+$0.2100` | `$43.08` | `$0.0000` | `+$0.2100/d` | `+1.78 bps/hr` | **`-$0.6123/d`** | **NO** |
+| **Trailing 72h** | `19W / 0L` (`100.0%`) | `+$0.7000` | `$132.42` | `$0.0092` | `+$0.2333/d` | `+1.98 bps/hr` | **`-$0.5890/d`** | **NO** |
+| **Trailing 7d (Pre-`v6.2` Status Quo)** | `58W / 0L` (`100.0%`) | **`+$3.0841`** | `$430.85` | `$0.0500` | **`+$0.4406/d`** | `+3.74 bps/hr` | **`-$0.3817/d`** | **NO** |
 
-### 4.2 Closed Live Ledger vs Segregated Shadow Benchmarks
-| Ledger / Environment | Execution Mode | Trade Count & Win Rate | Realized / Simulated Net P&L | Conflation Firewall |
-| :--- | :--- | :--- | :--- | :--- |
-| **Pure-Riskless Live Sleeves (`C1`, `D1`, `BOND1`, `CAL1`, `NR_M1`)** | **REAL ON-CHAIN `pUSD`** | **`79W / 0L` (`100.0%` WR)** (`77` baseline + `2` recent `BOND1` turns) | **`+$19.25`** (`+$17.93` baseline + `+$1.32` recent `BOND1` net) | Verified 1:1 against Polygon `pUSD` (`$0.0000` drift). |
-| **Retired Directional / Lattice Historical Trades** | **HARD-DISABLED (`RISKLESS_PAA`)** | `30W / 11L` (`41` historical trades) | `-$73.34` (historical sunk cost) | Permanently disabled (`riskless_only_mode = true`). |
-| **4 Disputed `KMIA` Nov 7 Positions (`6707502` / `6707503`)** | **FROZEN UMA DISPUTE (`D-001`)** | `4` open positions (`52.0` sh, `$50.51` cost) | `$0.00` floor / `+$1.49` if `$52.00` payout | Zero sell/unwind/merge/mutation (`D-001`). |
-| **`alpha124` Shadow Daemon (`T1000` Reference Bankroll)** | **SIMULATED L2 SHADOW** | Multi-sleeve `T1000` paper book (`CAL1` `12W/0L +$40.80`, `D1` `51W/0L +$256.88` historical) | Non-cash `T1000` graduation telemetry only | Never added to wallet `pUSD` or live NAV. |
-| **`Full-Throttle` Pipeline (`Family L` `HedgedMakerShadowQuoter`)** | **SIMULATED L2 SHADOW** | `0` unhedged directional fills (`postOnly` + instant hedge check) | **`+$0.17` shadow net P&L** | Segregated in `data/full_throttle/pipeline/dashboard_latest.json`. |
+- **What `Status-Quo Carry-Only (+$0.4406/d)` Looks Like Over 30 Days (`$0.8223/d` VM Hurdle):**
+  - Day 1: `$49.56` gross equity (`+$0.44` profit vs `$0.82` VM -> **`-$0.38` net after VM**)
+  - Day 7: `$52.20` gross equity (`+$3.08` profit vs `$5.76` VM -> **`-$2.68` net after VM**)
+  - Day 14: `$55.29` gross equity (`+$6.17` profit vs `$11.51` VM -> **`-$5.34` net after VM**)
+  - Day 30: **`$62.34` gross equity** (`+$13.22` gross profit vs `$24.67` VM -> **`-$11.45` net after VM**)
+- **Strategic Implication:** The `+$0.4406/day` carry-only baseline (predominantly `BOND1` / `BOND2` / `MKR_LOCK1`) is `100%` win rate over `58` trailing 7d closes (`+3.74 bps/hr`), but covers only `53.6%` of the `$0.8223/day` VM burn. Clearing the VM hurdle requires **`v6.2` multi-leg / `C1` / `D1` / Full-Throttle `CLASS_A/B` merges** (`ft_bridge` live conversion + sub-millisecond EIP-712 signing) to sustain `>= +6.98 bps/hr` (`+$0.83/day` gross on `$49.12`).
+- **Non-Cash Shadow Universe Context (`D-009` Segregated):** The Full-Throttle shadow engine monitors `19,603` events / `365,654` markets (`200,613` orderbook markets, `401,138` tokens, `5,689` proposition graph edges, `1,227` rule-trap blocks, `1,200` dormant near-arbs), with Family L Hedged Maker at `+$541.2506` shadow PnL (`sol_shadow_settled=138` @ `81.88%` WR, `phase3a_maker_settled=15`, `xrp_shadow_settled=3`). **These shadow figures are NOT real money** and do not enter NAV compounding.
 
 ---
 
-## 5. Empirical `v5.2` Compounding Projections & Milestone ETAs (`7d / 30d / 60d / 90d`)
+## 3. `v6.2` Day-by-Day Compounding Schedule — Days 1 to 30 (`$49.12` Reconciled Floor)
 
-> **Strict Non-Cash Disclaimer:** All figures below are **model-projected trajectories** from [scripts/polymarket_daily_projections.py](scripts/polymarket_daily_projections.py) (`v5.2_full_throttle_riskless_velocity`), enforcing `<= 92%` working-capital conservation, `<= 15%` per-event concentration (`D-006`), L2 orderbook slippage decay (`_depth_decay`), hard daily CLOB depth caps, and `0` quarantined/directional sleeves. Fixed `kraken-finland` VM cost (`$24.67/mo = $0.8223/day`, `+7.04 bps/hr` hurdle at `$48.70`) is explicitly deducted in the Post-VM Net columns.
+Modeled `v6.2` curves reflect depth-capped pure-riskless turnover across **P25 Conservative**, **P50 Base Finland**, and **P75 Low-Latency Upside**, juxtaposed with cumulative VM cost (`$0.8223/day`) and the **Empirical Status-Quo (`+$0.4406/d`)** linear baseline:
 
-### 5.1 Day-1 Velocity Decomposition at `$48.70` Reconciled Floor NAV
-- **P25 Conservative (`~295ms` Finland RTT + queue/competition haircut):** **`+$1.04/day`** gross wallet (`+8.90 bps/hr`, **`+$0.22/day` net after `$0.8223/day` VM**) — `D1 $0.35` + `FT/C1 Merge $0.34` + `606-UMA BOND1/2 $0.24` + `WS Clinch $0.11`.
-- **P50 Base (`kraken-finland` Full-Throttle Wave 3):** **`+$1.85/day`** gross wallet (`+15.83 bps/hr`, **`+$1.03/day` net after `$0.8223/day` VM**) — `D1 $0.64` + `FT/C1 Merge $0.60` + `606-UMA BOND1/2 $0.41` + `WS Clinch $0.20`.
-- **P75 Upside (High-dispersion regime / `<12ms` Group-2 EU API-open execution):** **`+$3.02/day`** gross wallet (`+25.84 bps/hr`, **`+$2.20/day` net after `$0.8223/day` VM**) — `D1 $1.09` + `FT/C1 Merge $0.98` + `606-UMA BOND1/2 $0.62` + `WS Clinch $0.33`.
+| Day | Date (UTC) | Status-Quo (`+$0.44/d`) Eq / Net-VM | P25 Eq ($) | **P50 Base Eq ($)** | **P50 Day PnL** | P75 Upside Eq ($) | Cum VM ($) | P25 Net-VM | **P50 Net-VM** | P75 Net-VM | Active Regime / Graduation Milestone |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| D01 | 2026-11-13 | `$49.56` (`-$0.38`) | `$50.17` | **`$50.98`** | `+$1.86` | `$52.17` | `$0.82` | `+$0.23` | **`+$1.04`** | `+$2.23` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D02 | 2026-11-14 | `$50.00` (`-$0.76`) | `$51.25` | **`$52.91`** | `+$1.93` | `$55.39` | `$1.64` | `+$0.49` | **`+$2.15`** | `+$4.63` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D03 | 2026-11-15 | `$50.44` (`-$1.15`) | `$52.34` | **`$54.92`** | `+$2.01` | `$58.82` | `$2.47` | `+$0.75` | **`+$3.33`** | `+$7.23` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D04 | 2026-11-16 | `$50.88` (`-$1.53`) | `$53.45` | **`$57.01`** | `+$2.09` | `$62.45` | `$3.29` | `+$1.04` | **`+$4.60`** | `+$10.04` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D05 | 2026-11-17 | `$51.32` (`-$1.91`) | `$54.59` | **`$59.16`** | `+$2.15` | `$66.30` | `$4.11` | `+$1.36` | **`+$5.93`** | `+$13.07` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D06 | 2026-11-18 | `$51.76` (`-$2.29`) | `$55.76` | **`$61.40`** | `+$2.24` | `$70.35` | `$4.93` | `+$1.71` | **`+$7.35`** | `+$16.30` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D07 | 2026-11-19 | `$52.20` (`-$2.68`) | `$56.94` | **`$63.71`** | `+$2.31` | `$74.65` | `$5.76` | `+$2.06` | **`+$8.83`** | `+$19.77` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D08 | 2026-11-20 | `$52.64` (`-$3.05`) | `$58.14` | **`$66.10`** | `+$2.39` | `$79.18` | `$6.58` | `+$2.44` | **`+$10.40`** | `+$23.48` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D09 | 2026-11-21 | `$53.09` (`-$3.44`) | `$59.38` | **`$68.58`** | `+$2.48` | `$83.96` | `$7.40` | `+$2.86` | **`+$12.06`** | `+$27.44` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D10 | 2026-11-22 | `$53.53` (`-$3.82`) | `$60.64` | **`$71.15`** | `+$2.57` | `$89.01` | `$8.22` | `+$3.30` | **`+$13.81`** | `+$31.67` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D11 | 2026-11-23 | `$53.97` (`-$4.20`) | `$61.93` | **`$73.80`** | `+$2.65` | `$94.31` | `$9.05` | `+$3.76` | **`+$15.63`** | `+$36.14` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D12 | 2026-11-24 | `$54.41` (`-$4.58`) | `$63.24` | **`$76.55`** | `+$2.75` | `$99.90` | `$9.87` | `+$4.25` | **`+$17.56`** | `+$40.91` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D13 | 2026-11-25 | `$54.85` (`-$4.96`) | `$64.58` | **`$79.39`** | `+$2.84` | `$105.80` | `$10.69` | `+$4.77` | **`+$19.58`** | `+$45.99` | P75 crosses **`$100`** |
+| D14 | 2026-11-26 | `$55.29` (`-$5.34`) | `$65.94` | **`$82.32`** | `+$2.93` | `$112.04` | `$11.51` | `+$5.31` | **`+$21.69`** | `+$51.41` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D15 | 2026-11-27 | `$55.73` (`-$5.73`) | `$67.32` | **`$85.35`** | `+$3.03` | `$118.66` | `$12.33` | `+$5.87` | **`+$23.90`** | `+$57.21` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D16 | 2026-11-28 | `$56.17` (`-$6.11`) | `$68.74` | **`$88.48`** | `+$3.13` | `$125.65` | `$13.16` | `+$6.46` | **`+$26.20`** | `+$63.37` | P75 unlocks `$125` Reward Tier |
+| D17 | 2026-11-29 | `$56.61` (`-$6.49`) | `$70.19` | **`$91.72`** | `+$3.24` | `$133.19` | `$13.98` | `+$7.09` | **`+$28.62`** | `+$70.09` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D18 | 2026-11-30 | `$57.05` (`-$6.87`) | `$71.66` | **`$95.07`** | `+$3.35` | `$141.18` | `$14.80` | `+$7.74` | **`+$31.15`** | `+$77.26` | P75 unlocks `$140` Pre-Split Tier |
+| D19 | 2026-12-01 | `$57.49` (`-$7.25`) | `$73.16` | **`$98.53`** | `+$3.46` | `$150.07` | `$15.62` | `+$8.42` | **`+$33.79`** | `+$85.33` | P75 crosses **`$150`** (`M3.2`) |
+| D20 | 2026-12-02 | `$57.93` (`-$7.63`) | `$74.69` | **`$102.09`** | `+$3.56` | `$159.52` | `$16.45` | `+$9.12` | **`+$36.52`** | `+$93.95` | P50 crosses **`$100`** |
+| D21 | 2026-12-03 | `$58.37` (`-$8.02`) | `$76.26` | **`$105.79`** | `+$3.70` | `$169.55` | `$17.27` | `+$9.87` | **`+$39.40`** | `+$103.16` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D22 | 2026-12-04 | `$58.81` (`-$8.40`) | `$77.86` | **`$109.62`** | `+$3.83` | `$180.20` | `$18.09` | `+$10.65` | **`+$42.41`** | `+$112.99` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D23 | 2026-12-05 | `$59.25` (`-$8.78`) | `$79.48` | **`$113.58`** | `+$3.96` | `$191.51` | `$18.91` | `+$11.45` | **`+$45.55`** | `+$123.48` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D24 | 2026-12-06 | `$59.69` (`-$9.16`) | `$81.14` | **`$117.69`** | `+$4.11` | `$203.49` | `$19.74` | `+$12.28` | **`+$48.83`** | `+$134.63` | `SEED_FULL_THROTTLE_RISKLESS` (`<$125`) |
+| D25 | 2026-12-07 | `$60.13` (`-$9.54`) | `$82.82` | **`$121.94`** | `+$4.25` | `$216.20` | `$20.56` | `+$13.14` | **`+$52.26`** | `+$146.52` | Approaching `$125` Reward Unlock |
+| D26 | 2026-12-08 | `$60.58` (`-$9.92`) | `$84.53` | **`$126.34`** | `+$4.40` | `$229.68` | `$21.38` | `+$14.03` | **`+$55.84`** | `+$159.18` | P50 crosses **`$125`** |
+| D27 | 2026-12-09 | `$61.02` (`-$10.31`) | `$86.29` | **`$130.99`** | `+$4.65` | `$243.98` | `$22.20` | `+$14.97` | **`+$59.67`** | `+$172.66` | `TIER_1_UNLOCKED` (`MKR_REWARD_LOCKED_CARRY` + Family L) |
+| D28 | 2026-12-10 | `$61.46` (`-$10.69`) | `$88.07` | **`$135.81`** | `+$4.82` | `$259.13` | `$23.02` | `+$15.93` | **`+$63.67`** | `+$186.99` | P75 crosses **`$253`** (`TIER_1` for P50) |
+| D29 | 2026-12-11 | `$61.90` (`-$11.07`) | `$89.89` | **`$140.80`** | `+$4.99` | `$275.69` | `$23.85` | `+$16.92` | **`+$67.83`** | `+$202.72` | P50 crosses **`$140`** |
+| D30 | 2026-12-12 | `$62.34` (`-$11.45`) | `$91.74` | **`$146.23`** | `+$5.43` | `$293.10` | `$24.67` | `+$17.95` | **`+$72.44`** | `+$219.31` | **`TIER_2_UNLOCKED` (`>=$140`): Pre-Split Overround Gun** |
 
-### 5.2 Primary Baseline — Worst-Case `$48.70` Guaranteed-Floor Schedule (`$0.00` `KMIA` Outcome)
-| Horizon | Target Date (`UTC`) | P25 Wallet Equity | P50 Wallet Equity | P75 Wallet Equity | P50 Day Rate | Cum. VM Cost (`$0.8223/d`) | P25 Net After VM | P50 Net After VM | P75 Net After VM |
-| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Day 1** | `2026-11-11` | `$49.74` | **`$50.55`** | `$51.72` | `+$1.85/d` | `$0.82` | `+$0.22` | **`+$1.03`** | `+$2.20` |
-| **Day 7** | `2026-11-17` | `$56.44` | **`$63.19`** | `$74.04` | `+$2.30/d` | `$5.76` | `+$1.98` | **`+$8.73`** | `+$19.58` |
-| **Day 14** | `2026-11-24` | `$65.37` | **`$81.67`** | `$111.17` | `+$2.92/d` | `$11.51` | `+$5.16` | **`+$21.46`** | `+$50.96` |
-| **Day 30** | `2026-12-10` | `$90.89` | **`$144.88`** | `$289.76` | `+$5.14/d` | `$24.67` | `+$17.52` | **`+$71.51`** | `+$216.39` |
-| **Day 60** | `2027-01-09` | `$168.56` | **`$439.94`** | `$1,112.73` | `+$14.60/d` | `$49.34` | `+$70.52` | **`+$341.90`** | `+$1,014.69` |
-| **Day 90** | `2027-02-08` | `$320.03` | **`$971.45`** | `$2,182.11` | `+$19.33/d` | `$74.01` | `+$197.32` | **`+$848.74`** | `+$2,059.40` |
-| **Day 180** | `2027-05-09` | `$1,214.81` | **`$2,980.75`** | `$5,713.73` | `+$24.10/d` | `$148.01` | `+$1,018.10` | **`+$2,784.04`** | `+$5,517.02` |
-| **Day 365** | `2027-11-10` | `$3,601.50` | **`$7,454.01`** | `$13,026.78` | `+$24.18/d` | `$300.14` | `+$3,252.66` | **`+$7,105.17`** | `+$12,677.94` |
+*(Note: Status-quo `Net-VM` at `D07`/`D14`/`D30` matches `status_quo_linear_30d_baseline` in [`scripts/polymarket_daily_projections.py`](scripts/polymarket_daily_projections.py) (`-$2.68`, `-$5.34`, `-$11.45`).)*
 
-### 5.3 Milestone Unlock ETAs — Adverse `$48.70` Floor vs Favorable `$100.70` (`+$52` `KMIA` Recovery)
-| Undisputed Floor Milestone & Strategic Unlock | From `$48.70` Floor (`$0` `KMIA`) — **P75 / P50 / P25** | From `$100.70` Floor (`+$52` `KMIA`) — **P75 / P50 / P25** |
-| :--- | :---: | :---: |
-| **`$100` Seed Consolidation** (`D1`/`C1` `$110–$120` box cap expansion) | **Day `13` / Day `20` (`Nov 30`) / Day `35`** | **Immediate (`Day 0` = `$100.70`)** |
-| **`$150` Milestone `M3.2`** (`$140` `PreSplitOverroundGun` + `MKR_REWARD`/`Family L` + WFO review) | **Day `20` / Day `31` (`Dec 11`) / Day `55`** | **Day `7` / Day `12` (`Nov 22`) / Day `20`** |
-| **`$253` `Stage G` Cross-Venue Gate** (`CA-ON`-legal `ForecastEx / IBKR` + `STX Ontario` after `168h` cert) | **Day `28` / Day `45` (`Dec 25`) / Day `80`** | **Day `16` / Day `25` (`Dec 05`) / Day `44`** |
-| **`$500` Multi-Leg Atomic Tier (`D-007`)** (`>=3`-leg `NegRiskAdapter` partition bundles unlocked) | **Day `40` / Day `64` (`Jan 13`) / Day `113`** | **Day `28` / Day `45` (`Dec 25`) / Day `78`** |
-| **`$1,000` Institutional Depth Tier** (`$165–$220` L1/L2 depth-capped multi-engine velocity) | **Day `57` / Day `92` (`Feb 10`) / Day `162`** | **Day `45` / Day `72` / Day `127`** |
-| **`$5,000` Autonomy Promotion Gate (`D-002`)** (`proposal_only_live_promotion` graduation review) | **Day `162` / Day `264` (`Aug 01`) / Day `469`** | **Day `150` / Day `244` (`Jul 12`) / Day `433`** |
+---
+
+## 4. Long-Horizon Growth, Milestone ETAs & `KMIA` Settlement Sensitivity
+
+### 4.1 60-Day to 365-Day Depth-Capped Horizons (`$49.12` Base vs. Favorable `+$52` `KMIA` -> `$101.12`)
+
+| Horizon | Date (UTC) | Cum VM ($) | Base `$49.12` (`$0` `KMIA`): P25 / **P50** / P75 (`P50 Net-VM`) | Favorable `+$52` `KMIA` (`$101.12`): P25 / **P50** / P75 (`P50 Net-VM`) |
+| :---: | :---: | :---: | :--- | :--- |
+| **Day 1** | 2026-11-13 | `$0.82` | `$50.17` / **`$50.98`** / `$52.17` (`+$1.04`) | `$103.18` / **`$104.78`** / `$107.09` (`+$2.84`) |
+| **Day 7** | 2026-11-19 | `$5.76` | `$56.94` / **`$63.71`** / `$74.65` (`+$8.83`) | `$116.44` / **`$129.75`** / `$151.89` (`+$22.87`) |
+| **Day 14** | 2026-11-26 | `$11.51` | `$65.94` / **`$82.32`** / `$112.04` (`+$21.69`) | `$134.20` / **`$168.26`** / `$232.44` (`+$55.63`) |
+| **Day 30** | 2026-12-12 | `$24.67` | `$91.74` / **`$146.23`** / `$293.10` (`+$72.44`) | `$188.60` / **`$308.01`** / `$572.44` (`+$182.22`) |
+| **Day 60** | 2027-01-11 | `$49.34` | `$170.22` / **`$443.54`** / `$1,118.51` (`+$345.08`) | `$356.84` / **`$781.69`** / `$1,541.57` (`+$631.23`) |
+| **Day 90** | 2027-02-10 | `$74.01` | `$323.20` / **`$975.97`** / `$2,188.44` (`+$852.84`) | `$619.06` / **`$1,389.04`** / `$2,648.71` (`+$1,213.91`) |
+| **Day 180** | 2027-05-11 | `$148.01` | `$1,219.62` / **`$2,986.07`** / `$5,720.44` (`+$2,788.94`) | `$1,639.65` / **`$3,463.63`** / `$6,201.42` (`+$3,214.50`) |
+| **Day 365** | 2027-11-12 | `$300.14` | `$3,606.95` / **`$7,459.34`** / `$13,033.49` (`+$7,110.08`) | `$4,079.66` / **`$7,936.93`** / `$13,514.47` (`+$7,535.67`) |
+
+*(Note: `Day 180` JSON `summary_horizons_usd` rounds `p50_net_after_vm_usd` to `+$2,788.93` vs `+$2,788.94` in `day_by_day_schedule` due to independent sub-cent subtraction rounding.)*
+
+### 4.2 Milestone ETAs (Base `$49.12` Floor vs. `+$52` `KMIA` Recovery)
+
+| Target NAV | Base `$49.12` (`P75 / P50 / P25` Days) | Base P50 Date (UTC) | `+$52` `KMIA` (`P75 / P50 / P25` Days) | `+$52` P50 Date (UTC) | Unlocked Capability |
+| :---: | :---: | :---: | :---: | :---: | :--- |
+| **`$100`** | `13d / 20d / 35d` | `2026-12-02` | `1d / 1d / 1d` | `2026-11-13` | `3x` seed capital milestone |
+| **`$150` (`M3.2`)** | `19d / 31d / 55d` | `2026-12-13` | `7d / 11d / 20d` | `2026-11-23` | Unlocks `$125` Reward + `$140` Pre-Split Overround Gun |
+| **`$253`** | `28d / 45d / 79d` | `2026-12-27` | `16d / 25d / 44d` | `2026-12-07` | Stage G (`CA-ON`-legal `ForecastEx` + `STX`) evaluation gate |
+| **`$500`** | `40d / 64d / 113d` | `2027-01-15` | `28d / 44d / 78d` | `2026-12-26` | Full multi-leg depth & multi-venue scaling threshold |
+| **`$1,000`** | `57d / 92d / 162d` | `2027-02-12` | `45d / 72d / 127d` | `2027-01-23` | Institutional Polymarket book depth cap phase |
+| **`$2,500`** | `99d / 160d / 283d` | `2027-04-21` | `87d / 140d / 248d` | `2027-04-01` | High-liquidity depth saturation scaling |
+| **`$5,000`** | `162d / 264d / 468d` | `2027-08-03` | `150d / 244d / 433d` | `2027-07-14` | Below `$5k`: `proposal_only_live_promotion: true` (`D-002`) |
+| **`$10,000`** | `289d / 471d / >540d` | `2028-02-26` | `277d / 451d / >540d` | `2028-02-06` | Corporate/KYB expansion gate (`R-31`) |
+
+---
+
+## 5. Pending Operational Items & Risk Controls
+
+1. **Disputed `KMIA` Settlement (`D-001`):** Do not sell into distressed bids or unwind the `4` disputed Nov 7 `KMIA` trades (`$50.51` cost basis). Both floor equity (`$49.12`) and `riskless_hard_ruin_floor_usd` protect pure-riskless live operation regardless of a `$0` or `+$52` settlement.
+2. **Active `MKR_LOCK1` Position:** `mkt 7000344` (`7.0 sh @ $0.995 = $6.965`) holds a resting SELL `@ $0.998`; once filled/settled it recycles `~$7.00` back into free `pUSD`.
+3. **Observing `v6.2` Live Fill Lift (`>$0.8223/d` Hurdle):** Track `24h` / `72h` live fills over the next 2–7 days as `Full-Throttle` bridge opportunities (`ft_bridge`) and sub-millisecond `D1`/`C1`/`BOND1` fills compound to confirm live PnL crosses the `+6.98 bps/hr` VM breakeven line cleanly.
+4. **Shadow Telemetry Wiring Fixed:** [`scripts/polymarket_daily_projections.py`](scripts/polymarket_daily_projections.py) now reads `dominus_full_throttle_dashboard_v1` sections accurately, and [`Alpha124ShadowDaemon._resolve_gatling_starting_nav_usd`](src/polymarket_research/alpha_124_shadow_daemon.py) dynamically resolves live reconciled NAV (`$49.12`) instead of stale hardcoded `$60.92`.

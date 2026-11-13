@@ -10553,6 +10553,7 @@ class Alpha124ShadowDaemon:
             "last_emit_ts": float(getattr(self, "_live_bridge_last_emit_ts", 0.0) or 0.0),
             "pending_maker_orders_count": len(self.pending_maker_orders),
         }
+        live_nav_ref = self._resolve_gatling_starting_nav_usd()
         state = {
             "updated_at_utc": datetime.now(timezone.utc).isoformat(),
             "updated_ts": now_st,
@@ -10594,7 +10595,7 @@ class Alpha124ShadowDaemon:
                 "preopen_15m_candles": len(self.preopen_15m_candles),
             },
             "portfolio_realized_pnl_by_bankroll_usd": tier_totals,
-            "gatling_projection": compute_gatling_trajectory_projection(starting_nav_usd=60.92),
+            "gatling_projection": compute_gatling_trajectory_projection(starting_nav_usd=live_nav_ref),
             "by_sleeve": by_sleeve,
             "per_strategy": by_sleeve,
             "by_d1_asset": by_d1_asset,
@@ -10688,6 +10689,27 @@ class Alpha124ShadowDaemon:
         async with wr_lock:
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(self._get_state_io_executor(), self.write_state_files, list(opps))
+
+    def _resolve_gatling_starting_nav_usd(self, default_nav_usd: float = 49.12) -> float:
+        """Resolves current reconciled live NAV for `gatling_projection` without stale hardcoded anchors."""
+        cached_eq = getattr(self, "live_account_equity_usd", None)
+        if cached_eq is not None:
+            try:
+                val = float(cached_eq)
+                if val > 0.0:
+                    return val
+            except Exception:
+                pass
+        try:
+            lh_p = LIVE_POLYMARKET_DIR / "live_harvester_state.json"
+            if lh_p.exists():
+                lh_d = json.loads(lh_p.read_text(encoding="utf-8"))
+                eq_v = self._extract_reconciled_live_equity_usd(lh_d)
+                if eq_v > 0.0:
+                    return eq_v
+        except Exception:
+            pass
+        return float(default_nav_usd)
 
     @staticmethod
     def _extract_reconciled_live_equity_usd(lh_d: Dict[str, Any]) -> float:

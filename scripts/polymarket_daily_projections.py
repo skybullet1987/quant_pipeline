@@ -1342,26 +1342,183 @@ def _compute_cash_milestone_etas(
     return eta_map
 
 
+_RETIRED_DIRECTIONAL_MARKERS = ("SLEEVE_1", "SOC2", "LATTICE", "DIRECTIONAL", "OFI", "MEAN_REV")
+
+
+def _parse_record_ts(rec: Dict[str, Any]) -> float:
+    for key in (
+        "settled_at_utc",
+        "closed_at",
+        "closed_ts",
+        "close_ts",
+        "exit_ts",
+        "resolution_seen_at_ts",
+        "timestamp",
+        "updated_at",
+        "entry_ts",
+        "entry_time_utc",
+    ):
+        val = rec.get(key)
+        if val is None or val == "":
+            continue
+        if isinstance(val, (int, float)):
+            fval = float(val)
+            if fval > 0.0:
+                return fval
+            continue
+        if isinstance(val, str):
+            sval = val.strip()
+            try:
+                fval = float(sval)
+                if fval > 0.0:
+                    return fval
+            except ValueError:
+                pass
+            try:
+                dt = datetime.fromisoformat(sval.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.timestamp()
+            except ValueError:
+                continue
+    return 0.0
+
+
+def compute_empirical_realized_runrate(
+    live_st: Dict[str, Any],
+    anchor_nav_usd: float,
+    *,
+    now_ts: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Computes empirical realized pure-riskless live cash run-rates over trailing 24h / 72h / 7d windows
+    from `live_harvester_state.json`, strictly excluding retired directional/lattice strategies and
+    non-executed zero-fill records while contrasting empirical capture against the `$0.8223/day` VM hurdle.
+    """
+    ref_ts = float(now_ts) if now_ts is not None else datetime.now(timezone.utc).timestamp()
+    nav0 = max(1.0, float(anchor_nav_usd or 1.0))
+    closed = [c for c in (live_st.get("closed_positions") or []) if isinstance(c, dict)]
+
+    windows_sec = (("window_24h", 86400.0), ("window_72h", 259200.0), ("window_7d", 604800.0))
+    stats: Dict[str, Dict[str, Any]] = {
+        k: {
+            "closed_records": 0,
+            "filled_wins": 0,
+            "filled_losses": 0,
+            "realized_pnl_usd": 0.0,
+            "filled_notional_usd": 0.0,
+            "fees_paid_usd": 0.0,
+            "days_span": secs / 86400.0,
+        }
+        for k, secs in windows_sec
+    }
+
+    for rec in closed:
+        status_u = str(rec.get("status") or "").strip().upper()
+        if status_u in {"NOT_EXECUTED", "ZERO_FILL_IGNORED", "CANCELLED"}:
+            continue
+        sid = str(rec.get("strategy_id") or rec.get("sleeve") or rec.get("alpha_id") or rec.get("reason") or "")
+        if any(m in sid.upper() for m in _RETIRED_DIRECTIONAL_MARKERS):
+            continue
+        ts_val = _parse_record_ts(rec)
+        if ts_val <= 0.0:
+            continue
+        age_s = ref_ts - ts_val
+        if age_s < -300.0:
+            continue
+        pnl = float(rec.get("net_pnl_usd") or rec.get("realized_pnl_usd") or rec.get("pnl_usd") or 0.0)
+        notional = float(rec.get("notional_usd") or rec.get("cost_usd") or 0.0)
+        fee = float(rec.get("fee_usd") or rec.get("fees_paid_usd") or rec.get("realized_exit_fee") or 0.0)
+        for k, secs in windows_sec:
+            if age_s <= secs:
+                b = stats[k]
+                b["closed_records"] += 1
+                b["realized_pnl_usd"] += pnl
+                b["filled_notional_usd"] += notional
+                b["fees_paid_usd"] += fee
+                if pnl > 1e-6:
+                    b["filled_wins"] += 1
+                elif pnl < -1e-6:
+                    b["filled_losses"] += 1
+
+    out_windows: Dict[str, Dict[str, Any]] = {}
+    for k, _ in windows_sec:
+        b = stats[k]
+        span_d = b["days_span"]
+        pnl_u = round(b["realized_pnl_usd"], 4)
+        avg_d = round(pnl_u / span_d, 4)
+        net_vm_d = round(avg_d - FINLAND_VM_COST_USD_PER_DAY, 4)
+        bps_hr = round((avg_d / nav0) * 10000.0 / 24.0, 2)
+        out_windows[k] = {
+            "closed_records": b["closed_records"],
+            "filled_wins": b["filled_wins"],
+            "filled_losses": b["filled_losses"],
+            "realized_pnl_usd": pnl_u,
+            "filled_notional_usd": round(b["filled_notional_usd"], 2),
+            "fees_paid_usd": round(b["fees_paid_usd"], 4),
+            "avg_daily_pnl_usd": avg_d,
+            "implied_bps_per_hr": bps_hr,
+            "net_after_vm_daily_usd": net_vm_d,
+            "clears_vm_hurdle": bool(avg_d >= FINLAND_VM_COST_USD_PER_DAY),
+        }
+
+    w7d_avg = out_windows["window_7d"]["avg_daily_pnl_usd"]
+    status_quo_horizons = {}
+    for hd in (1, 7, 14, 30):
+        gross = round(w7d_avg * hd, 2)
+        vm_c = round(FINLAND_VM_COST_USD_PER_DAY * hd, 2)
+        status_quo_horizons[f"day_{hd}"] = {
+            "gross_equity_usd": round(nav0 + gross, 2),
+            "gross_profit_usd": gross,
+            "vm_cost_cum_usd": vm_c,
+            "net_after_vm_usd": round(gross - vm_c, 2),
+        }
+
+    return {
+        **out_windows,
+        "trailing_7d_status_quo_daily_usd": w7d_avg,
+        "vm_hurdle_daily_usd": FINLAND_VM_COST_USD_PER_DAY,
+        "status_quo_linear_30d_baseline": status_quo_horizons,
+        "v62_target_vs_status_quo_note": (
+            "Trailing 7d live cash reflects carry-only pre-v6.2 capture; clearing the $0.8223/day VM hurdle "
+            "requires live D1/FT 2-leg CLASS_A/B/C1 merge fills unlocked in v6.2."
+        ),
+    }
+
+
 def _load_full_throttle_telemetry() -> Dict[str, Any]:
     cov = _load_json(UNIVERSE_COVERAGE_FILE)
     ftd = _load_json(FULL_THROTTLE_DASHBOARD_FILE)
     univ = cov.get("universe_summary") if isinstance(cov, dict) else {}
     if not isinstance(univ, dict):
         univ = {}
-    ft_univ = (ftd.get("universe") or {}) if isinstance(ftd, dict) else {}
-    ft_opp = (ftd.get("opportunity_engine") or {}) if isinstance(ftd, dict) else {}
-    ft_mkr = (ftd.get("hedged_maker_shadow") or {}) if isinstance(ftd, dict) else {}
+    ft_d = ftd if isinstance(ftd, dict) else {}
+    ft_univ = ft_d.get("section_1_universe_coverage") or ft_d.get("universe") or {}
+    ft_pg = ft_d.get("section_1b_proposition_graph") or {}
+    ft_opp = ft_d.get("section_2_opportunity_metrics") or ft_d.get("opportunity_engine") or {}
+    ft_dorm = ft_d.get("section_2c_dormant_opportunity_store") or {}
+    ft_mkr = ft_d.get("section_2d_hedged_maker_shadow_quoter") or ft_d.get("hedged_maker_shadow") or {}
     return {
-        "total_events": int(univ.get("total_events") or ft_univ.get("total_events") or 0),
-        "total_markets": int(univ.get("total_markets") or ft_univ.get("total_markets") or 0),
+        "total_events": int(univ.get("total_events") or ft_univ.get("total_observable_events") or ft_univ.get("total_events") or 0),
+        "total_markets": int(univ.get("total_markets") or ft_univ.get("total_observable_markets") or ft_univ.get("total_markets") or 0),
         "active_orderbook_markets": int(
-            univ.get("active_orderbook_markets") or ft_univ.get("active_orderbook_markets") or 0
+            univ.get("active_orderbook_markets")
+            or ft_univ.get("orderbook_enabled_markets")
+            or ft_univ.get("active_orderbook_markets")
+            or 0
         ),
-        "total_tokens": int(univ.get("total_tokens") or ft_univ.get("total_tokens") or 0),
-        "proposition_graph_edges": int(ft_opp.get("proposition_graph_edges") or 0),
-        "rule_trap_blocks": int(ft_opp.get("rule_trap_blocks") or 0),
-        "dormant_near_arbs": int(ft_opp.get("dormant_watchlist_count") or 0),
-        "family_l_shadow_pnl_usd": round(float(ft_mkr.get("realized_shadow_pnl_usd") or 0.0), 4),
+        "total_tokens": int(univ.get("total_tokens") or ft_univ.get("total_tradable_outcome_tokens") or ft_univ.get("total_tokens") or 0),
+        "proposition_graph_edges": int(ft_pg.get("total_edges") or ft_opp.get("proposition_graph_edges") or 0),
+        "rule_trap_blocks": int(ft_opp.get("rule_mismatch_rejections_prevented") or ft_opp.get("rule_trap_blocks") or 0),
+        "dormant_near_arbs": int(ft_dorm.get("active_dormant_count") or ft_opp.get("dormant_watchlist_count") or 0),
+        "family_l_shadow_pnl_usd": round(
+            float(
+                ft_mkr.get("net_post_adverse_shadow_pnl_ex_rebate_usd")
+                or ft_mkr.get("realized_shadow_pnl_usd")
+                or 0.0
+            ),
+            4,
+        ),
     }
 
 
@@ -1537,10 +1694,28 @@ def build_live_projections(
                 row["p50_v393_ticket_usd"] = 0.0 if is_pure_riskless else compute_v541_ticket_size(eq_prev)
         row["active_regime_and_milestone"] = milestone_lbl
         row["p50_sleeve_pnl_breakdown_usd"] = base_breakdown
+        row["vm_cost_cum_usd"] = round(FINLAND_VM_COST_USD_PER_DAY * d, 2)
+        for pk in ("p25", "p50", "p75"):
+            row[f"{pk}_net_after_vm_usd"] = round(
+                (row[f"{pk}_end_equity_usd"] - compounding_anchor_usd) - row["vm_cost_cum_usd"], 2
+            )
         all_rows.append(row)
 
     daily_rows = all_rows[:days]
     has_disputed_haircut = bool(live_equity - locked_floor_equity > 0.05)
+    empirical_rr = compute_empirical_realized_runrate(
+        live_st,
+        compounding_anchor_usd,
+        now_ts=now_utc.timestamp(),
+    )
+    rb_cfg_d = (strat_cfg.get("riskless_boxes") or {}) if isinstance(strat_cfg, dict) else {}
+    s2_twap_active = bool(
+        is_pure_riskless
+        and not is_strict_math_only
+        and bool(rb_cfg_d.get("enable_s2_twap_lock_live", False))
+        and "S2_EXACT_TWAP_LOCK" not in paused_riskless_set
+        and "S2_RTDS_EXACT_TWAP_INTEGRATOR" not in paused_riskless_set
+    )
 
     payload = {
         "generated_at_utc": now_utc.isoformat(),
@@ -1555,12 +1730,10 @@ def build_live_projections(
         ),
         "riskless_only_mode": is_pure_riskless,
         "strict_pure_riskless_mode": is_strict_math_only,
-        "strict_pure_riskless_firewall_enabled": bool(
-            ((strat_cfg.get("riskless_boxes")) or {}).get("strict_pure_riskless_mode", False)
-        ),
-        "row2_post_clinch_carries_enabled": bool(
-            ((strat_cfg.get("riskless_boxes")) or {}).get("enable_single_leg_maker_bond1", True)
-        ),
+        "strict_pure_riskless_firewall_enabled": bool(rb_cfg_d.get("strict_pure_riskless_mode", False)),
+        "row2_post_clinch_carries_enabled": bool(rb_cfg_d.get("enable_single_leg_maker_bond1", True)),
+        "row2_s2_twap_enabled": s2_twap_active,
+        "empirical_realized_runrate": empirical_rr,
         "vm_infra_cost_usd_per_month": FINLAND_VM_COST_USD_PER_MONTH,
         "vm_infra_cost_usd_per_day": FINLAND_VM_COST_USD_PER_DAY,
         "quarantined_sleeves_excluded": sorted(QUARANTINED_SLEEVES),
@@ -1741,6 +1914,19 @@ def print_human_scorecard(payload: Dict[str, Any]) -> None:
             f"Live Epoch: {anc['live_wins']}W/{anc['live_closed_trades'] - anc['live_wins']}L ({anc['live_win_rate_pct']:.1f}% WR) | "
             f"To $88 Dynamic: ${anc['distance_to_88_dynamic_sizing_usd']:.2f} | To $110 Slot-2: ${anc['distance_to_110_slot2_unlock_usd']:.2f}"
         )
+    emp = payload.get("empirical_realized_runrate") or {}
+    w7d = emp.get("window_7d") or {}
+    w24 = emp.get("window_24h") or {}
+    if emp:
+        print(
+            f"VM Hurdle: ${FINLAND_VM_COST_USD_PER_DAY:.4f}/d (${FINLAND_VM_COST_USD_PER_MONTH:.2f}/mo) | "
+            f"Empirical Trailing 7d Riskless: {w7d.get('filled_wins', 0)}W/{w7d.get('filled_losses', 0)}L "
+            f"${float(w7d.get('realized_pnl_usd', 0.0)):+.2f} (${float(w7d.get('avg_daily_pnl_usd', 0.0)):+.2f}/d, "
+            f"net VM ${float(w7d.get('net_after_vm_daily_usd', 0.0)):+.2f}/d) | "
+            f"24h: ${float(w24.get('realized_pnl_usd', 0.0)):+.2f} | "
+            f"Row2: BOND1={bool(payload.get('row2_post_clinch_carries_enabled'))} "
+            f"S2_TWAP={bool(payload.get('row2_s2_twap_enabled'))}"
+        )
     print("\n--- Clean Active Shadow Sleeve Graduation Readiness (Quarantined Sleeves Excluded) ---")
     for g in payload["sleeve_graduation_live_tracker"]:
         status_tag = "READY" if g["ready_for_stage1_micro_live"] else "WAIT "
@@ -1751,12 +1937,13 @@ def print_human_scorecard(payload: Dict[str, Any]) -> None:
         )
     sched = payload["day_by_day_schedule"]
     print(f"\n--- {len(sched)}-Day Reconciled-Floor-Anchored Compounding Schedule (Depth-Capped, Non-Cash Model) ---")
-    print("Day | Date       | P25 Eq ($) | P50 Base Eq ($) | P50 Day PnL | P75 LowLat ($) | Active Regime / Graduation Milestone")
-    print("-" * 122)
+    print("Day | Date       | P25 Eq ($) | P50 Base Eq ($) | P50 Day PnL | VM Cum ($) | P50 Net-VM | P75 LowLat ($) | Active Regime / Graduation Milestone")
+    print("-" * 146)
     for r in sched[:30]:
         print(
             f"D{r['day']:02d} | {r['date_utc']} | ${r['p25_end_equity_usd']:9.2f} | "
             f"${r['p50_end_equity_usd']:14.2f} | ${r['p50_daily_pnl_usd']:+10.2f} | "
+            f"${r.get('vm_cost_cum_usd', 0.0):9.2f} | ${r.get('p50_net_after_vm_usd', 0.0):+9.2f} | "
             f"${r['p75_end_equity_usd']:13.2f} | {r['active_regime_and_milestone']}"
         )
 
